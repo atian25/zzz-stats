@@ -71,7 +71,7 @@ git clone https://github.com/atian25/zzz-stats.git ~/.claude/skills/zzz-stats
 - 只取官方页面的三个响应体：`index`、`cur_pool_stat`、`hist_pool_stat`；接口见 [references/api.md](references/api.md)。
 - **不索取账号密码、验证码、cookie、token**，登录由用户自己扫码完成；登录态留在用户自己的 Chrome profile 里。
 - 数据只落本地 `data/`，不上传；仓库里不含任何账号数据。
-- 报表头部自带隐私开关：点 UID 旁的眼睛即可把昵称与 UID 打码；对外截图请先打码。
+- 报表头部自带隐私开关：点 UID 旁的眼睛，在「全显示 → 仅打码 UID → 昵称与 UID 全打码」三态间循环；对外截图请先切到全打码。
 - 页面：`https://act.mihoyo.com/zzz/event/gacha-record/index.html`
 - 接口基址：`https://act-api-takumi.mihoyo.com/event/nap_gacha_record`
 
