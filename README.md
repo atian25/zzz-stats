@@ -36,7 +36,7 @@ git clone https://github.com/atian25/zzz-stats.git ~/.claude/skills/zzz-stats
 |---|---|
 | UP 周期 | 从上一金之后到该 UP 的抽数；`off` = 期间非 UP 的 S 消耗，`up` = 之后到 UP，`total = off + up` |
 | 每 UP 需 | 角色池总抽 / UP 数（含歪成本） |
-| 不歪率 | 直出轮数 / 总轮数 |
+| 不歪率 | 50/50 胜场 / 总 UP 轮数（保底获得的 UP 不计胜场） |
 | 平均每金 | 总抽 / S 数（常驻、音擎、邦布按各自频道） |
 | 欧 | 直出，或 `total ≤ 每 UP 均值`（歪了但更省也算欧） |
 | 极欧 | `total ≤ 40` 抽 |
