@@ -2,7 +2,7 @@
 
 把《绝区零》官方「调频统计工具」的数据抓下来，生成一张**一屏可读**的抽卡报表。
 
-这是一个 Agent Skill（`zzz-gacha-collect`）：扫码登录 → 抓官方接口 → 落本地 JSON → 按固定口径出图。
+这是一个 Agent Skill（`zzz-stats`）：扫码登录 → 抓官方接口 → 落本地 JSON → 按固定口径出图。
 
 ![报表预览](docs/preview.png)
 
@@ -14,14 +14,17 @@
 
 ## 快速开始
 
+跟你的 Agent 说：
+
+> 安装 `https://github.com/atian25/zzz-stats` 这个 skill，并帮我运行
+
+Claude Code、Trae、Codex、DeepSeek Harness 等支持 Agent Skill 的客户端都适用；Agent 会把仓库装进自己的 skills 目录并直接开始跑。手动安装也可以：
+
 ```bash
-# 克隆到 Agent 的 skills 目录（目录名即 skill 名）
-git clone https://github.com/atian25/zzz-stats.git ~/.claude/skills/zzz-gacha-collect
+git clone https://github.com/atian25/zzz-stats.git ~/.claude/skills/zzz-stats
 ```
 
-其他客户端（Trae / Codex 等）放进各自的 skills 目录即可，根目录保留 `SKILL.md` 就能被识别。
-
-然后对 Agent 说一句「帮我看看绝区零抽卡记录」：
+后续流程由 skill 接管：
 
 1. Agent 驱动你自己的 Chrome 打开官方调频统计工具，把登录二维码画到对话里；
 2. 你扫码，数据被抓到本地 `data/*.json`（不经过任何第三方服务）；
