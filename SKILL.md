@@ -154,7 +154,7 @@ data/hist_pool_stat_<t>.json
 ```
 
 - 写之前先 `JSON.parse` 校验，并要求 `retcode === 0`；`retcode` 为 `-100` 说明登录失效，回第 3 步。
-- `meta.json` 至少含：`schema`（`zzz-gacha-collect/v1`）、`server`、`uid`、`region`、`fetched_at`、`versions`、`source`。
+- `meta.json` 至少含：`schema`（`zzz-stats/v1`）、`server`、`uid`、`region`、`fetched_at`、`versions`、`source`。
 - JSON 原样保存，不要改字段名、不要转时间格式。
 
 ## 8. 校验
