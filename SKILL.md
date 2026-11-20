@@ -1,123 +1,225 @@
 ---
 name: zzz-stats
-description: 采集《绝区零》调频（抽卡）数据并落盘，按定稿口径生成「首屏单屏 + 抽卡详情」HTML 报表。当用户提到"绝区零抽卡记录/调频记录/抽卡统计/保底/出金率/导出抽卡数据/看看我抽得怎么样"时使用：驱动用户自己的 Chrome 打开官方「调频统计工具」，点登录后把二维码用动态 UI 画到对话流里让用户扫，抓官方统计接口，存成本地 JSON，再按 references/report-rules.md 出图；UIGF/CSV 导出在后续步骤实现。
+description: 采集《绝区零》调频（抽卡）数据并生成 HTML 报表。当用户提到「绝区零抽卡记录 / 调频记录 / 抽卡统计 / 保底 / 出金率 / 导出抽卡数据 / 看看我抽得怎么样」时使用：用任意可用的浏览器能力打开官方「调频统计工具」，让用户自己扫码登录，抓官方三个统计接口存成本地 JSON，再用一条命令生成「首屏单屏 + 抽卡详情」报表。不依赖特定宿主的浏览器工具名。
 ---
 
 # 绝区零调频数据采集与报表
 
-## 这个 skill 做什么
+采集用户账号的调频数据 → 存成本地 JSON → 一条命令出 HTML 报表。
 
-两件事：把用户账号的调频数据从官方「调频统计工具」页面取下来、存成本地 JSON；采集完成后按 `references/report-rules.md` 生成首屏单屏 + 抽卡详情的 HTML 报表。
-
-- **能拿到**：每个频道的总抽数、S 数、UP 数、UP 平均抽数、当前垫抽、硬保底；每个卡池里**每一金**的物品 ID、名称、稀有度、是否 UP、消耗抽数、时间戳、池内序号；覆盖版本范围。
-- **拿不到**：4 星记录、逐抽记录、记录 ID。要这些必须走 authkey 接口（`getGachaLog`），不在本文件范围。
+- **能拿到**：每个频道的总抽数、S 数、UP 数、UP 平均抽数、当前垫抽；每张卡池里**每一金**的物品 ID、名称、稀有度、是否 UP、消耗抽数、时间戳、频道内序号；覆盖版本范围。
+- **拿不到**：4 星记录、逐抽记录、记录 ID。这些必须走游戏内 `getGachaLog` + authkey，不在本 skill 范围。
 
 ## 边界（必须遵守）
 
 1. **绝不索取账号密码、验证码、cookie、token**。登录由用户自己完成（扫码）。
 2. 不读取、不保存、不打印 cookie 与请求头。只取三个接口的**响应体**。
-3. 除了"点一下登录按钮"和"截一张二维码图"，不做任何自动化点击；不模拟抽卡、不改账号设置。
-4. 数据只落本地 `data/` 目录，不上传。
-
-## 唯一路径：用户自己的 Chrome
-
-只用**外部浏览器**（TRAE Chrome 扩展驱动用户本机 Chrome），没有其他分支。
-
-- 好处：登录态直接落在用户日常的 Chrome profile 里，**登录一次长期有效**，下次跑基本不用再登。
-- `browser_connect_plugin` 返回 `connected: false` 时，用 `browser_setup_plugin` 引导用户安装/连接扩展，然后继续。**不要退回内置浏览器**，也不要用 Node 脚本。
-
-所有浏览器调用都用 `external_browser_*` 前缀；连接检查只做一次，不要每次操作前重查。
+3. 除了「点一下登录按钮」和「点一下扫码图标」，不做任何自动化点击；不模拟抽卡、不改账号设置。
+4. 数据只落本地 `data/`，不上传。
 
 ---
 
-## 1. 区服：国服（固定）
+## 0. 浏览器：先看当前会话有什么能力
 
-不需要问区服，固定走国服：
+**不要假设存在某个具体工具。** 这个 skill 只需要 6 项能力，会话里有哪套就用哪套：
 
-| 项 | 值 |
+| 能力 | 语义 | 常见形态 |
+|---|---|---|
+| 打开页面 | 导航到 URL，能等条件成立 | `browser_navigate` / CDP `Page.navigate` / `moli fetch` / Playwright `goto` |
+| 页内执行 JS | 在页面上下文跑 JS，支持 Promise | `browser_evaluate` / CDP `Runtime.evaluate` / `moli fetch --eval` / `page.evaluate` |
+| 读写跨域 iframe | 枚举 frame、在 frame 内执行 | CDP `Page.getFrameTree`+`createIsolatedWorld` / Playwright `frameLocator` |
+| 读网络（可选） | 列请求 URL | CDP `Network.*` / `moli --trace-network` / `page.on('request')` |
+| 交图给用户 | 显示一张图 | 宿主图片组件 / GenUI / 存文件给路径 |
+| 等等候 | 轮询直到条件成立 | 任何上面能力的组合 |
+
+**优先级（从省事到兜底）：**
+
+1. **会话自带的浏览器工具**（内建浏览器、moli、`browser_*`、宿主的 fetch 工具…）——有什么用什么，不要额外装东西
+2. **Playwright**——环境里已经有就用，用 `channel:'chrome'` 驱动本机 Chrome，不额外下载浏览器
+3. **零依赖 CDP**——前面都没有时的兜底，只用 Node 内置模块直连，自己起本机 Chrome
+
+`scripts/collect.mjs` 已经实现了 2 和 3；如果你的会话属于情况 1，有两种用法：
+
+- **简单**：只用会话自带的工具做「打开页面 + 扫码」，拿到登录态后，取数那一步仍然可以交给脚本（脚本支持 `--cdp` 连已开着的浏览器）
+- **直接**：按下面 0.1 的 6 个方法写一个新的驱动文件，`collect.mjs` 不用改
+
+```bash
+node scripts/collect.mjs                 # 自动挑：有 Playwright 用它，没有用零依赖 CDP
+node scripts/collect.mjs --driver cdp    # 锁定零依赖方案
+node scripts/collect.mjs --cdp http://127.0.0.1:9222   # 连已开着的 Chrome，登录态可复用
+node scripts/collect.mjs --headed        # 显示浏览器窗口，方便自己扫码
+ZZZ_CHROME_ARGS='--no-sandbox --headless=new' node scripts/collect.mjs   # 受限沙箱
+```
+
+Playwright 装在 agent 自己的 profile 里也能被找到（自动搜索 `cwd` 祖先目录与 `~/.dsh/profiles/*`）；
+也可以显式指定 `ZZZ_PLAYWRIGHT_PATHS=/path/to/node_modules`。
+
+**本机完全没有浏览器、也没有浏览器工具时：** 请用户自己打开页面扫码导出，把 `data/` 里的 JSON 交给你；
+**不要**要求用户去装浏览器插件。
+
+### 0.1 换成别的浏览器实现时，只需对齐这 6 个方法
+
+`scripts/drivers.mjs` 把浏览器能力收敛成一个非常小的接口，两个驱动都实现它。
+如果某个 agent 有自带的内置浏览器，照着实现一份即可，**不用改 collect.mjs 的流程**：
+
+| 方法 | 语义 |
 |---|---|
-| 页面 | `https://act.mihoyo.com/zzz/event/gacha-record/index.html` |
-| 接口基址 | `https://act-api-takumi.mihoyo.com/event/nap_gacha_record` |
-| region | `prod_gf_cn` |
+| `open(url)` | 打开页面 |
+| `evaluate(expr)` | 在主页面上下文执行 JS，支持返回 Promise |
+| `waitFor(expr, ms)` | 轮询直到表达式为真 |
+| `loginFrame()` | 拿到跨域登录 iframe 的句柄（内部要**轮询**，外层 iframe 挂上 ≠ frame 已就绪） |
+| `evaluateInFrame(frame, expr)` | 在指定 frame 内执行 JS |
+| `close()` | 收尾 |
 
-国际服不在本 skill 范围内。用户明确要求国际服时，才把域名换成 `act.hoyolab.com` / `sg-act-public-api.hoyolab.com`。
+**两条注意事项：**
+
+- **点不动再找人。** 优先自动点：先按元素点（`element.click()` / `dispatchEvent`）。
+  元素点不动时才退到坐标点击（有的实现只支持 `Input.dispatchMouseEvent`，会报
+  `requires layout hit testing`）；坐标也不行，才请用户点一下。**顺序是自动 → 坐标 → 找人，别一上来就让用户动手。**
+- **页内发请求。** 接口的 CORS 只放行 `act.mihoyo.com`，所以在**官方页面上下文里** `fetch`，
+  不要新开 `about:blank` 或别的站点再发，那样会被拦。
+
+---
+
+## 1. 区服：默认国服
+
+**默认走国服，不用追问**；只有用户主动说自己是国际服/亚服/美服等，才切换：
+
+| | 国服（默认） | 国际服 |
+|---|---|---|
+| 页面 | `https://act.mihoyo.com/zzz/event/gacha-record/index.html` | `https://act.hoyolab.com/zzz/event/gacha-record/index.html` |
+| 接口基址 | `https://act-api-takumi.mihoyo.com/event/nap_gacha_record` | `https://sg-act-public-api.hoyolab.com/event/nap_gacha_record` |
+| region | `prod_gf_cn` | `prod_gf_jp` / `prod_gf_us` / `prod_gf_eu` / `prod_gf_sg`（按账号实际值） |
+
+切换时用 `--region` 传 region，并把页面/接口基址换成上表右列。
+国际服的实际 region 值从 `/api/zzz/index` 的请求参数里读，读不到时按账号所在服务器兜底，并在结果里注明。
 
 ## 2. 打开页面并判断是否已登录
 
-`browser_navigate` 到上表页面，然后 `browser_snapshot`（或 `browser_evaluate` 读 `document.body.innerText`）。
+用 C1 打开页面，等到 `main.page` 出现（`document.querySelector('main.page')`），再用 C2 读状态：
 
-**两个实测坑，先看这里**：
-
-- **页面卡在「加载中」→ 标签页在后台被节流了。** 只看到 `加载中 100%` 和一段小程序提示、`innerText` 只有二三十字时，不要以为页面坏了：先 `tabs` 列出标签页，`activate` 切到前台，Vue 才会渲染出「登录」按钮和统计区。别用刷新解决。
-- **`browser_evaluate` 里不要写正则。** 脚本要经过两层字符串转义，`\s` / `\d` 会被吃成 `s` / `d`，正则静默失配（表现为"页面明明有 UID 却匹配不到"）。判断用 `innerText.indexOf('UID')` + `slice`，或直接读 `body > pre` 里的 JSON。
+```js
+(() => {
+  const root = document.querySelector('main.page');
+  const text = document.body.innerText || '';
+  return {
+    cls: root ? root.className : null,               // 含 logged-out 表示未登录
+    loggedOut: root ? root.className.includes('logged-out') : null,
+    hasUid: /UID/.test(text),
+    textLen: text.length,
+  };
+})()
+```
 
 判断：
 
-- 文本里有 `UID` + 6 位以上数字 → **已登录，跳到第 5 步**。
-- 文本里有「登录后可查看账号的历史调频统计数据」+ 一个「登录」按钮 → 未登录，走第 3 步。
+- `hasUid` 为 true → **已登录**，跳到第 5 步。
+- `loggedOut` 为 true → 未登录，走第 3 步。
+- `textLen` 只有二三十、看到「加载中 100%」→ **标签页被节流了**。切到前台（或给页面一个真实视口/焦点），Vue 才会渲染出登录按钮。不要靠反复刷新。
+- `cls` 为 null 且上面三个都不成立 → 页面没挂载成功，再等或重新导航一次。
 
-## 3. 点「登录」，把二维码画到对话流里
+## 3. 点「登录」，把二维码交给用户
 
-登录框是跨域 iframe，DOM 读不到，**只能截图**。所以流程是：点按钮 → 等二维码 → 截图 → 贴进对话 → 交接。
+登录框是**跨域 iframe**（`user.mihoyo.com/login-platform`），外层 DOM 读不到，必须用 C3。
 
-1. `browser_click` 点「登录」。按钮初始可能是 `disabled`（账号 SDK 还没初始化完）；报 "Click target is disabled" 时**不要连点**，等 2–3 秒、重新 snapshot 后再点一次。
-2. **登录框默认是「短信登录 / 密码登录」，不是扫码。** 扫码入口是左上角一个约 32px 的小图标（class `qr-login-btn--wrapper`，hover 才显示"扫码登录"气泡），它藏在跨域 iframe 里。
-   - 先试 `browser_snapshot({ selector: 'iframe' })`，看能不能拿到「扫码登录」的可点节点；
-   - 拿不到就让用户点一下左上角那个图标（一步操作，比纠结坐标快），然后继续。
-3. 等二维码渲染出来：页面正文会收缩到约 20 字，出现一个 **130×130 px 的 `<img>`**，文案「打开米游社/游戏/云游戏App，扫一扫登录」。
-4. 截图：能拿到二维码 `img` 的 ref 就截该元素；否则整页截图（1280 宽下二维码约 130px）。
-5. **把二维码用动态 UI 画进对话流，不要只给文件链接。** 先加载 `dynamic-ui` skill，再用 `PureShowWidget`（`mode` 留空走 inline）画一张「扫码登录」卡片；图片必须内嵌成 base64，不能引用本地路径。
-   - 裁图 + 压到最小：二维码是黑白模块，转 1-bit PNG 后 296×296 只有约 1.3 KB（base64 约 1.8 KB），塞进 widget 几乎不占上下文。
+1. 用 C2 按元素点「登录」按钮。按钮可能 `disabled`（账号 SDK 未初始化）：报 disabled 就等 2–3 秒重试**一次**，不要连点。
 
-     ```bash
-     python3 - <<'PY'
-     from PIL import Image
-     import numpy as np, base64, io
-     im = Image.open('/abs/login.png').convert('RGB')
-     g  = np.array(im.convert('L')); dark = g < 120
-     h, w = dark.shape
-     rows = dark[:, int(w*.2):int(w*.8)].sum(axis=1)          # 二维码是一片高密度暗块
-     m = rows > rows.max()*.8
-     y0, y1 = int(np.argmax(m)), int(len(m) - np.argmax(m[::-1]))
-     cols = dark[y0:y1].sum(axis=0); m = cols > cols.max()*.8
-     x0, x1 = int(np.argmax(m)), int(len(m) - np.argmax(m[::-1]))
-     c = im.crop((x0-18, y0-18, x1+18, y1+18)).convert('1')   # 留 18px 静区
-     b = io.BytesIO(); c.save(b, 'PNG', optimize=True)
-     print(c.size, base64.b64encode(b.getvalue()).decode())
-     PY
-     ```
-   - 裁歪了就按截图里的 `IMG 130x130 @ (x,y)` 直接手写坐标，别反复试。
-   - `widget_code` 结构：`<style>`（token）→ 卡片（白色 plate 里放 `<img src="data:image/png;base64,...">`，显示约 200px）→ 不需要 `<script>`。
-   - **二维码只认当次截图。** `data/_verify/` 下的任何历史截图都是过期演示图，禁止复用；卡片上必须写清"HH:MM 截取"，用户一眼能判断是不是旧的。
-   - **二维码那块必须保持纯白底和静区，不要跟着深色主题反色**（写死一个 `--qr-plate:#FFFFFF`，这是唯一允许不跟主题走的颜色），否则扫不出来。
-6. 配一句话："请用米游社 App 扫码，二维码约 2 分钟失效"。
-7. 紧接着调用 `browser_waiting_for_user_interaction`（必须独立调用，不能包在 Exec 里），reason 写："请扫码登录，完成后点继续"。
+2. 用 C3 等到登录 frame 出现，在 frame 内执行 JS：
 
-> 二维码过期或用户扫不到时，重新截一次再画一张，不要让用户去浏览器里找。
-> `PureShowWidget` 不可用时（没加载 `dynamic-ui` 或工具不可调），退回 `image(截图结果)`，别退成文件链接。
+   ```js
+   // 在登录 frame 内
+   ({ hash: location.hash, hasQrBtn: !!document.querySelector('.qr-login-btn--wrapper') })
+   ```
+
+3. **登录框默认是「短信登录」，不是扫码。** 要切到扫码：点 `.qr-login-btn` 这个图标（默认 32px，hover 才显示「扫码登录」气泡）。
+   点不动就先试坐标点击，再不行才请用户点一下。
+
+4. **二维码是 data URL，直接读，不要截屏裁图。** 切到扫码后，frame 里会出现一张二维码 `<img>`：
+
+   ```js
+   (() => {
+     const imgs = [...document.images].filter(i => i.src.startsWith('data:image'));
+     const qr = imgs.sort((a, b) => (b.naturalWidth * b.naturalHeight) - (a.naturalWidth * a.naturalHeight))[0];
+     return qr ? { src: qr.src, size: [qr.naturalWidth, qr.naturalHeight] } : null;
+   })()
+   ```
+
+   注意滤掉登录框里那张 60×60 的 logo（同样是 data URL）：按 **宽高 ≥ 120 且近似正方形** 筛。
+   实测真二维码是 200×200 ~ 260×260。只有拿不到 data URL（比如二维码画在 canvas 上）时才退回截图。
+
+5. **把二维码交给用户。先探测能力，再按探测结果降级。**
+
+   不要假设任何宿主的组件名。先问自己三句话，落到哪一档就用哪一档：
+
+   | 探测 | 结论 |
+   |---|---|
+   | 能把二维码**连同按钮/倒计时一起渲染成一块可交互的 UI**？ | 走 A 档 |
+   | 只能把图片**内联显示在对话里**？ | 走 B 档 |
+   | 只能把图片**存成文件**给路径？ | 走 C 档 |
+
+   **A 档：动态 UI（宿主有 GenUI / 富组件 / 卡片渲染能力）**
+
+   渲染一张「扫码登录」卡片，必须包含：二维码、截取时刻、失效时间、**倒计时**、**刷新按钮**。
+
+   - 二维码图片按**宿主的图片地址规则**给：能吃本机文件路由的（例如 `/api/file?path=<绝对路径>`）就走它，
+     能吃 http(s) 就用本地起个临时服务，都吃不了才降级到 B/C 档。
+     **注意：多数富组件渲染器不接受 `data:` / `file:` 协议**，把 base64 塞进 `src` 会被丢弃——先确认宿主支持。
+   - **有效期按 120 秒**倒计时，顶部写清 `HH:MM 截取` 与失效时刻。
+   - 倒计时归零 → 卡片切到「已过期」态，刷新按钮变为可用。**只改展示，不要自动去取新图。**
+   - 刷新按钮要能**原地更新同一张卡片**（而不是每次刷新都新发一条消息）——用宿主支持的
+     原地更新 / 面板（例如 DSH GenUI 的 `panel: true`、组件上的 action）来实现。
+     **这个能力是可选的**：宿主不支持原地更新就退回「重新发一张卡片」，不要为此去猜私有 API。
+   - 二维码区域必须**纯白底 + 留静区**，不要跟深色主题反色，否则扫不出来；显示尺寸 ≥ 200px。
+
+   **B 档：只能内联贴图**
+
+   直接显示二维码图片（宿主支持 base64 内联就内联；只吃文件路径就先落盘再引用），
+   并在消息里写清「`HH:MM` 截取，约 2 分钟后失效，过期告诉我我再换一张」。
+
+   **C 档：只能给文件**
+
+   存成 PNG 并给出路径，明确让用户去打开它扫；同样要给出截取时刻和失效时间。
+
+   **三档共同要求：**
+
+   - **只认当次拿到的图。** `data/_verify/` 下的历史截图一律禁止复用。
+   - **绝对不要做自动循环刷新。** 用户可能正好去忙别的事、没看对话流，
+     你的定时器会在后台反复请求登录二维码——那是在锤对方的登录接口，有触发风控/封禁的风险，
+     而且用户回来只看到满屏废弃的二维码。刷新**只能由用户主动触发**，并遵守第 7 步的限流。
+   - 用户说扫不到时，先调大显示尺寸、确认白底静区；还不行再换一张。
+
+6. 告诉用户「请用米游社 App 扫码，约 2 分钟失效」，然后**停下来等用户回话**——不要轮询到超时再问。
+   用户说扫不到/过期时，重拿一张再渲染，不要让用户自己去浏览器里找。
+
+7. **刷新限流（硬约束）。** 二维码是对方登录接口下发的，频繁重取有风控风险：
+
+   - 只在用户**明确要求**（「过期了」「刷新」「扫不到」）或用户点了卡片上的刷新按钮时才重取
+   - **单次会话最多重取 3 次**；到上限就停下，让用户检查网络/换浏览器，不要继续重试
+   - 两次重取之间至少间隔 **5 秒**，不要连发
+   - 用户没有回应时**不要自行重取**：宁可停下来等，也不要空转
+   - 如果连续两次都立刻失效，多半是登录态或风控问题，直接告诉用户，不要再刷
+
+   > 没有 C3 时的降级：请用户在浏览器里自己点「登录」→ 点左上角扫码图标 → 扫码。你从第 4 步接着做。
 
 ## 4. 确认登录成功
 
-轮询 `document.body.innerText`（每次间隔 3–5 秒，最多约 2 分钟），命中任一即视为成功：
+用 C2 轮询（每 3–5 秒，最多约 2 分钟），命中任一即成功：
 
 - 出现 `UID` + 6 位以上数字
 - 出现「总调频次数」「调频资源总览」等已登录文案
 
-扫码确认后页面通常 10–20 秒内**自己刷新**成统计页（实测 12 秒），不需要手动 reload，也不要重复点登录。
-
-一直不成功就回第 3 步重贴二维码，不要靠反复刷新页面来"催"它。
+扫码确认后页面通常 10–20 秒内**自己刷新**成统计页，不需要手动 reload，也不要重复点登录。一直不成功就回第 3 步重拿二维码。
 
 ## 5. 取 uid 与 region
 
-region 不在页面上显示，但会出现在页面自己发出的请求里：
+用 C4 找 URL 含 `/api/zzz/index` 的请求，读它的 `uid` / `region` 查询参数。
 
-1. 用 `browser_network_requests` 找 URL 含 `/api/zzz/index` 的请求，读它的 `uid`、`region` 查询参数。
-2. 找不到（例如打开时就已登录、请求发生在记录之前）→ **只 reload 一次**，再读一次 network。
-3. 仍找不到 → uid 用页面显示的 UID，region 国服按 `prod_gf_cn` 兜底，并在结果里注明"region 为兜底值"。
+- 找不到（例如打开时就已登录、请求发生在监听之前）→ **reload 一次**再读。
+- 仍找不到 → uid 用页面显示的 UID，region 按 `prod_gf_cn` 兜底，并在结果里注明「region 为兜底值」。
 
 ## 6. 逐个接口取数
 
-固定顺序：`index` → 6 个频道的 `hist_pool_stat` → 6 个频道的 `cur_pool_stat`，两次请求之间停 300–500ms。
+顺序：`index` → 6 个频道的 `hist_pool_stat` → 6 个频道的 `cur_pool_stat`，两次请求之间停 300–500ms。
 
 ```
 {api}/api/zzz/index?uid={uid}&region={region}
@@ -126,25 +228,60 @@ region 不在页面上显示，但会出现在页面自己发出的请求里：
 ```
 
 - `{t}` 依次取 `2, 3, 102, 103, 1, 5`（独家 / 音擎 / 独家重映 / 音擎回响 / 常驻 / 邦布）。
-- **`vers` 必须用该频道自己的 `type_stats[].has_data_vers`，且单次最多 10 个。** 拿所有频道的并集、或一次塞 20 个版本，接口会返回 `-400005 参数错误`（已实测）。
+- **`vers` 必须用该频道自己的 `type_stats[].has_data_vers`，且单次最多 10 个。** 用所有频道的并集、或一次塞 20 个版本，接口会返回 `-400005 参数错误`。
 - 版本数超过 10 时分片：按版本号降序每 10 个切一片，逐片请求，再把各片的 `data.list` 合并去重。页面自己只拉最近 8 个版本，分片才能拿到更早的历史。
 
-**取数方法**：`browser_navigate` 直接跳到接口 URL（浏览器自动带登录 cookie），再 `browser_evaluate` 取正文：
+**取数方式：在官方页面的上下文里 `fetch`。** 一次导航，后面全部页内请求，比「导航到接口 URL 再读 body」快一个数量级：
 
 ```js
-const p = document.querySelector('pre');
-const t = p ? p.innerText : document.body.innerText;
-return JSON.parse(t);
+// 在 act.mihoyo.com 页面内执行：只有这个源被接口的 CORS 放行
+const BASE = 'https://act-api-takumi.mihoyo.com/event/nap_gacha_record/api/zzz';
+const qs = `uid=${uid}&region=${region}`;
+const get = async (path, extra = '') => {
+  const url = `${BASE}${path}?${qs}${extra ? '&' + extra : ''}`;
+  const res = await fetch(url, { credentials: 'include' });
+  return res.json();                       // { retcode, message, data }
+};
+
+await get('/index');                                       // 汇总
+await get('/cur_pool_stat', 'gacha_type=2');               // 当前卡池
+await get('/hist_pool_stat', 'gacha_type=2&vers=3.3,3.1');  // 历史（versions 自己分片）
 ```
 
-> - `browser_evaluate` 禁止发起网络请求，所以只能"导航到 URL 再读页面"，不能页内 `fetch`。
-> - 工具返回会带一行 `Browser View ID: ...` 前缀，解析 JSON 前要先截到第一个 `{` 或 `[`。
-> - 建议在新标签页里导航，读完就关，避免把用户的主页面留在裸 JSON 上。
-> - 单个响应 `len` 在 1–8 KB 量级；如果某次返回明显变短，先看 `retcode`。
+> 若宿主用 `browser_evaluate` 这类会包一层字符串的工具，把上面的脚本写成**文件**再传（C2 的「长脚本走文件」）。
+> 只有在无法页内 fetch 时才退回「导航到接口 URL + 读 `document.body.innerText`」；那条路径记得先截到第一个 `{`，并关掉临时标签页。
+
+### 6.1 两条路线，按会话能力选
+
+**路线 A：跑脚本**（会话里有命令行、能起浏览器）
+
+```bash
+node scripts/collect.mjs
+```
+
+**路线 B：只借两个能力**（会话里有浏览器工具，但跑不了/不想跑 Node 脚本）
+
+取数逻辑本身很简单，只要你能「打开页面」+「在页面里执行 JS」：
+
+1. 用会话自带的工具打开官方页面，让用户扫码登录
+2. 把 `scripts/fetch-in-page.js` 的**整个文件内容**作为表达式执行
+3. 把返回的 JSON 交给 `node scripts/save-in-page-json.mjs` 落盘（或你自己拆成 `data/` 那几个文件）
+
+```bash
+node scripts/save-in-page-json.mjs --in result.json   # 或 echo '<json>' | node scripts/save-in-page-json.mjs
+```
+
+这条路不依赖 Playwright、不依赖 CDP、不要求本机开调试端口——**只要有「页内执行 JS」这一个能力就够**。
+`fetch-in-page.js` 会自己处理频道顺序、`vers` 分片、去重和 `retcode` 校验。
+
+> 两条路线产出完全一致，都会走同一个 `build-report.mjs`。
+> 差别只在「谁来驱动浏览器」：A 由脚本驱动，B 由会话自带的工具驱动。
+
+**建议直接跑 `scripts/collect.mjs`**，它把 A 路线都包好了；只有在用 B 路线时才需要手动粘脚本。
 
 ## 7. 落盘
 
-每拿到一段就立刻用 Write 写到 `data/` 下（别攒到最后，避免中途丢数据）：
+**数据写到当前工作区的 `zzz-stats/data/`，不要写进 skill 自己的目录**（skill 升级会覆盖，也容易误提交）。
 
 ```
 data/meta.json
@@ -153,70 +290,98 @@ data/cur_pool_stat_<t>.json
 data/hist_pool_stat_<t>.json
 ```
 
-- 写之前先 `JSON.parse` 校验，并要求 `retcode === 0`；`retcode` 为 `-100` 说明登录失效，回第 3 步。
-- `meta.json` 至少含：`schema`（`zzz-stats/v1`）、`server`、`uid`、`region`、`fetched_at`、`versions`、`source`。
+- 写之前校验 `retcode === 0`；`-100` 说明登录失效，回第 3 步。
+- `meta.json` 至少含：`schema`（`zzz-stats/v1`）、`server`、`uid`、`region`、`fetched_at`、`versions`、`source`，以及 **`nickname`**。
+- 昵称不在任何接口里，只能从页面 DOM 文本读（登录后标题处的名字）。读不到就留空，报表会显示 `—`。
 - JSON 原样保存，不要改字段名、不要转时间格式。
 
 ## 8. 校验
 
-用这条等式判断数据是否取全了：
-
 ```
-len(hist_pool_stat_<t>.data.list[].cur_records 之和) + len(cur_pool_stat_<t>.data.list[].cur_records 之和)
-  ==  index.type_stats 里同频道的 s_count
+sum(cur_records[].count) + type_stats[].next_s_cur_times == type_stats[].total_count
 ```
 
-- 6 个频道逐一比对；对不上就说明分片漏了版本，回第 6 步补。
-- `index.total_s_count` **不含邦布**（实测 96 条 S 记录里，非邦布 62 条正好等于 `total_s_count`），别拿它当"全部 S"。
-- `index.total_gacha_count` 应与页面显示的总调频次数一致。
-- 向用户回报一句："已保存到 `data/`，覆盖 x.y → x.y 版本，共 N 抽 / M 金"。
+逐频道比对。左边是「已出金抽数 + 当前垫抽」，右边是官方总抽数——**它校验的是抽数，金数对得上但记录缺抽也会在这里露出来**。`scripts/build-report.mjs` 会自动跑这条并报警。
+
+另外两条容易踩的：
+
+- `index.total_gacha_count`（实测 3714）与 `total_s_count`（实测 62）**都不含邦布**。六个频道相加是 5375 / 96。报表里两个口径要分开写清楚。
+- `sort` 是**频道内跨池连续**的全局序号（各频道各自从 1 开始），不是账号全局、也不是池内序号。`count` 恒等于相邻两条的 `sort` 差。
+
+## 9. 出报表：直接用模板，不要重新发明
+
+```bash
+node scripts/build-report.mjs            # 读 data/，写 report.html
+node scripts/build-report.mjs --data data --out report.html
+```
+
+输出 `report.html`：**真正的单文件**——数据、ECharts、以及用到的图标全部内嵌，
+可以直接发给别人、单独打开，不需要附带 `assets/` 目录。
+控制台会打印关键指标与校验告警——**把这些告警当失败处理，不要带着告警交付**。
+
+**默认不要读 `references/report-rules.md`。** 模板已经实现全部规则，一条命令就是完整产物。
+只有当下面任一情况成立时，才去读那份规范：
+
+- 用户要**定制版式**，模板给不了
+- 你要**改口径 / 改配色 / 改标签逻辑**
+- 模板跑出错误，需要判断是数据问题还是实现问题
+
+### 三层分工（改东西前先认层）
+
+| 层 | 位置 | 改什么 |
+|---|---|---|
+| **配置** | `config/report.json` | 称号分档、标签阈值与去重、配色值、文案、图例、频道定义、隐私规则。**90% 的调整都在这层** |
+| **实现** | `scripts/build-report.mjs` + `assets/report/` | 口径算法与版式。改这层要同步 `report-rules.md` |
+| **资源** | `assets/report/icons/`、`assets/avatars/`、`assets/items/` | `icons/` 是 64px 压缩版，**构建时内嵌进 HTML 用的就是它**；`avatars/` 与 `items/` 是 96px 原图，供重新生成 `icons/` |
+| **规范** | `references/report-rules.md` | 记录「为什么这样算、为什么这样画」以及踩过的坑。**不要为了改行为去改它**；它是给维护者看的 |
+
+改配置不需要读规范；改实现必须先读规范、改完再回来同步。
+
+**新增角色/音擎图标后要重跑一次压缩**（否则报表里那张图会用占位图）：
+
+```bash
+python3 -m pip install pillow      # 只需一次
+node scripts/make-icons.mjs        # assets/{avatars,items}/ 96px → assets/report/icons/ 64px
+```
+
+`make-icons.mjs` 会把头像做圆形透明蒙版、物品保持方形，边长统一缩到 64px。
+报表构建时把这些 64px 图 base64 内嵌进 HTML——**不缩就会让产物从 3.7 MB 涨到 6 MB+**。
 
 ## 失败处理
 
 | 现象 | 处理 |
 |---|---|
-| 扩展 `connected: false` | `browser_setup_plugin` 引导安装扩展；不要退回内置浏览器 |
-| 页面卡在「加载中」 | 标签页被节流，`tabs` + `activate` 切前台 |
+| 没有任何浏览器能力（C1/C2） | 直接说明缺什么，不要硬试 |
+| 拿不到跨域 iframe（无 C3） | 让用户自己在浏览器点登录 + 扫码，从第 4 步接手 |
+| 页面卡在「加载中」 | 标签页被节流，切前台或给真实视口 |
 | 点登录报 `Click target is disabled` | 账号 SDK 未就绪，等 2–3 秒重试一次，不要连点 |
-| 二维码没出现 | 登录框默认是短信登录，要点左上角 32px 的扫码图标；点不到就请用户点一下 |
-| 用户说二维码扫不到 | 在动态 UI 里把二维码放到 ≥200px 且保持纯白底；还不行就改截登录框元素（`ref`），别截整页缩略图 |
-| 登录后页面一直不出数据 | 让用户确认账号已绑定《绝区零》角色；仍不行才 reload 一次 |
+| 二维码没出现 | 登录框默认短信登录，要点 `.qr-login-btn` 图标；点不到请用户点 |
+| 用户说扫不到 | 二维码放到 ≥200px 且保持纯白底；改用 frame 内 `img` 的 data URL |
+| 坐标点击报 `requires layout hit testing` | 说明该实现不支持坐标输入：改回按元素 click |
+| 页内 fetch 报 CORS | 必须在 `act.mihoyo.com` 页面上下文里请求 |
 | 接口返回 `-100` | 登录态失效，回第 3 步重新扫码 |
-| 接口返回 `-400005 参数错误` | 十有八九是 `vers` 一次给了超过 10 个，或用了不属于该频道的版本；按第 6 步分片重来 |
+| 接口返回 `-400005 参数错误` | `vers` 超过 10 个或用了不属于该频道的版本，分片重来 |
 | 接口返回非 0 且非 -100 | 原样把 `retcode` / `message` 报给用户，不盲目重试 |
-| `browser_network_requests` 里没有 `index` 请求 | 先 reload 一次；仍没有就用页面 UID + region 兜底 |
-| 页面改版、接口路径变了 | 重新看 `index_*.js` 里的 `/api/zzz/*` 路径，更新本文件与 `references/api.md` |
+| 页面改版、接口路径变了 | 看 `index_*.js` 里的 `/api/zzz/*` 路径，更新本文件与 `references/api.md` |
 
 ## 数据产物
 
 ```
 data/
-├── meta.json                 # 区服、UID、拉取时间、覆盖版本
+├── meta.json                 # 区服、UID、昵称、拉取时间、覆盖版本
 ├── index.json                # 6 个频道的汇总统计
-├── cur_pool_stat_2.json      # 当前卡池（按频道）
-└── hist_pool_stat_2.json     # 历史卡池 + 每金记录（按频道）
+├── cur_pool_stat_2.json      # 当前卡池（按频道，6 个）
+├── hist_pool_stat_2.json     # 历史卡池 + 每金记录（按频道，6 个）
+└── _verify/login-qr.png      # 扫码阶段临时产物，不要提交、不要复用
 ```
 
-字段说明见 `references/api.md`。
+`data/` 整体被 `.gitignore` 忽略。
+
+字段说明见 `references/api.md`，口径与呈现见 `references/report-rules.md`。
 
 ## 安全说明
 
 - 该页面只认登录 cookie，URL 里没有 authkey；因此本方案不会产生任何可被复用的抽卡凭证链接。
-- **不要尝试"导出 cookie 再 curl"**。`document.cookie` 只能看到 `ltuid_v2` / `account_id_v2` / `mi18nLang` 这类标识，真正的鉴权凭证 `ltoken_v2` / `cookie_token_v2` 是 HttpOnly；CDP 的 `Storage.getCookies` 虽然读得到，但那等于把**完整账号凭证**落盘——它能做的远不止看抽卡，风险比 authkey 高一个量级。用浏览器代发请求就够了。
-- "登录一次、后续免登录"靠的是用户自己 Chrome 里的会话，不需要额外存 cookie；`retcode:-100` 才是真的过期。
-- 取到的数据会经过对话上下文，本身不含 cookie。
-- 用户要求清理时，删除 `data/` 即可。
-
-## 下一步：报表
-
-采集完成后按 `references/report-rules.md` 生成 HTML 报表（指标公式、配色分档、tooltip 文案、称号与标签计数、十连多金归属、头部布局、首屏单屏 + 第二屏抽卡详情、截图验证要求），照此执行，不要重新发明。骨架如下：
-
-- **首屏**：标题行（昵称 | 大标题 | UID 胶囊 | 隐私开关）+ 5 格 KPI；主图面板标题固定 `抽卡总览`（15px/700），右上灰色小字 `N 个 UP · N 抽`；UP 成本堆叠柱 + 累计不歪率折线，1440×900 / 1280×800 首屏无滚动、图例单行。
-- **大标题**按每 UP 均查 `report-rules.md` §4.1 的 10 档（≤62.5 终极无敌至尊欧皇 … >125 终极无敌至尊非酋，保留薛定谔的非欧 / 超级至尊非酋 / 万里挑一至尊欧皇）。不歪率只是强相关，不能当判档依据。
-- **第二屏抽卡详情**：6 个频段标签（独家 / 音擎 / 常驻 / 邦布 / 复刻角色 / 复刻音擎），按版本分组、版本号写在左方括号右侧；行 = 图标 + 横条（≤ 均值绿 `#2E8F45`，> 均值红 `#FF5F6D` + 斜纹）+ 紧贴柱体右侧的「歪」章；整页纵向铺开，不设内部滚动。
-- **「显示真实抽数」**：默认不勾；勾上后把歪的抽数并进下一个 UP、只留 UP 行，十连后出的副金并回同一轮；常驻频段禁用。
-- **行悬浮 tip**：自绘深色气泡（不用原生 `title`），逐金写 `名字 / vX · 出金时间 / 距上一金 N 抽 · UP|歪`；合并写 `本轮 N 抽 ＝ UP a + 歪 b` 与 `歪出：名字 b 抽`，无歪写 `本轮 N 抽 · 无歪`。
-- 报表需要显式表达"运气好"的维度：`record_time` 同秒 且 `sort` 差 ≤ 9 的两金算**十连多金**（判定依据见 `references/api.md`），单独计次，不要折算成普通出金。
-- 报表产物：`report.html` + `assets/charts.js` + `assets/avatars/` + `assets/items/`，依赖本地 ECharts 与字体，不联网、不用 CDN。
-- 图标缓存：`assets/avatars/`（角色圆头像）与 `assets/items/`（角色/音擎/邦布方图标）随 skill 自带，生成报表时先复制缓存，缺的 `item_id` 才下载并写回；下载失败用 `assets/items/_fallback.png` 兜底，不要裂图、不要引用 CDN。
-- 需要 UIGF/CSV 导出时再按 `references/api.md` 的字段自行组织，当前未实现。
+- **不要尝试「导出 cookie 再 curl」**。`document.cookie` 只能看到 `ltuid_v2` / `account_id_v2` 这类标识，真正的鉴权凭证 `ltoken_v2` / `cookie_token_v2` 是 HttpOnly；CDP 的 `Storage.getCookies` 虽然读得到，但那等于把**完整账号凭证**落盘，风险比 authkey 高一个量级。用浏览器代发请求就够了。
+- 「登录一次、后续免登录」靠的是用户自己 Chrome 里的会话；`retcode:-100` 才是真的过期。
+- **`data/` 必须被 `.gitignore` 忽略**，里面有 UID 和每一金的记录。

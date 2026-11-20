@@ -53,7 +53,7 @@
 | `s_count` | string | S 数量 |
 | `up_count` | string | UP 数量 |
 | `avr_up_count` | string | UP 平均抽数 |
-| `new_s_max_times` | number | 该频道硬保底（实测出现 90 / 80 / 76 / 68） |
+| `new_s_max_times` | number | 官方 UI 的「获得 S 级信号最多需要 N 次」区间值（实测 90 / 80 / 76 / 68）。**不是硬保底，也不等于历史最长出金间隔**（实测常驻频道该值为 32，而该频道最长出金间隔是 80），展示前请勿当保底用 |
 | `next_s_cur_times` | number | 当前垫抽进度 |
 | `has_data_vers` | array | 有数据的版本列表，可用于判断覆盖范围 |
 
@@ -93,7 +93,7 @@
 | `up_tag` | `"UP_TAG_NONE"` | UP 标记 |
 | `count` | `"8"` | **距上一金的抽数**（不是池内累计）；跨池连续，等于相邻两条记录的 `sort` 差 |
 | `record_time` | `"1785292144"` | **Unix 时间戳（秒）**。同一次请求（如一发十连）内的多条 S 共用同一秒 |
-| `sort` | `"2348"` | **逐抽递增的账号全局序号**（跨池连续），不是池内序号 |
+| `sort` | `"2348"` | **频道内跨池连续的序号**（每个频道各自从 1 开始，不是账号全局，也不是池内序号）；`count` 恒等于相邻两条的 `sort` 差 |
 
 ### 派生判定：十连多金
 
@@ -123,7 +123,7 @@
 | `cur_item_list[]` | `[{...}]` | 本期 UP 物品，实测 2 条 |
 | `cur_records[]` | `[{...}]` | 本期已出的 S 记录，字段同 §2 的 `cur_records[]` |
 
-**注意**：`cur_pool_stat` 里**没有** `new_s_max_times` / `next_s_cur_times`——"当前垫抽/硬保底"只存在于 `index` 的 `type_stats[]` 里。
+**注意**：`cur_pool_stat` 里**没有** `new_s_max_times` / `next_s_cur_times`——「当前垫抽」只存在于 `index` 的 `type_stats[]` 里。
 
 一个版本可能返回 2 个池子（上半 + 下半），两者的 `cur_records` 都要统计。
 
@@ -131,15 +131,18 @@
 
 - 页面发出的请求带 `uid` / `region`，这两个值由账号 SDK 注入，不在页面地址里。
 - 请求靠 cookie 鉴权（`withCredentials`），URL 无 token；未登录返回 `retcode: -100`。
-- 浏览器里直接访问接口 URL 会渲染成 JSON，读正文即可；页面内 `fetch` 在内置浏览器中不可用（工具限制）。
-- **完整性等式**：`hist 各池 cur_records 之和 + cur 各池 cur_records 之和 == index.type_stats[].s_count`（实测 6/6 频道成立）。
+- **页内 `fetch` 可用**：在 `act.mihoyo.com` 页面上下文里请求会被 CORS 放行（该源已白名单），一次导航即可取完全部接口。在别的源里 fetch 会被拦。
+- 旧路径「导航到接口 URL 再读正文」仍然有效（浏览器会自动带 cookie），只是慢；读正文时先截到第一个 `{`。
+- **完整性等式**：`sum(cur_records[].count) + type_stats[].next_s_cur_times == type_stats[].total_count`（实测 6/6 频道成立）。
+  它校验抽数而不只是金数，缺抽会立刻暴露。老等式「记录条数 == s_count」也成立，但抓不出「金数对、抽数缺」。
 - `index.total_s_count` **不含邦布频段**：实测 96 条 S 记录，去掉邦布 34 条后正好等于 62。
+- `index.total_gacha_count` **同样不含邦布**：实测 3714，六个频道相加是 5375。报表里这两个口径要分别标注。
 
 ## 能力边界
 
 | 能力 | 是否支持 |
 |---|---|
-| 频道汇总、当前垫抽、硬保底 | 支持 |
+| 频道汇总、当前垫抽、官方 UI 的保底区间值 | 支持 |
 | 每金的物品、时间、抽数、是否 UP | 支持 |
 | 4 星 / 逐抽 / 记录 ID | 不支持 |
 | 分页取全量明细 | 不支持（无 `end_id`/`page` 参数） |

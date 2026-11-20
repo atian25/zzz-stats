@@ -4,17 +4,20 @@
 
 把《绝区零》官方「调频统计工具」的数据抓下来，生成一份**首屏一屏可读**的抽卡报表，主图下方附六频道抽卡详情。
 
-这是一个 Agent Skill（`zzz-stats`）：扫码登录 → 抓官方接口 → 落本地 JSON → 按固定口径出图。
+这是一个 Agent Skill（`zzz-stats`）：扫码登录 → 抓官方接口 → 落本地 JSON → 一条命令出图。
+**不绑定任何特定的浏览器工具**：会话里有自带浏览器（内建浏览器、moli、任何能执行 JS 的能力）就用它，
+有 Playwright 就用 Playwright，都没有才由零依赖 CDP 自己起本机 Chrome。
+核心只需要两个能力——**打开页面** 和 **在页面里执行 JS**。
 
 ![报表预览](docs/preview.png)
 
 ## 能做什么
 
-- **采集**：6 个频道（角色、音擎、常驻、邦布等）的总抽数、S 数、UP 数、当前垫抽，以及每一金的物品、稀有度、是否 UP、消耗抽数、时间戳、池内序号。
+- **采集**：6 个频道（角色、音擎、常驻、邦布等）的总抽数、S 数、UP 数、当前垫抽，以及每一金的物品、稀有度、是否 UP、消耗抽数、时间戳、频道内序号。
 - **报表**：`抽卡总览` 主图 = 每轮 UP 成本堆叠柱 + 累计不歪率折线，双头像、十连多金标记、版本分隔、悬浮 tip、事件标签，1440×900 / 1280×800 首屏无滚动。
-- **抽卡详情**：第二屏按 6 个频道（独家 / 音擎 / 常驻 / 邦布 / 复刻角色 / 复刻音擎）列出每一金的横条，条长＝抽数、绿/红＝欧非、红章＝歪，可切换标签；左侧方括号按版本分组；整页铺开不内滚；勾「显示真实抽数」把歪的成本并进 UP；行悬浮看逐金 / 本轮明细。
-- **图标离线**：角色、音擎、邦布图标随仓库带一份本地缓存（`assets/avatars/`、`assets/items/`），报表只用相对路径；只有新角色才联网补图，下载失败用占位图兜底，不裂图、也不引用 CDN。
-- **口径稳定**：所有数字以官方接口 + 频道 `gacha_count` 对齐，不做估算。
+- **抽卡详情**：第二屏按 6 个频道列出每一金的横条，条长 = 抽数、绿/红 = 欧非、红章 = 歪，可切换标签；左侧方括号按版本分组；整页铺开不内滚；勾「显示真实抽数」把歪的成本并进 UP。
+- **口径可配**：称号分档、标签规则、配色、文案全在 `config/report.json`，改称号不用碰代码。
+- **图标离线**：角色、音擎、邦布图标随仓库带一份本地缓存，报表只用相对路径；缺图用占位图兜底，不裂图、不引 CDN。
 
 ## 快速开始
 
@@ -22,40 +25,84 @@
 npx skills add atian25/zzz-stats
 ```
 
-一条命令装到 Claude Code、Trae、Codex、Cursor 等支持 Agent Skill 的客户端；Agent 会把仓库装进自己的 skills 目录并直接开始跑。也可以直接跟你的 Agent 说：
+一条命令装到 Claude Code、Trae、Codex、Cursor、DeepSeek Harness 等支持 Agent Skill 的客户端。也可以直接说：
 
 > 安装 `https://github.com/atian25/zzz-stats` 这个 skill，并帮我运行
 
-手动安装：
+## 手动跑一遍
 
 ```bash
-git clone https://github.com/atian25/zzz-stats.git ~/.claude/skills/zzz-stats
+# 1) 采集：自动挑驱动（有 Playwright 用 Playwright，没有用零依赖 CDP），打印二维码路径
+node scripts/collect.mjs
+
+# 2) 出图
+node scripts/build-report.mjs      # → report.html
 ```
 
-后续流程由 skill 接管：
+想让浏览器显示出来、自己看着扫，加 `--headed`；想锁定零依赖方案，加 `--driver cdp`。
 
-1. Agent 驱动你自己的 Chrome 打开官方调频统计工具，把登录二维码画到对话里；
-2. 你扫码，数据被抓到本地 `data/*.json`（不经过任何第三方服务）；
-3. 需要报表时，按 [references/report-rules.md](references/report-rules.md) 生成 `report.html`。
+想复用自己日常 Chrome 的登录态（下次免扫码），就用带调试端口的 Chrome：
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --remote-debugging-port=9222 --user-data-dir="$HOME/.zzz-chrome" &
+node scripts/collect.mjs --cdp http://127.0.0.1:9222
+```
+
+在受限沙箱里 Chrome 自带的 sandbox 可能起不来，加一句环境变量即可：
+
+```bash
+ZZZ_CHROME_ARGS='--no-sandbox --headless=new' node scripts/collect.mjs
+```
+
+> `--driver cdp` 这条路只用 Node 内置模块（`node:fs` / `node:child_process` / 全局 `WebSocket` / 全局 `fetch`）直讲 CDP，
+> **没有任何 npm 依赖**，所以别人装了这套 skill 也不会被要求再装 Playwright 之类的东西。
+
+如果会话里已经有浏览器工具（内建浏览器、moli、或任何能「在页面里执行 JS」的能力），
+连脚本都不用跑：把 [`scripts/fetch-in-page.js`](scripts/fetch-in-page.js) 的内容当表达式执行，
+再用 `node scripts/save-in-page-json.mjs` 落盘即可。取数逻辑本来就只是「1 次汇总 + 6 次当前池 + 若干次历史分片」。
+
+## 目录结构
+
+```
+SKILL.md                    # 入口：浏览器能力契约、采集流程、失败处理
+config/report.json          # 口径与文案的唯一来源：称号、标签、配色、KPI、频道
+scripts/collect.mjs         # 采集：浏览器驱动 → 页内 fetch → data/*.json + 完整性校验
+scripts/drivers.mjs         # 浏览器驱动适配层：playwright / cdp 两套实现，接口一致
+scripts/make-icons.mjs      # 从 96px 原图生成 64px 压缩图标（报表内嵌用，需 Pillow）
+scripts/fetch-in-page.js    # 只借「页内执行 JS」一个能力的取数脚本（无 Node 环境也能用）
+scripts/save-in-page-json.mjs # 把上面那段脚本的结果落成 data/
+scripts/build-report.mjs    # 出图：data/ + config → report.html
+assets/report/              # 报表模板（template.html / charts.js / charts.css）
+assets/report/icons/        # 64px 压缩图标，构建时 base64 内嵌进 HTML
+assets/vendor/echarts.min.js# ECharts 5.6.0（随仓库分发，不用 CDN）
+assets/avatars/             # 角色圆头像缓存（96px PNG 原图）
+assets/items/               # 角色/音擎/邦布方图标缓存（96px PNG 原图）
+references/api.md           # 接口与字段说明（含十连多金判定、完整性等式）
+references/report-rules.md  # 报表口径与呈现约定（规范层，维护者读）
+```
+
+报表右上角带仓库链接（`config/report.json` 的 `copy.repo` 可改），方便拿到图的人反查生成方式。
+
+> `report.html` 是**自包含单文件**：数据、ECharts、用到的图标全部内嵌，
+> 可以单独发给别人直接打开，不依赖 `assets/` 目录。
 
 ## 报表口径
 
 | 指标 | 定义 |
 |---|---|
-| UP 周期 | 从上一金之后到该 UP 的抽数；`off` = 期间非 UP 的 S 消耗，`up` = 之后到 UP，`total = off + up` |
-| 每 UP 需 | 角色池总抽 / UP 数（含歪成本） |
+| UP 轮 | 从上一金之后到该 UP 的抽数；`off` = 期间非 UP 的 S 消耗，`up` = 之后到 UP，`total = off + up` |
+| 每 UP 均 | 角色池总抽 / UP 数（含歪成本） |
 | 不歪率 | 50/50 胜场 / 总 UP 轮数（保底获得的 UP 不计胜场） |
-| 平均每金 | 总抽 / S 数（常驻、音擎、邦布按各自频道） |
-| 欧 | 直出，或 `total ≤ 每 UP 均值`（歪了但更省也算欧） |
-| 极欧 | `total ≤ 40` 抽 |
+| 平均每金 | 总抽 / S 数（各频道按自己算） |
+| 欧 | 直出，或 `total ≤ 该账号每 UP 均`（歪了但更省也算欧） |
+| 极欧 | `total ≤ 40` 抽（可配） |
 
-同一发十连里后出的非 UP 金，归到**同池 UP 那一轮**（总抽 +差值、仍算直出），不留给下一个 UP——这样既不会把下一位误判成「先歪」，总抽也始终等于官方 `gacha_count`。
-
-配色：蓝 = 极欧（≤ 40），深绿 = 欧（> 40），亮红 = 非酋本发、深红 = 歪掉的抽数。
+同一发十连里后出的非 UP 金归到**同池 UP 那一轮**，仍算直出——这样既不会把下一位误判成「先歪」，总抽也始终等于官方值。
 
 ## 称号与标签
 
-称号只看「角色池每 UP 均（含歪）」，基准 62.5 × 1.5 = 93.75 抽。档位用 2026-11 收集的 12 条「工坊」抽卡总结样本拟合（样本中称号与每 UP 完全单调），不是人群百分位；不歪率只是强相关，不能当判据（94.2 抽 / 44.4% 是「欧非守恒」，98.0 抽 / 47.6% 反而是「欧气附体小欧皇」）：
+称号只看「角色池每 UP 均（含歪）」，基准 62.5 × 1.5 = 93.75 抽。10 档定义在 [`config/report.json`](config/report.json) 的 `titles.tiers`，按 2026-11 收集的 12 条工坊样本拟合，不是人群百分位；不歪率只是强相关，不能当判据。
 
 | 每 UP 均 | 称号 |
 |---|---|
@@ -70,32 +117,26 @@ git clone https://github.com/atian25/zzz-stats.git ~/.claude/skills/zzz-stats
 | ≤ 125 | 千里挑一大非酋 |
 | > 125 | 终极无敌至尊非酋 |
 
-事件标签（按出现次数 ×N，悬浮看详情并联动高亮对应柱）：
+标签同样是配置驱动的（`tags.rules`）：`欧气附体`、`运势极佳`、`时运不济`、`代理人 K 连 UP ×N`、`代理人 K 连歪 ×N`、`十连双金 ×N`、`似非实欧 ×N`。条件不满足就不出现。
 
-- `欧气附体`（双金 ≥ 1 或极欧柱 ≥ 2）、`运势极佳`（最长连 UP ≥ 4）
-- `代理人 K 连 UP ×N`、`代理人 K 连歪 ×N`（更长的一档另立标签）
-- `十连双金 ×N`（不写人名）
-- `似非不非 ×N`：先歪但总抽 < 每 UP 均值
+## 扫码刷新限流
+
+二维码是对方登录接口下发的，所以刷新是**纯手动、有上限**的：
+
+- 只在用户主动要求时才重新取图，**脚本里没有任何定时器或自动循环**
+- 单次会话最多重取 3 次，两次之间至少隔 5 秒
+- 到上限就停下并提示排查，不会继续空转
+
+用户如果去忙别的，脚本就停在等待输入上，不会在后台反复请求。
 
 ## 数据与隐私
 
 - 只取官方页面的三个响应体：`index`、`cur_pool_stat`、`hist_pool_stat`；接口见 [references/api.md](references/api.md)。
-- **不索取账号密码、验证码、cookie、token**，登录由用户自己扫码完成；登录态留在用户自己的 Chrome profile 里。
-- 数据只落本地 `data/`，不上传；仓库里不含任何账号数据。
-- 报表头部自带隐私开关：点 UID 旁的眼睛，在「全显示 → 仅打码 UID → 昵称与 UID 全打码」三态间循环；对外截图请先切到全打码。
+- **不索取账号密码、验证码、cookie、token**，登录由用户自己扫码完成；脚本不读 cookie、不存请求头。
+- 数据只落本地 `data/`（已 gitignore），不上传；仓库里不含任何账号数据。
+- 报表头部自带隐私开关：点 UID 旁的眼睛，在「全显示 → 仅打码 UID → 昵称与 UID 全打码」三态间循环；**对外截图请先切到全打码**。
 - 页面：`https://act.mihoyo.com/zzz/event/gacha-record/index.html`
 - 接口基址：`https://act-api-takumi.mihoyo.com/event/nap_gacha_record`
-
-## 目录结构
-
-```
-SKILL.md                    # skill 入口：采集流程、边界、失败处理
-references/api.md           # 接口与字段说明（含十连多金判定）
-references/report-rules.md  # 报表口径、配色、tooltip、称号、标签、单屏与验证
-assets/avatars/             # 角色圆头像缓存（96px PNG，主图用）
-assets/items/               # 角色/音擎/邦布方图标缓存（96px PNG，详情用）
-docs/preview.png            # 报表预览
-```
 
 ## 说明
 
