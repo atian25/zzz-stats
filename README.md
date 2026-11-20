@@ -2,18 +2,18 @@
 
 **《绝区零》抽卡记录分析与报表** · 一个 Agent Skill
 
-```bash
-npx skills add atian25/zzz-stats
-```
+跟你的 Agent 说：
 
-<sub>[![skills.sh](https://skills.sh/b/atian25/zzz-stats)](https://skills.sh/atian25/zzz-stats) · 装好后对 agent 说「看看我的抽卡记录」即可</sub>
+> 安装 https://github.com/atian25/zzz-stats 这个 skill，并帮我运行
+
+<sub>[![skills.sh](https://skills.sh/b/atian25/zzz-stats)](https://skills.sh/atian25/zzz-stats) · 也可以自己装：`npx skills add atian25/zzz-stats`</sub>
 
 ---
 
 把《绝区零》官方「调频统计工具」的数据抓下来，生成一份**首屏一屏可读**的抽卡报表，主图下方附六频道抽卡详情。
 
 这是一个 Agent Skill（`zzz-stats`）：扫码登录 → 抓官方接口 → 落本地 JSON → 一条命令出图。
-**不绑定任何特定的浏览器工具**：会话里有自带浏览器（内建浏览器、moli、任何能执行 JS 的能力）就用它，
+**不绑定任何特定的浏览器工具**：会话里有自带浏览器就用它，
 有 Playwright 就用 Playwright，都没有才由零依赖 CDP 自己起本机 Chrome。
 核心只需要两个能力——**打开页面** 和 **在页面里执行 JS**。
 
@@ -27,17 +27,12 @@ npx skills add atian25/zzz-stats
 - **口径可配**：称号分档、标签规则、配色、文案全在 `config/report.json`，改称号不用碰代码。
 - **图标离线且内嵌**：角色、音擎、邦布图标随仓库带一份 64px 缓存，构建时 base64 内嵌进 HTML；产物是**真正自包含的单文件**，单独发给别人也能正常显示。缺图用占位图兜底，不裂图、不引 CDN。
 
-## 装好之后
+## 支持哪些客户端
 
-装到 Claude Code、Trae、Codex、Cursor、DeepSeek Harness 等任意支持 Agent Skill 的客户端，然后直接说：
+DeepSeek Harness、Codex、Trae，以及任意支持 Agent Skill 的客户端。
 
-> 看看我的绝区零抽卡记录
-
-agent 会自己打开官方页面、把二维码交给你扫、抓完数据出报表。**你只需要扫码这一步。**
-
-不想装也可以让 agent 直接跑：
-
-> 安装 `https://github.com/atian25/zzz-stats` 这个 skill，并帮我运行
+跑起来之后，agent 会自己打开官方页面、把二维码交给你扫、抓完数据出报表。
+**你只需要扫码这一步。**
 
 ### 扫码有两种节奏
 
@@ -91,7 +86,7 @@ ZZZ_CHROME_ARGS='--no-sandbox --headless=new' node scripts/collect.mjs
 > `--driver cdp` 这条路只用 Node 内置模块（`node:fs` / `node:child_process` / 全局 `WebSocket` / 全局 `fetch`）直讲 CDP，
 > **没有任何 npm 依赖**，所以别人装了这套 skill 也不会被要求再装 Playwright 之类的东西。
 
-如果会话里已经有浏览器工具（内建浏览器、moli、或任何能「在页面里执行 JS」的能力），
+如果会话里已经有浏览器工具（任何能「在页面里执行 JS」的能力），
 连脚本都不用跑：把 [`scripts/fetch-in-page.js`](scripts/fetch-in-page.js) 的内容当表达式执行，
 再用 `node scripts/save-in-page-json.mjs` 落盘即可。取数逻辑本来就只是「1 次汇总 + 6 次当前池 + 若干次历史分片」。
 
