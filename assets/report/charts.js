@@ -448,7 +448,13 @@
           data: R.chart.winRate,
           symbol: 'none',
           lineStyle: { color: COLORS.winRateLine, width: 1.4 },
-          z: 2,
+          /*
+           * z 必须高于柱子。
+           * 柱子没显式设 z（默认 2），折线早先也是 2 —— 同级时折线会被柱子压在下面，
+           * 曲线一进到柱体里就消失，看起来像「数据从中间才开始」。
+           * 3：压过两根柱子，又低于头像（4）与双金点（5），不会骑到角色脸上。
+           */
+          z: 3,
           tooltip: { show: false },
         },
       ],
