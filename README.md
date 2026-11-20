@@ -32,7 +32,7 @@
 
 ## 支持哪些客户端
 
-DeepSeek Harness、Codex、Trae，以及任意支持 Agent Skill 的客户端。
+DeepSeek Harness、Codex、Trae、豆包工作，以及任意支持 Agent Skill 的客户端。
 
 跑起来之后，agent 会自己打开官方页面、把二维码交给你扫、抓完数据出报表。
 **你只需要扫码这一步。**
