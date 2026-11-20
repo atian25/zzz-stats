@@ -870,95 +870,6 @@ async function collectAll(drv) {
   return { index, summary };
 }
 
-// -------------------------------------------------------------- authkey 导出
-
-/*
- * 用登录 cookie 换一个 getGachaLog 的 authkey，拼成可直接打开的 URL。
- *
- * 这是给「同步到第三方抽卡工具（例如绝区零工坊）」用的。
- * 关键点：authkey **能**用 cookie 换出来，端点是 `genAuthKeyByCookieToken`，
- * 走 postulate 账号域（passport-api.mihoyo.com），不是活动页那套接口。
- *
- *   浏览器里的 cookie
- *     → POST /account/binding/api/genAuthKeyByCookieToken
- *     → { authkey, authkey_ver, sign_type }
- *     → getGachaLog?...&authkey=...
- *
- * 安全边界（重要，不要改）：
- *   - **只打印到终端/对话，绝不写进 data/ 或任何产物文件**
- *   - authkey 是可直接拉取抽卡记录的凭证，落盘就等于泄露
- *   - 有效期约 24 小时，用完自然失效
- */
-const AUTHKEY_ENDPOINT = 'https://passport-api.mihoyo.com/account/binding/api/genAuthKeyByCookieToken';
-const GACHA_LOG_BASE = 'https://public-operation-nap.mihoyo.com/common/gacha_record/api/getGachaLog';
-
-/** 绝区零的 gacha_type：1001 角色、2001 音擎；与活动页的 1/2/3/102/103 不是一套。 */
-const AUTHKEY_GACHA_TYPES = [
-  { id: '1001', label: '角色调频' },
-  { id: '2001', label: '音擎调频' },
-];
-
-async function exportAuthKey(drv, { uid, region }) {
-  const got = await drv.evaluate(`(async () => {
-    try {
-      const res = await fetch(${JSON.stringify(AUTHKEY_ENDPOINT)}, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'x-rpc-source': 'v2.webLogin' },
-        body: JSON.stringify({
-          game_biz: 'nap_cn',
-          region: ${JSON.stringify(region)},
-          auth_appid: 'webview_gacha',
-          game_uid: ${JSON.stringify(String(uid))},
-        }),
-      });
-      const j = await res.json();
-      return { ok: j.retcode === 0, retcode: j.retcode, message: j.message, data: j.data ?? null };
-    } catch (e) {
-      return { ok: false, message: e.message };
-    }
-  })()`);
-
-  if (!got?.ok || !got.data?.authkey) {
-    log(`⚠️  换 authkey 失败：${got?.message || '未知原因'}（retcode=${got?.retcode ?? '?'}）`);
-    return null;
-  }
-
-  const { authkey, authkey_ver, sign_type } = got.data;
-  const build = (gachaType) => {
-    const q = new URLSearchParams({
-      authkey_ver: String(authkey_ver),
-      sign_type: String(sign_type),
-      auth_appid: 'webview_gacha',
-      init_log_gacha_type: gachaType,
-      gacha_type: gachaType,
-      page: '1',
-      size: '20',
-      end_id: '0',
-      lang: 'zh-cn',
-      game_biz: 'nap_cn',
-      authkey,
-    });
-    return `${GACHA_LOG_BASE}?${q}`;
-  };
-
-  log('');
-  log('──────── authkey（用于同步到抽卡工具，例如绝区零工坊）────────');
-  log(`有效期约 24 小时 · 只打印在终端与对话里，不写任何文件`);
-  log(`authkey 长度 ${authkey.length} · authkey_ver=${authkey_ver} · sign_type=${sign_type}`);
-  for (const t of AUTHKEY_GACHA_TYPES) {
-    log('');
-    log(`【${t.label}】直接复制这整行：`);
-    log(build(t.id));
-  }
-  log('');
-  log('提示：第三方工具通常只需 authkey 字符串本身；要 URL 就用上面这行。');
-  log('────────────────────────────────────────────────────────────');
-  log('');
-
-  return { authkey, authkey_ver, sign_type, urls: AUTHKEY_GACHA_TYPES.map((t) => ({ ...t, url: build(t.id) })) };
-}
-
 // ------------------------------------------------------------------ 主流程
 
 async function main() {
@@ -993,15 +904,6 @@ async function main() {
     if (!uid) throw new Error('拿不到 UID。确认账号已绑定《绝区零》角色。');
     globalThis.__uid = uid;
     log('UID', uid, 'region', REGION);
-
-    /*
-     * --authkey：额外导出可用于第三方抽卡工具的 authkey URL。
-     * 放在取数之前做 —— 用户的登录态此刻最鲜活，
-     * 而且这个值只打印一次，不落盘（见 exportAuthKey 的说明）。
-     */
-    if (has('authkey')) {
-      await exportAuthKey(drv, { uid, region: REGION });
-    }
 
     const { index, summary } = await collectAll(drv);
 
