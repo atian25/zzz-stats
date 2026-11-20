@@ -25,6 +25,21 @@ import { pathToFileURL } from 'node:url';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/*
+ * 登录 iframe 的 host 判定。
+ *
+ * 国服登录框在 user.mihoyo.com，国际服在 hoyolab 的账号域（user / passport）。
+ * 过去这里写死 mihoyo，国际服会一直等不到 frame、误报「登录框没出现」。
+ * 两个域都认，另外留一个环境变量口子，官方再换域时不用改代码。
+ */
+export const LOGIN_FRAME_RE = (() => {
+  const custom = process.env.ZZZ_LOGIN_FRAME_RE;
+  if (custom) {
+    try { return new RegExp(custom); } catch { /* 写错就退回默认 */ }
+  }
+  return /user\.mihoyo\.com|(user|passport|account)\.hoyolab\.com/;
+})();
+
 // ---------------------------------------------------------------- 公共：找 Chrome
 
 const CHROME_CANDIDATES = [
@@ -148,7 +163,7 @@ class CdpDriver {
    */
   async loginFrame() {
     for (let i = 0; i < 40; i += 1) {
-      const f = (await this.#frames()).find((x) => /user\.mihoyo\.com/.test(x.url));
+      const f = (await this.#frames()).find((x) => LOGIN_FRAME_RE.test(x.url));
       if (f) {
         try {
           const { executionContextId } = await this.#send('Page.createIsolatedWorld', {
@@ -247,7 +262,7 @@ class PlaywrightDriver {
 
   async loginFrame() {
     for (let i = 0; i < 40; i += 1) {
-      const f = this.page.frames().find((x) => /user\.mihoyo\.com/.test(x.url()));
+      const f = this.page.frames().find((x) => LOGIN_FRAME_RE.test(x.url()));
       if (f) return f;
       await sleep(500);
     }

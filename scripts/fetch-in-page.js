@@ -5,21 +5,40 @@
  * 复杂的只有登录。所以只要你已经让用户登录好（用会话自带的浏览器工具、moli、Playwright、
  * 或人工扫码都行），就能用 2 个能力完成采集：
  *
- *   1) 打开 https://act.mihoyo.com/zzz/event/gacha-record/index.html
+ *   1) 打开官方页面（国服 act.mihoyo.com，国际服 act.hoyolab.com，见 SKILL.md §2）
  *   2) 把这个文件的内容作为表达式执行
+ *      需要换区服时传参：`(${源码})({ region: 'prod_gf_us' })`
  *
  * 返回一个 JSON **字符串**（不要返回对象：有些工具会把大对象截断或转义坏）。
  * 拿到之后交给 `node scripts/save-in-page-json.mjs` 落盘，或直接喂给 build-report。
  *
  * 实测约束：
- *   - 必须在 act.mihoyo.com 这个源里执行：接口的 CORS 只放行它
+ *   - 必须在官方页面这个源里执行（act.mihoyo.com / act.hoyolab.com）：接口的 CORS 只放行它
  *   - 不能在 about:blank 或别的站点里执行，会被 CORS 拦
  *   - vers 单次最多 10 个，多了返回 -400005
  *   - 请求之间要停一下，别把对方接口打满
  */
-(async () => {
-  const BASE = 'https://act-api-takumi.mihoyo.com/event/nap_gacha_record/api/zzz';
-  const REGION = 'prod_gf_cn';
+(async (opts = {}) => {
+  /*
+   * 区服 → 接口基址。
+   * 过去写死国服，国际服账号只能换一个文件版本 —— 现在按 REGION 自动选，
+   * 也允许调用方通过 opts.base / opts.region 覆盖（如从页面地址里读出来的）。
+   */
+  const DEFAULT_BASE = 'https://act-api-takumi.mihoyo.com/event/nap_gacha_record/api/zzz';
+  const OS_BASE = 'https://sg-act-public-api.hoyolab.com/event/nap_gacha_record/api/zzz';
+  /*
+   * region 三个来源，优先级从高到低：
+   *   1) opts.region     —— agent 显式传 `({ region: 'prod_gf_us' })`
+   *   2) window.__ZZZ_REGION —— 已经知道区服、但只能整段粘贴（不能改文件）时的口子
+   *   3) prod_gf_cn      —— 国服默认值
+   */
+  const REGION = opts.region || (typeof window !== 'undefined' && window.__ZZZ_REGION) || 'prod_gf_cn';
+  /*
+   * 国际服的接口基址也可以从页面自己认出来：
+   * 页面在 hoyolab 域下，就说明这是国际服，别把 region 发到 mihoyo 的接口上。
+   */
+  const PAGE_IS_OS = /(^|\.)hoyolab\.com$/.test(location.hostname);
+  const BASE = opts.base || (REGION !== 'prod_gf_cn' || PAGE_IS_OS ? OS_BASE : DEFAULT_BASE);
   const MAX_VERS = 10;
   const ENUM = {
     2: 'GACHA_TYPE_CHARACTER_UP',
@@ -75,6 +94,9 @@
     uid,
     region: REGION,
     fetchedAt: new Date().toISOString(),
+    server: REGION === 'prod_gf_cn' ? 'cn' : 'os',
+    pageHost: location.hostname,
+    pageIsOverseas: PAGE_IS_OS,
     index: null,
     channels: {},
   };

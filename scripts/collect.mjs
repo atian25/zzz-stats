@@ -46,9 +46,31 @@ const argOf = (f, d) => {
   return i >= 0 && args[i + 1] ? args[i + 1] : d;
 };
 
-const PAGE = 'https://act.mihoyo.com/zzz/event/gacha-record/index.html';
-const API = 'https://act-api-takumi.mihoyo.com/event/nap_gacha_record/api/zzz';
+/*
+ * 区服 → 官方页面与接口基址。
+ *
+ * 过去这里把国服地址写死，`--region` 只改 query 参数不改域名 ——
+ * 国际服账号会带着 prod_gf_us 去请求 act.mihoyo.com，必然是登录态不认、retcode 报错。
+ * 现在按 region 选整套基址：国服走 mihoyo.com，国际服走 hoyolab.com（见 SKILL.md §2 对照表）。
+ *
+ * 也可以直接 `--api <url> --page <url>` 硬覆盖，方便官方换域名时不用改代码。
+ */
+const ENDPOINTS = {
+  cn: {
+    page: 'https://act.mihoyo.com/zzz/event/gacha-record/index.html',
+    api: 'https://act-api-takumi.mihoyo.com/event/nap_gacha_record/api/zzz',
+  },
+  os: {
+    page: 'https://act.hoyolab.com/zzz/event/gacha-record/index.html',
+    api: 'https://sg-act-public-api.hoyolab.com/event/nap_gacha_record/api/zzz',
+  },
+};
 const REGION = argOf('region', 'prod_gf_cn');
+/** 国服的 region 全是 prod_gf_cn；其余（jp/us/eu/sg/hk/tw…）都算国际服。 */
+const IS_CN = /^prod_gf_cn$/i.test(REGION);
+const EP = IS_CN ? ENDPOINTS.cn : ENDPOINTS.os;
+const PAGE = argOf('page', EP.page);
+const API = argOf('api', EP.api);
 const DATA_DIR = resolve(ROOT, argOf('data', 'data'));
 const VERIFY_DIR = join(DATA_DIR, '_verify');
 const CFG = JSON.parse(readFileSync(join(ROOT, 'config/report.json'), 'utf8'));
@@ -903,7 +925,7 @@ async function main() {
     const uid = await readUid(drv);
     if (!uid) throw new Error('拿不到 UID。确认账号已绑定《绝区零》角色。');
     globalThis.__uid = uid;
-    log('UID', uid, 'region', REGION);
+    log('UID', uid, 'region', REGION, '接口', API);
 
     const { index, summary } = await collectAll(drv);
 
@@ -922,7 +944,7 @@ async function main() {
     const uniq = sortVersionsDesc([...new Set(versions)]);
     const meta = {
       schema: 'zzz-stats/v1',
-      server: 'cn',
+      server: IS_CN ? 'cn' : 'os',
       uid,
       region: REGION,
       nickname: typeof nickname === 'string' && nickname.length && !nickname.includes('\n') ? nickname : null,

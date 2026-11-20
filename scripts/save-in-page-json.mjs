@@ -89,15 +89,22 @@ const uniq = [...new Set(versions)].sort((a, b) => {
   return pb[0] - pa[0] || (pb[1] ?? 0) - (pa[1] ?? 0);
 });
 
+const server = payload.server ?? (/^prod_gf_cn$/.test(String(payload.region ?? 'prod_gf_cn')) ? 'cn' : 'os');
+
+// 国际服的接口基址与国服不同；落进 meta 方便事后核对这份数据是哪个服的
+const API_BASE = server === 'cn'
+  ? 'https://act-api-takumi.mihoyo.com/event/nap_gacha_record'
+  : 'https://sg-act-public-api.hoyolab.com/event/nap_gacha_record';
+
 write('meta.json', {
   schema: 'zzz-stats/v1',
-  server: 'cn',
+  server,
   uid: String(payload.uid),
   region: payload.region ?? 'prod_gf_cn',
   nickname: payload.nickname ?? null,
   fetched_at: payload.fetchedAt ?? new Date().toISOString(),
   versions: uniq.length ? `${uniq[uniq.length - 1]} → ${uniq[0]}` : null,
-  source: 'https://act-api-takumi.mihoyo.com/event/nap_gacha_record',
+  source: API_BASE,
   total_gacha_count: Number(payload.index.data?.total_gacha_count ?? 0),
   total_s_count: Number(payload.index.data?.total_s_count ?? 0),
   total_counts_exclude_bangboo: true,
