@@ -138,6 +138,12 @@ node scripts/collect.mjs            # 默认 a
 node scripts/collect.mjs --wait=b   # 或 ZZZ_WAIT_MODE=b
 ```
 
+**二维码卡片要尽量紧凑**：只放「二维码图片 + 一行文字（生成/失效时刻 + 扫完要不要说话）」。
+不要用 keyvalue 之类的组件逐行罗列时间——一项两行会把扫码卡片撑得很高，白占屏幕。
+用 `图片 + 一行 markdown 文本` 就够了：
+
+> 15:34:21 生成 · 15:36:21 失效 · 扫完不用说话
+
 两种档位都**必须传同一个 `--profile`**，否则 B 档第二次运行会丢登录态（Playwright 默认用临时 profile）。
 
 ## 3. 点「登录」，把二维码交给用户
