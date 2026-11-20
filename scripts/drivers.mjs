@@ -213,11 +213,13 @@ async function launchCdp({ port, profile, bin, log }) {
 // ----------------------------------------------------------- Playwright 驱动
 
 class PlaywrightDriver {
-  constructor(browser, page) {
+  constructor(browser, page, context = null) {
     this.kind = 'playwright';
     this.browser = browser;
     this.page = page;
-    this.version = browser.version();
+    // 持久化上下文：关闭时要关 context，否则 profile 不会被正确落盘
+    this.context = context;
+    this.version = browser ? browser.version() : 'persistent';
   }
 
   async open(url) {
@@ -261,7 +263,10 @@ class PlaywrightDriver {
   }
 
   async close() {
-    try { await this.browser.close(); } catch {}
+    try {
+      if (this.context) await this.context.close();
+      else await this.browser.close();
+    } catch {}
   }
 }
 
@@ -270,23 +275,41 @@ class PlaywrightDriver {
  * 用 channel:'chrome' 驱动本机 Chrome —— 这样不需要 Playwright 下载自带浏览器，
  * 用户装了 Chrome 就能用。找不到 Chrome 才退回 Playwright 自带的 chromium。
  */
-async function launchPlaywright({ headless, log, modulePath }) {
+async function launchPlaywright({ headless, log, modulePath, profile }) {
   const mod = await import(modulePath);
   const chromium = mod.chromium ?? mod.default?.chromium;
   if (!chromium) throw new Error('Playwright 模块里没有 chromium');
 
   const args = chromeArgs();
+  const base = { headless, args };
+  /*
+   * 传了 profile 就用持久化上下文。
+   * 否则每次都是全新临时 profile —— 登录态存不住，
+   * 「先扫码、再单独跑一次取数」这种分两次执行的降级路线就没法用。
+   */
+  if (profile) {
+    const ctx = await chromium.launchPersistentContext(profile, {
+      channel: findChrome() ? 'chrome' : undefined,
+      viewport: { width: 1440, height: 900 },
+      ...base,
+    });
+    log(`Playwright 就绪（持久化 profile：${profile}）`);
+    // 持久化上下文自带页面；没有就新建一个
+    const page = ctx.pages()[0] ?? (await ctx.newPage());
+    return new PlaywrightDriver(ctx.browser(), page, ctx);
+  }
+
   let browser = null;
   if (findChrome()) {
     try {
-      browser = await chromium.launch({ channel: 'chrome', headless, args });
+      browser = await chromium.launch({ channel: 'chrome', ...base });
       log('Playwright 就绪（驱动本机 Chrome）');
     } catch (e) {
       log(`Playwright 走 channel:chrome 失败，改用自带 chromium：${e.message.split('\n')[0]}`);
     }
   }
   if (!browser) {
-    browser = await chromium.launch({ headless, args });
+    browser = await chromium.launch(base);
     log('Playwright 就绪（使用自带 chromium）');
   }
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -372,7 +395,7 @@ export async function openDriver({ cdpUrl, driver, port, profile, headless = tru
     const pw = await resolvePlaywright();
     if (pw) {
       try {
-        return await launchPlaywright({ headless, log, modulePath: pw });
+        return await launchPlaywright({ headless, log, modulePath: pw, profile });
       } catch (e) {
         if (want === 'playwright') throw e;
         log(`Playwright 启动失败，退回零依赖 CDP：${e.message.split('\n')[0]}`);

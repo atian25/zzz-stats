@@ -59,6 +59,15 @@ const pause = (msg = '按回车继续') => ask(msg);
 
 // ------------------------------------------------------------ 页面状态探针
 
+/*
+ * 登录判定的唯一口径。
+ * 实测登录后正文是「UID:10000001」——冒号紧贴数字，不是空格。
+ * 早先写成 /UID\s*\d{6,}/ 要求数字紧跟空白，永远匹配不到，
+ * 结果扫码成功、程序静默卡死。这里兼容半角/全角冒号与任意空白。
+ * 另外「UP数量」是统计页才有的字样，作为兜底。
+ */
+const UID_RE_SRC = String.raw`/UID\s*[:：]?\s*\d{6,}/`;
+
 const pageState = `(() => {
   const root = document.querySelector('main.page');
   const text = document.body ? document.body.innerText : '';
@@ -66,7 +75,7 @@ const pageState = `(() => {
     mounted: !!root,
     cls: root ? root.className : null,
     loggedOut: root ? (root.className || '').includes('logged-out') : null,
-    hasUid: text.indexOf('UID') >= 0,
+    hasUid: ${UID_RE_SRC}.test(text) || text.indexOf('UP数量') >= 0,
     textLen: text.length
   };
 })()`;
@@ -131,12 +140,34 @@ async function loginFlow(drv) {
       return 'clicked:' + target.tagName;
     })()`);
     await sleep(1200);
-    const big = await drv.evaluateInFrame(frame, `(() => {
-      return [...document.images].filter(i => (i.src || '').startsWith('data:image') && i.naturalWidth >= 120).length;
+
+    /*
+     * 用 hash 判断真实模式，不要靠图片尺寸猜。
+     * 登录框默认在 #/login/captcha（短信登录），要切到 #/login/qr 才是扫码；
+     * 短信页里也有一张 232×80 的图片，按尺寸判断会误报「已在扫码模式」，
+     * 结果就是打印了二维码路径、用户却扫了一张不存在的码。
+     */
+    const mode = await drv.evaluateInFrame(frame, `(() => {
+      const qr = [...document.images]
+        .filter(i => (i.src || '').startsWith('data:image'))
+        .map(i => ({ w: i.naturalWidth, h: i.naturalHeight }))
+        .find(i => i.w >= 120 && i.h >= 120 && Math.abs(i.w - i.h) <= 8);
+      return { hash: location.hash || '', hasQr: !!qr, qr };
     })()`);
-    if (big > 0) { if (i === 0) log('已在扫码模式'); break; }
-    if (i === 0) log('切换到扫码：', hit);
-    if (hit === 'no-target') break;
+
+    if (mode?.hasQr) { if (i === 0) log('已在扫码模式'); break; }
+    if (i === 0) log('切换到扫码：', hit, `（当前 ${mode?.hash || 'hash 未知'}）`);
+
+    /*
+     * 首轮 no-target 不一定是真失败：登录框刚渲染时图标还没进 DOM。
+     * 多等几轮再判定，最后一轮仍失败才报错 —— 否则偶发的慢渲染会被当成缺陷。
+     */
+    if (hit === 'no-target' && !mode?.hasQr && i >= 4) {
+      throw new Error(
+        `未能切到扫码模式（登录框停在 ${mode?.hash || '未知页面'}）。` +
+        '请在浏览器里手动点左上角的扫码图标后再重试。'
+      );
+    }
   }
 
   /*
@@ -200,60 +231,161 @@ async function loginFlow(drv) {
    * 扫码期间的刷新。
    *
    * 两条硬约束，都是为了不给对方的登录接口添麻烦：
-   *   1) 只由用户主动输入 r 触发，这里没有任何定时器/自动循环
+   *   1) 只由用户主动按 r 触发刷新；循环里查的是**登录态**（本地 DOM 读取），
+   *      不是反复请求二维码——没有用户操作就绝不重取
    *   2) 全局最多重取 MAX_QR_REFRESH 次，两次之间至少隔 5 秒
-   * 用户离开时脚本就停在 ask() 上等，不会在后台空转。
+   * 用户离开时循环只在读登录态，不会对着登录接口空转。
    */
   const MAX_QR_REFRESH = 3;
   const REFRESH_MIN_GAP_MS = 5000;
   let refreshCount = 0;
   let lastRefreshAt = 0;
 
-  log(`扫完按回车继续；二维码过期了按 r 换一张（最多 ${MAX_QR_REFRESH} 次）。`);
-  for (;;) {
-    const answer = await ask('扫码完成后按回车（或输入 r 刷新二维码）');
-    if (answer.trim().toLowerCase() !== 'r') break;
+  /*
+   * 扫码阶段必须「自动轮询登录态 + 非阻塞监听键盘」。
+   *
+   * 之前这里是 `await ask(...)` 先阻塞等人按回车，按完才去轮询登录——
+   * 用户扫完码什么都不发生，得自己回来敲回车，体验是坏的。
+   * 现在改成：主循环每 3 秒查一次登录态，命中立刻继续；
+   * stdin 用 raw 模式旁听，按 r 才刷新二维码（同样受 3 次上限约束）。
+   */
+  /*
+   * 扫码等待策略，按「当前会话能不能挂着等」分两档：
+   *
+   *   A 档（默认）：宿主支持后台任务 —— 调用方可以把本进程挂起来等，
+   *                检测到登录就自己往下走，用户扫完什么都不用做。
+   *   B 档：宿主只能一次性执行 —— 本进程等不到用户扫码就会退出，
+   *                所以要明确告诉用户「扫完回来说一声」，由调用方再跑一次续上。
+   *
+   * 判定顺序：
+   *   1. --wait=a|b 或 ZZZ_WAIT_MODE=a|b（调用方知道自己有没有后台能力，优先听它的）
+   *   2. 默认 a（交互终端下本来就是挂着等，非交互由调用方决定）
+   *
+   * B 档能续上的前提是 profile 持久化：扫码产生的 cookie 留在 profile 里，
+   * 第二次运行时直接就是登录态。
+   */
+  const waitMode = (argOf('wait', '') || process.env.ZZZ_WAIT_MODE || 'a').toLowerCase() === 'b' ? 'b' : 'a';
 
-    if (refreshCount >= MAX_QR_REFRESH) {
-      log(`已重取 ${refreshCount} 次，达到上限，不再自动换图。`);
-      log('请检查网络或换浏览器重试；也可以重新跑一次脚本。');
-      break;
-    }
-    const since = Date.now() - lastRefreshAt;
-    if (lastRefreshAt && since < REFRESH_MIN_GAP_MS) {
-      log(`刷新太快了，请等 ${Math.ceil((REFRESH_MIN_GAP_MS - since) / 1000)} 秒后再试。`);
-      continue;
-    }
+  log(`正在等待扫码…（二维码过期可按 r 换一张，最多 ${MAX_QR_REFRESH} 次）`);
+  if (waitMode === 'b') {
+    log('');
+    log('扫码完成后，回到对话里说一声「好了」—— 我会接着把数据取下来。');
+    log('（当前宿主只能一次性执行，没法在这里挂着等）');
+    log('');
+  } else {
+    log('扫码后会自动继续，不需要任何操作。');
+  }
 
-    lastRefreshAt = Date.now();
-    refreshCount += 1;
-    const hit = await refreshQr();
-    qr = await grabQr();
-    issuedAt = Date.now();
-    const left = MAX_QR_REFRESH - refreshCount;
-    if (qr?.src) {
-      const file = saveQr(qr);
-      if (hit === 'no-expired-node') {
-        // 还没到期时登录框没有「已过期」节点，点不动是正常的，拿到的还是同一张。
-        log(`二维码尚未过期，仍是同一张（${file}）。等过期后再按 r 才会换新。剩余 ${left} 次。`);
-      } else {
-        log(`已换新二维码（${hit}）：${file}，2 分钟内有效。剩余 ${left} 次。`);
+  // 与 pageState 同一口径，避免两处不一致
+  const LOGGED_IN = `(() => {
+    const t = document.body ? document.body.innerText : '';
+    return ${UID_RE_SRC}.test(t) || t.indexOf('UP数量') >= 0 || t.indexOf('总调频次数') >= 0
+      ? 'logged-in' : null;
+  })()`;
+
+  // 心跳里附带的页面快照：出问题时能直接看出「扫码前后页面到底有没有变化」
+  const snapshot = `(() => {
+    const t = document.body ? document.body.innerText : '';
+    return { len: t.length, head: t.replace(/\\s+/g, ' ').slice(0, 60) };
+  })()`;
+
+  let ok = null;
+  let tick = 0;
+  let warnedExpired = false;
+  /*
+   * 等待扫码。
+   * 两条时间线要分开看：
+   *   - 二维码有效期 QR_TTL_MS（120s）：过了就明确报「已过期」，提示怎么换
+   *   - 整体等待上限 MAX_WAIT_MS（10min）：用户去忙别的事时不要几分钟就放弃，
+   *     但也不能无限等，否则脚本永远挂着
+   */
+  const MAX_WAIT_MS = 10 * 60 * 1000;
+  const deadline = Date.now() + MAX_WAIT_MS;
+
+  /*
+   * 键盘旁听：按 r 刷新二维码。
+   * 用 raw 模式而不是 readline.question —— question 会阻塞住整个循环，
+   * 那样就没人去轮询登录态了（这正是早先「扫完还要按回车」的根因）。
+   */
+  let wantRefresh = false;
+  const onKey = (buf) => {
+    if (buf.toString().toLowerCase() === 'r') wantRefresh = true;
+  };
+  const stdinRaw = Boolean(stdin.isTTY);
+  if (stdinRaw) {
+    stdin.setRawMode?.(true);
+    stdin.resume();
+    stdin.on('data', onKey);
+  }
+
+  try {
+    while (Date.now() < deadline) {
+      ok = await drv.evaluate(LOGGED_IN);
+      if (ok === 'logged-in') break;
+
+      // 二维码本身的有效期，与整体等待上限无关
+      const qrAge = Date.now() - issuedAt;
+      if (!warnedExpired && qrAge >= QR_TTL_MS) {
+        warnedExpired = true;
+        log('');
+        log('⚠️  二维码已过期（截取于 ' +
+          new Date(issuedAt).toLocaleTimeString('zh-CN', { hour12: false }) +
+          `，已过 ${Math.round(qrAge / 1000)} 秒）`);
+        log('    需要换一张才能继续：在运行脚本的终端里按一下 r。');
+        log('    （不会自动刷新——避免没人看着时反复请求登录接口）');
+        log('');
       }
-    } else {
-      log(`刷新后没读到二维码（${hit}）。请在浏览器里手动点刷新。剩余 ${left} 次。`);
-      if (refreshCount >= 2) {
-        log('连续刷新拿不到图，可能是登录态或风控问题，建议停下排查。');
+
+      // 每 15 秒报一次心跳：让用户看得出脚本还活着、还在等
+      tick += 1;
+      if (tick % 5 === 0) {
+        const leftMin = Math.ceil((deadline - Date.now()) / 60000);
+        const snap = await drv.evaluate(snapshot);
+        const info = snap ? `页面 ${snap.len} 字：「${snap.head}」` : '页面读不到';
+        log(warnedExpired
+          ? `仍在等待…（二维码已过期，按 r 换一张；最多再等 ${leftMin} 分钟）｜${info}`
+          : `仍在等待扫码…（二维码还剩约 ${Math.max(0, Math.round((QR_TTL_MS - qrAge) / 1000))} 秒有效）｜${info}`);
       }
+
+      if (wantRefresh) {
+        wantRefresh = false;
+        if (refreshCount >= MAX_QR_REFRESH) {
+          log(`已重取 ${refreshCount} 次，达到上限，不再自动换图。`);
+        } else if (lastRefreshAt && Date.now() - lastRefreshAt < REFRESH_MIN_GAP_MS) {
+          log(`刷新太快了，请等 ${Math.ceil((REFRESH_MIN_GAP_MS - (Date.now() - lastRefreshAt)) / 1000)} 秒后再试。`);
+        } else {
+          lastRefreshAt = Date.now();
+          refreshCount += 1;
+          const hit = await refreshQr();
+          qr = await grabQr();
+          const left = MAX_QR_REFRESH - refreshCount;
+          if (qr?.src) {
+            const file = saveQr(qr);
+            log(hit === 'no-expired-node'
+              ? `二维码尚未过期，仍是同一张（${file}）。剩余 ${left} 次。`
+              : `已换新二维码（${hit}）：${file}。剩余 ${left} 次。`);
+          } else {
+            log(`刷新后没读到二维码（${hit}）。剩余 ${left} 次。`);
+          }
+        }
+      }
+      await sleep(3000);
+    }
+  } finally {
+    if (stdinRaw) {
+      stdin.off('data', onKey);
+      stdin.setRawMode?.(false);
+      stdin.pause();
     }
   }
 
-  // 4) 轮询登录态
-  const ok = await drv.waitFor(`(() => {
-    const t = document.body ? document.body.innerText : '';
-    return /UID\\s*\\d{6,}/.test(t) || t.indexOf('总调频次数') >= 0 ? 'logged-in' : null;
-  })()`, 150000, 3000);
-  if (!ok) throw new Error('等待登录超时。重新跑一次会生成新二维码。');
-  log('登录成功');
+  if (!ok) {
+    log('');
+    log('二维码已失效或等待超时。');
+    log('→ 直接重跑一次采集脚本即可生成新二维码（旧进程不会占用登录态）。');
+    throw new Error('等待登录超时');
+  }
+  log('登录成功 ✓');
 }
 
 // ------------------------------------------------------------------ 取数
