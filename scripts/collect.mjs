@@ -517,6 +517,14 @@ async function loginFlow(drv, opts = {}) {
    */
   const waitMode = (argOf('wait', '') || process.env.ZZZ_WAIT_MODE || 'a').toLowerCase() === 'b' ? 'b' : 'a';
 
+  /*
+   * 有没有终端，决定「换二维码」的信号从哪来：
+   *   - 有 TTY：按 r
+   *   - 无 TTY：agent 写信号文件
+   * 必须在下面的日志之前算出来 —— 早先声明在使用之后，直接 TDZ 崩了。
+   */
+  const stdinRaw = Boolean(stdin.isTTY);
+
   log(`正在等待扫码…（二维码过期最多换 ${MAX_QR_REFRESH} 次）`);
   if (waitMode === 'b') {
     log('');
@@ -561,7 +569,7 @@ async function loginFlow(drv, opts = {}) {
   const onKey = (buf) => {
     if (buf.toString().toLowerCase() === 'r') wantRefresh = true;
   };
-  const stdinRaw = Boolean(stdin.isTTY);
+  // stdinRaw 已在上面声明（日志要用），这里只用不重复声明
   if (stdinRaw) {
     stdin.setRawMode?.(true);
     stdin.resume();
@@ -597,8 +605,22 @@ async function loginFlow(drv, opts = {}) {
       tick += 1;
       if (tick % 5 === 0) {
         const leftMin = Math.ceil((deadline - Date.now()) / 60000);
-        const snap = await drv.evaluate(snapshot);
-        const info = snap ? `页面 ${snap.len} 字：「${snap.head}」` : '页面读不到';
+        /*
+         * 心跳只是「我还活着」的信号，不能因为一次取快照失败就报警或中断。
+         *
+         * 两个坑都在这儿踩过：
+         *   1) drv.evaluate 出错返回的是 {__error}，它**是 truthy**，
+         *      直接读 snap.len 会得到 undefined，日志变成「页面 undefined 字」
+         *   2) 页面导航瞬间执行上下文会被销毁，属于瞬时错误，重试一次就好
+         */
+        let snap = await drv.evaluate(snapshot);
+        if (!snap || snap.__error) {
+          await sleep(600);
+          snap = await drv.evaluate(snapshot);
+        }
+        const info = !snap || snap.__error || typeof snap.len !== 'number'
+          ? `页面快照读不到（${snap?.__error ?? '空返回'}）`
+          : `页面 ${snap.len} 字：「${snap.head}」`;
         log(warnedExpired
           ? `仍在等待…（二维码已过期，需换一张；最多再等 ${leftMin} 分钟）｜${info}`
           : `仍在等待扫码…（二维码还剩约 ${Math.max(0, Math.round((QR_TTL_MS - qrAge) / 1000))} 秒有效）｜${info}`);
