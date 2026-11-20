@@ -49,7 +49,8 @@ agent 会自己打开官方页面、把二维码交给你扫、抓完数据出�
 登录有两条路，agent 会先问你要哪种：
 
 - **扫码**（默认）：装过米游社 App，扫一下最快
-- **短信验证码**：`--login=sms`，没装 App 也能用，手机号和验证码都由你自己在终端输入
+- **短信验证码**：`--login=sms`，没装 App 也能用。你不用碰终端——
+  在对话里把手机号和收到的验证码告诉 agent 就行，它替你填进官方登录框
 
 登录态存在浏览器 profile 里，之后再跑通常不用重新扫码。
 
@@ -61,6 +62,14 @@ node scripts/collect.mjs
 
 # 2) 出图
 node scripts/build-report.mjs      # → output/report.html
+```
+
+短信登录把手机号当参数传，验证码在短信到达后写入约定文件：
+
+```bash
+node scripts/collect.mjs --login=sms --phone=13xxxxxxxxx
+# 收到短信后，另开一个终端：
+echo 123456 > data/_verify/sms-code.txt     # 读一次就删
 ```
 
 想让浏览器显示出来、自己看着扫，加 `--headed`；想锁定零依赖方案，加 `--driver cdp`。

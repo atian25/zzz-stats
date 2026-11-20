@@ -21,7 +21,16 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
 
 const args = process.argv.slice(2);
+/*
+ * 读命令行参数。两种写法都支持：
+ *   --out output/report.html    （空格分隔）
+ *   --out=output/report.html    （等号）
+ * 只认空格形式时，传 --out=... 会被静默忽略、悄悄用默认值 ——
+ * 这类「没报错但没生效」的坑在 collect.mjs 里已经踩过一次，这里同样要防。
+ */
 const argOf = (name, fallback) => {
+  const eq = args.find((a) => a.startsWith(`--${name}=`));
+  if (eq) return eq.slice(name.length + 3) || fallback;
   const i = args.indexOf(`--${name}`);
   return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
 };
