@@ -520,6 +520,11 @@ const report = {
   tags,
   title: metrics.title,
   chart: {
+    /*
+     * 主图固定画角色池（独家）。把频道 id 一起带出去，
+     * 前端才知道「详情里哪一行能对应到柱子」——切到音擎/常驻时不该乱高亮。
+     */
+    channelId: CFG.channels.find((c) => c.key === 'character_up')?.id ?? null,
     rounds: charRounds,
     winRate,
     extremePulls: CFG.numbers.extremePulls,
