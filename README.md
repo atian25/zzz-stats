@@ -1,5 +1,7 @@
 # zzz-stats
 
+[![skills.sh](https://skills.sh/b/atian25/zzz-stats)](https://skills.sh/atian25/zzz-stats)
+
 把《绝区零》官方「调频统计工具」的数据抓下来，生成一份**首屏一屏可读**的抽卡报表，主图下方附六频道抽卡详情。
 
 这是一个 Agent Skill（`zzz-stats`）：扫码登录 → 抓官方接口 → 落本地 JSON → 按固定口径出图。
@@ -16,11 +18,15 @@
 
 ## 快速开始
 
-跟你的 Agent 说：
+```bash
+npx skills add atian25/zzz-stats
+```
+
+一条命令装到 Claude Code、Trae、Codex、Cursor 等支持 Agent Skill 的客户端；Agent 会把仓库装进自己的 skills 目录并直接开始跑。也可以直接跟你的 Agent 说：
 
 > 安装 `https://github.com/atian25/zzz-stats` 这个 skill，并帮我运行
 
-Claude Code、Trae、Codex、DeepSeek Harness 等支持 Agent Skill 的客户端都适用；Agent 会把仓库装进自己的 skills 目录并直接开始跑。手动安装也可以：
+手动安装：
 
 ```bash
 git clone https://github.com/atian25/zzz-stats.git ~/.claude/skills/zzz-stats
