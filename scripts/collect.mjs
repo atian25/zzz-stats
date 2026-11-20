@@ -24,6 +24,7 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
+import { inflateSync } from 'node:zlib';
 import { openDriver } from './drivers.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -454,11 +455,130 @@ async function loginFlow(drv, opts = {}) {
     return hit;
   };
 
+  /*
+   * 不引第三方依赖的 PNG 解码太重，这里直接解 PNG 拿像素矩阵：
+   * 二维码就是 data URL，我们只需要 n×n 的黑白格子。
+   * 用 Node 内置的 zlib 解 PNG 的 IDAT 即可（8 位灰度/RGB/RGBA 都覆盖）。
+   */
+  const pngToMatrix = (buf, n) => {
+    // 解析 PNG：跳过签名，读 IHDR 拿宽高与颜色类型，拼所有 IDAT 再 inflate
+    let off = 8;
+    let width = 0, height = 0, bitDepth = 0, colorType = 0;
+    const idat = [];
+    while (off < buf.length) {
+      const len = buf.readUInt32BE(off);
+      const type = buf.toString('ascii', off + 4, off + 8);
+      const data = buf.subarray(off + 8, off + 8 + len);
+      if (type === 'IHDR') {
+        width = data.readUInt32BE(0);
+        height = data.readUInt32BE(4);
+        bitDepth = data[8];
+        colorType = data[9];
+      } else if (type === 'IDAT') {
+        idat.push(data);
+      } else if (type === 'IEND') break;
+      off += 12 + len;
+    }
+    if (bitDepth !== 8) return null;
+    const channels = colorType === 6 ? 4 : colorType === 2 ? 3 : colorType === 0 ? 1 : 0;
+    if (!channels) return null;
+    const raw = inflateSync(Buffer.concat(idat));
+    const stride = width * channels;
+    const out = Buffer.alloc(width * height * channels);
+    let prev = Buffer.alloc(stride);
+    let p = 0;
+    for (let y = 0; y < height; y += 1) {
+      const filter = raw[p]; p += 1;
+      const line = Buffer.from(raw.subarray(p, p + stride)); p += stride;
+      // 逐行还原 PNG 的五种 filter
+      for (let i = 0; i < stride; i += 1) {
+        const a = i >= channels ? line[i - channels] : 0;
+        const b = prev[i];
+        const c = i >= channels ? prev[i - channels] : 0;
+        if (filter === 1) line[i] = (line[i] + a) & 0xff;
+        else if (filter === 2) line[i] = (line[i] + b) & 0xff;
+        else if (filter === 3) line[i] = (line[i] + ((a + b) >> 1)) & 0xff;
+        else if (filter === 4) {
+          const pa = Math.abs(b - c), pb = Math.abs(a - c), pc = Math.abs(a + b - 2 * c);
+          const pr = pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+          line[i] = (line[i] + pr) & 0xff;
+        }
+      }
+      line.copy(out, y * stride);
+      prev = line;
+    }
+    // 按模块中心采样成黑白矩阵
+    const m = width / n;
+    const g = [];
+    for (let y = 0; y < n; y += 1) {
+      const row = [];
+      for (let x = 0; x < n; x += 1) {
+        const sx = Math.floor(x * m + m / 2);
+        const sy = Math.floor(y * m + m / 2);
+        const idx = (sy * width + sx) * channels;
+        const lum = channels === 1 ? out[idx] : (out[idx] * 0.299 + out[idx + 1] * 0.587 + out[idx + 2] * 0.114);
+        row.push(lum < 128 ? 1 : 0);
+      }
+      g.push(row);
+    }
+    return g;
+  };
+
+  const matrixToSvg = (g, quiet = 2) => {
+    const n = g.length;
+    const used = Array.from({ length: n }, () => new Array(n).fill(false));
+    const rects = [];
+    for (let y = 0; y < n; y += 1) {
+      for (let x = 0; x < n; x += 1) {
+        if (!g[y][x] || used[y][x]) continue;
+        let w = 0;
+        while (x + w < n && g[y][x + w] && !used[y][x + w]) w += 1;
+        let h = 1;
+        while (y + h < n && Array.from({ length: w }, (_, k) => g[y + h][x + k] && !used[y + h][x + k]).every(Boolean)) h += 1;
+        for (let dy = 0; dy < h; dy += 1) for (let dx = 0; dx < w; dx += 1) used[y + dy][x + dx] = true;
+        rects.push([x, y, w, h]);
+      }
+    }
+    const d = rects.map(([a, b, c, e]) => `M${a} ${b}h${c}v${e}h-${c}z`).join('');
+    const size = n + quiet * 2;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges">` +
+      `<rect width="${size}" height="${size}" fill="#fff"/>` +
+      `<g transform="translate(${quiet},${quiet})" fill="#000"><path d="${d}"/></g></svg>`;
+  };
+
+  /*
+   * 存二维码。
+   *
+   * 每次换图都写**新文件名**（带时间戳后缀），而不是覆盖 login-qr.png：
+   *   - 覆盖同名文件时，任何按 URL 缓存的地方（浏览器、图片组件、CDN 中间层）
+   *     都可能继续显示旧图，用户扫到的是一张已经作废的码
+   *   - 新文件名 = 新 URL，缓存自然失效，不需要靠 header 去赌
+   * 同时保留一份 login-qr.png 指向最新，方便人肉查看和脚本引用。
+   * 另外输出同名 .svg，agent 直接把内容内联进聊天 UI 就行。
+   */
+  let qrSeq = 0;
   const saveQr = (q) => {
     mkdirSync(VERIFY_DIR, { recursive: true });
-    const file = join(VERIFY_DIR, 'login-qr.png');
-    writeFileSync(file, Buffer.from(q.src.split(',')[1], 'base64'));
-    return file;
+    qrSeq += 1;
+    const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+    const bytes = Buffer.from(q.src.split(',')[1], 'base64');
+    const base = `login-qr-${stamp}-${qrSeq}`;
+    const unique = join(VERIFY_DIR, `${base}.png`);
+    writeFileSync(unique, bytes);
+    try { writeFileSync(join(VERIFY_DIR, 'login-qr.png'), bytes); } catch {}
+
+    // 顺带产出 SVG：内联渲染用，失败不影响主流程
+    let svgFile = null;
+    try {
+      const n = q.w >= 260 ? 65 : Math.round(q.w / 4);
+      const g = pngToMatrix(bytes, n);
+      if (g) {
+        const svg = matrixToSvg(g);
+        svgFile = join(VERIFY_DIR, `${base}.svg`);
+        writeFileSync(svgFile, svg);
+      }
+    } catch { /* SVG 只是锦上添花 */ }
+    return { png: unique, svg: svgFile };
   };
 
   const QR_TTL_MS = 120_000;   // 官方二维码约 2 分钟失效
@@ -466,11 +586,12 @@ async function loginFlow(drv, opts = {}) {
   let issuedAt = Date.now();
 
   if (qr?.src) {
-    const file = saveQr(qr);
+    const { png: file, svg: svgFile } = saveQr(qr);
     const expires = new Date(issuedAt + QR_TTL_MS);
     log(`二维码已保存（${qr.w}×${qr.h}）：${file}`);
     log(`截取时间 ${new Date(issuedAt).toLocaleTimeString('zh-CN', { hour12: false })}，` +
         `约 ${expires.toLocaleTimeString('zh-CN', { hour12: false })} 失效（2 分钟）`);
+    if (svgFile) log(`内联用 SVG：${svgFile}`);
     log('请用米游社 App 扫码，打开这张图扫即可。');
   } else {
     log('ℹ️  没读到二维码图片（可能画在 canvas 上）。请在浏览器窗口里直接扫码。');
@@ -639,10 +760,18 @@ async function loginFlow(drv, opts = {}) {
           qr = await grabQr();
           const left = MAX_QR_REFRESH - refreshCount;
           if (qr?.src) {
-            const file = saveQr(qr);
+            const { png: file, svg: svgFile } = saveQr(qr);
+            /*
+             * 换到新码就必须重置计时起点。
+             * 早先漏了这一步：新码已经拿到，但过期判断还拿旧 issuedAt 在算，
+             * 于是新码一出来就被标成「已过期」——用户拿到的永远是一张判定过期的图。
+             */
+            issuedAt = Date.now();
+            warnedExpired = false;
             log(hit === 'no-expired-node'
               ? `二维码尚未过期，仍是同一张（${file}）。剩余 ${left} 次。`
               : `已换新二维码（${hit}）：${file}。剩余 ${left} 次。`);
+            if (svgFile) log(`内联用 SVG：${svgFile}`);
           } else {
             log(`刷新后没读到二维码（${hit}）。剩余 ${left} 次。`);
           }
