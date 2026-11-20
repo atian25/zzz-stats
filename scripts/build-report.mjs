@@ -26,7 +26,14 @@ const argOf = (name, fallback) => {
   return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
 };
 const DATA_DIR = resolve(ROOT, argOf('data', 'data'));
-const OUT_FILE = resolve(ROOT, argOf('out', 'report.html'));
+/*
+ * 默认输出到 .out/report.html，而不是仓库根。
+ *
+ * 原因：这个文件每次构建都会变，放在根目录容易和「已提交的产物」混淆，
+ * 也容易让用户打开一份旧的还以为是新的。固定路径 + 已被 .gitignore 忽略，
+ * 刷新同一个地址就是最新版。
+ */
+const OUT_FILE = resolve(ROOT, argOf('out', '.out/report.html'));
 
 const CFG = JSON.parse(readFileSync(join(ROOT, 'config/report.json'), 'utf8'));
 
@@ -667,7 +674,7 @@ if (report.totals.pullsOfficial != null && report.totals.pullsOfficial !== nonBa
 }
 
 const sizeMB = (Buffer.byteLength(html) / 1024 / 1024).toFixed(2);
-console.log(`report.html → ${OUT_FILE}（${sizeMB} MB，内嵌 ${inlined} 张图标，可单独发送）`);
+console.log(`报表 → ${OUT_FILE}（${sizeMB} MB，内嵌 ${inlined} 张图标，可单独发送）`);
 console.log(`  角色池 ${metrics.upCount} UP / ${metrics.pulls} 抽 / 每 UP ${metrics.pullsPerUp} / 不歪 ${metrics.winRate}% / 称号「${metrics.title?.name}」`);
 console.log(`  KPI: ${report.kpi.map((k) => `${k.label} ${k.value}${k.unit}`).join(' · ')}`);
 console.log(`  标签: ${tags.map((t) => t.name).join(' / ') || '（无）'}`);
