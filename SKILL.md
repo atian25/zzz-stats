@@ -209,8 +209,8 @@ data/
 
 ## 下一步：报表
 
-采集完成后按 `references/report-rules.md` 生成单屏 HTML 报表（指标公式、配色分档、tooltip 文案、称号与标签计数、十连多金归属、头部布局、单屏与截图验证要求），照此执行，不要重新发明。
+采集完成后按 `references/report-rules.md` 生成 HTML 报表（指标公式、配色分档、tooltip 文案、称号与标签计数、十连多金归属、头部布局、首屏单屏 + 第二屏抽卡详情、截图验证要求），照此执行，不要重新发明。
 
 - 报表需要显式表达"运气好"的维度：`record_time` 同秒 且 `sort` 差 ≤ 9 的两金算**十连多金**（判定依据见 `references/api.md`），单独计次，不要折算成普通出金。
-- 报表产物：`report.html` + `assets/charts.js` + `assets/avatars/`，依赖本地 ECharts 与字体，不联网、不用 CDN。
+- 报表产物：`report.html` + `assets/charts.js` + `assets/avatars/` + `assets/items/`，依赖本地 ECharts 与字体，不联网、不用 CDN。
 - 需要 UIGF/CSV 导出时再按 `references/api.md` 的字段自行组织，当前未实现。

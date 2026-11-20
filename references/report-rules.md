@@ -105,15 +105,26 @@
 - 图标用内联 SVG 三态（睁眼 / 睁眼加斜线 / 闭眼），由按钮 `data-state="0|1|2"` 切显隐；`title` / `aria-label` 写下一步动作：`打码 UID` → `打码昵称` → `显示全部`。
 - **对外截图（README、分享图）必须先点到「全打码」态（从默认点 2 下）**，再截图。
 
+### 5.1 抽卡详情（第二屏）
+
+- 首屏（hero + 主图）占满一屏，详情是下方独立面板；首屏底部不要露出详情面板的边线。
+- 面板头：`抽卡详情 | 独家频段 音擎频段 常驻频段 邦布频段 复刻角色 复刻音擎`，激活标签金色 + 2px 下划线；右侧 meta 写 `N 金 · 每金 X 抽 · 从新到旧`。
+- 数据覆盖全部 6 个频段（`data/` 的 hist + cur 合并）：独家 41 / 音擎 11 / 常驻 9 / 邦布 34 / 复刻角色 1 / 复刻音擎 0，合计 96 金，与 S 级总数一致。
+- 每行：40px 方形圆角图标 + 横向条 + 右对齐 26px「歪」红章（无章时留同宽占位）。
+- 横条：宽度 = 该金抽数 / 100（上限 100%），最小 44px；绿 = ≤ 该频段每金均值，红斜纹 = > 均值；条内写 `N抽`。
+- 歪章只出现在有 50/50 的频段（独家 / 音擎 / 复刻角色 / 复刻音擎）的非 UP 金；常驻、邦布不出现。
+- 列表按时间从新到旧，内部滚动（`max-height: 62vh`，窄屏 68vh）；空频段显示「这个频段还没有 S 级记录」。
+- 图标全部本地化：`assets/items/<item_id>.png`（96px 方形，居中裁切），不要引用官方 CDN。
+
 ## 6. 实现约束
 
 - 单文件 `report.html` + `assets/charts.js`，ECharts **SVG renderer**，`echarts.min.js` 与字体全部本地，禁止 CDN；图片用相对路径。
-- 头像来源：`https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_<id>.png`，PIL 4× 超采样圆形遮罩缩到 96px。
+- 图标来源：角色 `role_square_avatar_<id>.png`，音擎/邦布用记录里的 `icon`；下载后统一 96px 方形居中裁切入 `assets/items/<item_id>.png`；主图圆头像另存 `assets/avatars/`（PIL 4× 超采样圆形遮罩）。
+- 首屏：`.screen { height: calc(100vh - 26px); display:flex; flex-direction:column }`，图表区 flex 撑满；1440×900 与 1280×800 首屏必须无滚动、图例单行；抽卡详情在第二屏，页面整体可纵向滚动。
 - ECharts 技巧：
   - 头像：`scatter` + `symbol: 'image://…'`，x 用 **0 基索引** `[i, y]`，`symbolOffset` 做垂直错位（UP 一个高度、歪出再高一层）。
   - 柱内任意位置写字：`scatter` + `symbolSize: 1` + 透明 `itemStyle` + `label`。
   - 双 x 轴、`markLine` 百分比上限都已废弃，不要加回来。
-- 单屏：`.wrap { height:100vh; display:flex; flex-direction:column }`，图表区 flex 撑满；1440×900 与 1280×800 必须无滚动、图例单行。
 - 验证：headless Chrome `--window-size=1440,900|1280,800` + `--virtual-time-budget=2500` + `--hide-scrollbars` 截图核对；tooltip 用临时副本注入 `dispatchAction({type:'showTip'})` 截图，用完删除。
 
 ## 7. 示例数据要点（用于回归测试）
@@ -122,3 +133,4 @@
 - 最长连 UP 4 次 ×2；最长连歪 3 次 ×3；十连双金 ×2；似非不非 ×1（菲欧妮 24 抽，歪 21 抽）。
 - 极欧蓝柱：40、24、8 抽各一根；称号 87.9 → `欧气满满大欧皇`。
 - 南宫羽 45 抽（44 直出 + 十连副金猫又 1 抽），tip 含「似非不非，白赚大保底」；维琳娜 52 抽但不计胜场（`guar`），tip 为「保底 52 抽（上个池子歪了）」，累计不歪率末值 48.1%。
+- 抽卡详情：六标签 41 / 11 / 9 / 34 / 1 / 0 金；独家首行菲欧妮 3 抽（绿）、珂蕾妲 21 抽（绿 + 歪章）、蕾米埃尔 78 / 71 抽（红斜纹），合计 96 金与 S 级总数一致。
