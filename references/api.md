@@ -150,6 +150,46 @@
 
 需要 4 星与逐抽记录时，只能走游戏内 `getGachaLog` + authkey（约 6 个月），与本接口是两套数据源。
 
+### authkey 怎么来（已实测，2026-11-20）
+
+**结论：authkey 能用登录 cookie 换出来，不需要 App 特权。** 之前误判成「浏览器拿不到」，
+是因为找错了端点 —— `genAuthKey` 确实是米游社 App 的原生桥（`x("genAuthKey")`），
+但账号 SDK 里另有一条**纯 HTTP** 路径：
+
+```
+POST https://passport-api.mihoyo.com/account/binding/api/genAuthKeyByCookieToken
+Content-Type: application/json
+x-rpc-source: v2.webLogin
+（credentials: include，即带登录 cookie）
+
+{"game_biz":"nap_cn","region":"prod_gf_cn","auth_appid":"webview_gacha","game_uid":"<uid>"}
+
+→ {"retcode":0,"data":{"sign_type":2,"authkey_ver":1,"authkey":"SEx0c8Fq..."}}
+```
+
+拿到的 authkey 约 344 字符、有效期约 24 小时，直接拼进：
+
+```
+https://public-operation-nap.mihoyo.com/common/gacha_record/api/getGachaLog
+  ?authkey_ver=1&sign_type=2&auth_appid=webview_gacha
+  &init_log_gacha_type=1001&gacha_type=1001     ← 注意：绝区零用 1001/2001
+  &page=1&size=20&end_id=0&lang=zh-cn&game_biz=nap_cn
+  &authkey=<authkey>
+```
+
+**gacha_type 是两套编号**，别混：
+
+| 用途 | 编号 |
+|---|---|
+| 活动页接口（本 skill 主力） | `1` 常驻 / `2` 独家 / `3` 音擎 / `5` 邦布 / `102` 独家重映 / `103` 音擎回响 |
+| `getGachaLog`（第三方工具用） | `1001` 角色 / `2001` 音擎 |
+
+实测返回：`retcode:0`，`list[].name` 为「兔能环」「菲欧妮」等真实记录。
+
+**风险提示**：authkey 是可直接拉取抽卡记录的凭证（比 cookie 更直接）。
+`collect.mjs --authkey` 只把它**打印到终端**，绝不写进 `data/` 或任何产物文件；
+有效期约 24 小时，用完自然失效。
+
 ## 变更风险
 
 - 三个接口均为活动页内部接口，无公开文档，随时可能改路径或字段。
