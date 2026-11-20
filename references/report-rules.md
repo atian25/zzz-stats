@@ -56,7 +56,9 @@ sum(cur_records[].count) + type_stats[].next_s_cur_times == type_stats[].total_c
 ## 2. 首屏
 
 - **标题行**：`昵称 · UID 胶囊 · 大标题 · 隐私开关（眼睛）`，右侧留白处放 **GitHub 仓库链接**，一行不换行。
-  - 链接指向报表来源，方便别人反查「这图是怎么生成的」；地址与文案在 `config/report.json` 的 `copy.repo`。
+  - **显示的是安装命令 `npx skills add atian25/zzz-stats`，不是裸 URL**，点击仍打开仓库。
+    看到报表的人最可能想做的是装上它，一条能直接粘的命令比还要再翻 README 的地址有用。
+    地址与文案在 `config/report.json` 的 `copy.repo`。
   - 文字前带 **GitHub 图标**（内联 SVG，`currentColor` 描边，13px），整行用 `inline-flex` 垂直居中。
   - 样式要低调：等宽小字、灰色，hover 时图标与文字一起变主题金色；`target="_blank" rel="noopener"`。
   - 只替换文字节点、保留图标（`#repo-text`），不要用 `textContent` 整段覆盖，否则 SVG 会被清掉。

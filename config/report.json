@@ -326,8 +326,8 @@
     "legendTail": "官方接口 · {goldCount} 条 S 记录",
     "repo": {
       "url": "https://github.com/atian25/zzz-stats",
-      "label": "github.com/atian25/zzz-stats",
-      "_comment": "报表右上角的来源链接。改仓库地址只改这里。"
+      "label": "npx skills add atian25/zzz-stats",
+      "_comment": "报表右上角显示安装命令，点击打开仓库。为什么显示命令而不是 URL：看到报表的人最可能想做的是装上它，一条能直接粘的命令比一个还要再找 README 的地址更有用。改仓库只改这里，图标会自动保留。"
     }
   },
   "privacy": {
