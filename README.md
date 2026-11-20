@@ -4,7 +4,7 @@
 
 跟你的 Agent 说：
 
-> 安装 https://github.com/atian25/zzz-stats 这个 skill，并帮我运行
+> 安装 https://github.com/atian25/zzz-stats 这个 skill，并帮我运行，提取绝区零抽卡记录
 
 <sub>[![skills.sh](https://skills.sh/b/atian25/zzz-stats)](https://skills.sh/atian25/zzz-stats) · 也可以自己装：`npx skills add atian25/zzz-stats`</sub>
 
