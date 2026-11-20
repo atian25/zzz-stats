@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { inflateSync } from 'node:zlib';
+import { createServer } from 'node:http';
 import { openDriver } from './drivers.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -148,7 +149,83 @@ const pageState = `(() => {
   };
 })()`;
 
-// ---------------------------------------------------------------- 扫码登录
+// ------------------------------------------------------------ 二维码图片服务
+
+/*
+ * 二维码怎么给用户看，本质是个**成本问题**。
+ *
+ * 实测三条路（一张 260×260 的真二维码）：
+ *   - SVG 内联进回答：7361 字符 ≈ 2100 tokens/张。刷新 3 次就是 6300 tokens。
+ *     而且它在流式输出里要等文本传完才渲染，用户看到的是先一个灰块。
+ *   - base64 塞 <image src>：多数富组件直接丢弃（不支持 data: 协议）。
+ *   - 图片 URL：~10 tokens。
+ *
+ * 差 200 倍。图形的字节不该走对话文本 —— 所以由脚本自己起一个**只读**的
+ * 本地 http 服务，把二维码目录挂出去，回答里只放一行 URL。
+ *
+ * 三条安全约束，缺一不可：
+ *   1. 只监听 127.0.0.1（不对外网暴露）
+ *   2. 只服务白名单后缀（.png/.svg）且路径必须落在二维码目录内（防目录穿越）
+ *   3. 用完即关 —— 由 main 的 finally 调用 stopImageServer()
+ *
+ * 端口从 0 开始让系统分配，避免固定的 8899 撞车。
+ */
+let imageServer = null;
+
+function startImageServer(dir, log) {
+  return new Promise((resolvePromise, reject) => {
+    const rootDir = resolve(dir);
+    const server = createServer((req, res) => {
+      try {
+        const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+        const name = urlPath.replace(/^\/+/, '');
+        // 只允许当前目录下的普通文件名，挡掉 ../ 和绝对路径
+        if (!name || name.includes('/') || name.includes('\\') || name.includes('..')) {
+          res.writeHead(404).end('not found');
+          return;
+        }
+        if (!/\.(png|svg)$/i.test(name)) {
+          res.writeHead(404).end('not found');
+          return;
+        }
+        const file = join(rootDir, name);
+        if (!file.startsWith(rootDir)) {
+          res.writeHead(404).end('not found');
+          return;
+        }
+        if (!existsSync(file)) {
+          res.writeHead(404).end('not found');
+          return;
+        }
+        const body = readFileSync(file);
+        res.writeHead(200, {
+          'Content-Type': name.endsWith('.svg') ? 'image/svg+xml' : 'image/png',
+          'Content-Length': body.length,
+          // 二维码是动态文件，别让浏览器缓存旧图
+          'Cache-Control': 'no-store, must-revalidate',
+        });
+        res.end(body);
+      } catch {
+        try { res.writeHead(500).end('error'); } catch {}
+      }
+    });
+
+    server.on('error', reject);
+    // 端口 0 = 让系统挑一个空闲端口
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      imageServer = { server, port, dir: rootDir };
+      log(`二维码图片服务：http://127.0.0.1:${port}/（仅本机、只读、取完即关）`);
+      resolvePromise(imageServer);
+    });
+  });
+}
+
+function stopImageServer() {
+  if (!imageServer) return;
+  try { imageServer.server.close(); } catch {}
+  imageServer = null;
+}
 
 /**
  * @param {import('./drivers.mjs').CdpDriver | any} drv 驱动实例（接口见 drivers.mjs）
@@ -578,7 +655,13 @@ async function loginFlow(drv, opts = {}) {
         writeFileSync(svgFile, svg);
       }
     } catch { /* SVG 只是锦上添花 */ }
-    return { png: unique, svg: svgFile };
+    /*
+     * 图片 URL：给对方一个能直接放进 <image src> 的地址。
+     * 服务没起来（比如用户本机手动跑、只要文件路径）就退回 null，
+     * 调用方据此降级到「给路径」。
+     */
+    const url = imageServer ? `http://127.0.0.1:${imageServer.port}/${base}.png` : null;
+    return { png: unique, svg: svgFile, url, svgUrl: imageServer ? `http://127.0.0.1:${imageServer.port}/${base}.svg` : null };
   };
 
   const QR_TTL_MS = 120_000;   // 官方二维码约 2 分钟失效
@@ -586,12 +669,14 @@ async function loginFlow(drv, opts = {}) {
   let issuedAt = Date.now();
 
   if (qr?.src) {
-    const { png: file, svg: svgFile } = saveQr(qr);
+    const { png: file, svg: svgFile, url } = saveQr(qr);
     const expires = new Date(issuedAt + QR_TTL_MS);
     log(`二维码已保存（${qr.w}×${qr.h}）：${file}`);
     log(`截取时间 ${new Date(issuedAt).toLocaleTimeString('zh-CN', { hour12: false })}，` +
         `约 ${expires.toLocaleTimeString('zh-CN', { hour12: false })} 失效（2 分钟）`);
-    if (svgFile) log(`内联用 SVG：${svgFile}`);
+    // 给 agent 一行能直接塞进图片组件的地址；没有服务就给文件路径
+    if (url) log(`二维码图片地址：${url}`);
+    else if (svgFile) log(`内联用 SVG：${svgFile}`);
     log('请用米游社 App 扫码，打开这张图扫即可。');
   } else {
     log('ℹ️  没读到二维码图片（可能画在 canvas 上）。请在浏览器窗口里直接扫码。');
@@ -760,7 +845,7 @@ async function loginFlow(drv, opts = {}) {
           qr = await grabQr();
           const left = MAX_QR_REFRESH - refreshCount;
           if (qr?.src) {
-            const { png: file, svg: svgFile } = saveQr(qr);
+            const { png: file, svg: svgFile, url } = saveQr(qr);
             /*
              * 换到新码就必须重置计时起点。
              * 早先漏了这一步：新码已经拿到，但过期判断还拿旧 issuedAt 在算，
@@ -771,7 +856,8 @@ async function loginFlow(drv, opts = {}) {
             log(hit === 'no-expired-node'
               ? `二维码尚未过期，仍是同一张（${file}）。剩余 ${left} 次。`
               : `已换新二维码（${hit}）：${file}。剩余 ${left} 次。`);
-            if (svgFile) log(`内联用 SVG：${svgFile}`);
+            if (url) log(`二维码图片地址：${url}`);
+            else if (svgFile) log(`内联用 SVG：${svgFile}`);
           } else {
             log(`刷新后没读到二维码（${hit}）。剩余 ${left} 次。`);
           }
@@ -906,6 +992,18 @@ async function main() {
 
   try {
     await drv.open(PAGE);
+
+    /*
+     * 起一个只读图片服务，让二维码能以 URL 形式给出去（约 10 tokens），
+     * 而不是把 7k 字符的 SVG 塞进回答（约 2100 tokens）。
+     * 失败不影响主流程 —— saveQr 会退回「只给文件路径」。
+     */
+    try {
+      await startImageServer(VERIFY_DIR, log);
+    } catch (e) {
+      log(`⚠️  图片服务没起来（${e.message.split('\n')[0]}），二维码只给文件路径。`);
+    }
+
     await loginFlow(drv, { mode: argOf('login', process.env.ZZZ_LOGIN_MODE || 'qr') });
 
     const uid = await readUid(drv);
@@ -963,10 +1061,22 @@ async function main() {
     }
     if (bad === 0) log('✅ 6/6 频道完整性校验通过');
 
-    log(`已写入 ${DATA_DIR}`);
-    log('下一步：node scripts/build-report.mjs');
+    /*
+     * 收尾要说清楚。
+     * 进程跑完就退出，终端静止 —— 用户（和 agent）都容易误判成「卡住了/没识别」。
+     * 所以最后必须有一段总结，把「已经做完了什么」讲明白。
+     */
+    const totPulls = Object.values(summary).reduce((s, v) => s + v.pulls, 0);
+    log('');
+    log('──────────────── 完成 ────────────────');
+    log(`UID ${uid} · 6 个频道 · 合计 ${totPulls} 抽（不含邦布）`);
+    log(`数据已落盘：${DATA_DIR}`);
+    log('下一步：node scripts/build-report.mjs   → 生成报表');
+    log('✅ 采集结束，进程即将退出。');
   } finally {
     await drv.close?.();
+    // 图片服务只在采集期间需要，取完立刻收掉，不留监听端口
+    stopImageServer();
   }
 }
 
