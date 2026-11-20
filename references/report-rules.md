@@ -121,7 +121,10 @@
 ## 6. 实现约束
 
 - 单文件 `report.html` + `assets/charts.js`，ECharts **SVG renderer**，`echarts.min.js` 与字体全部本地，禁止 CDN；图片用相对路径。
-- 图标来源：角色 `role_square_avatar_<id>.png`，音擎/邦布用记录里的 `icon`；下载后统一 96px 方形居中裁切入 `assets/items/<item_id>.png`；主图圆头像另存 `assets/avatars/`（PIL 4× 超采样圆形遮罩）。
+- 图标走本地缓存，报表里不出现任何外链：`assets/items/<item_id>.png`（96px 方形，角色/音擎/邦布通用）与 `assets/avatars/<role_id>.png`（96px 圆形，主图用）。skill 仓库自带一份缓存随 skill 分发，断网也能出图。
+  - 生成顺序：**先查缓存**，命中直接复制；缺哪个 `item_id` 才下载（角色 `role_square_avatar_<id>.png`，音擎/邦布用记录里的 `icon`），居中裁切 96px 后写回缓存目录，下次复用。
+  - 下载失败（超时、非图片、SSL 报错）时用 `assets/items/_fallback.png` 顶上；报表详情图标另加 `onerror` 回退到同一张占位图。**不允许裂图，也不允许退回官方 CDN。**
+  - 本机 Python `urllib` 直连 CDN 常报 `CERTIFICATE_VERIFY_FAILED`，改用 `curl --retry 2`；darkmatter 单张约 7 秒，批量下载用 4–6 并发。
 - 首屏：`.screen { height: calc(100vh - 26px); display:flex; flex-direction:column }`，图表区 flex 撑满；1440×900 与 1280×800 首屏必须无滚动、图例单行；抽卡详情在第二屏，页面整体可纵向滚动。
 - ECharts 技巧：
   - 头像：`scatter` + `symbol: 'image://…'`，x 用 **0 基索引** `[i, y]`，`symbolOffset` 做垂直错位（UP 一个高度、歪出再高一层）。

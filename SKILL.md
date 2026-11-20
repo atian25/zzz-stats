@@ -213,4 +213,5 @@ data/
 
 - 报表需要显式表达"运气好"的维度：`record_time` 同秒 且 `sort` 差 ≤ 9 的两金算**十连多金**（判定依据见 `references/api.md`），单独计次，不要折算成普通出金。
 - 报表产物：`report.html` + `assets/charts.js` + `assets/avatars/` + `assets/items/`，依赖本地 ECharts 与字体，不联网、不用 CDN。
+- 图标缓存：`assets/avatars/`（角色圆头像）与 `assets/items/`（角色/音擎/邦布方图标）随 skill 自带，生成报表时先复制缓存，缺的 `item_id` 才下载并写回；下载失败用 `assets/items/_fallback.png` 兜底，不要裂图、不要引用 CDN。
 - 需要 UIGF/CSV 导出时再按 `references/api.md` 的字段自行组织，当前未实现。
