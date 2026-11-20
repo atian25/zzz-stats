@@ -91,7 +91,9 @@ Playwright 装在 agent 自己的 profile 里也能被找到（自动搜索 `cwd
 | 接口基址 | `https://act-api-takumi.mihoyo.com/event/nap_gacha_record` | `https://sg-act-public-api.hoyolab.com/event/nap_gacha_record` |
 | region | `prod_gf_cn` | `prod_gf_jp` / `prod_gf_us` / `prod_gf_eu` / `prod_gf_sg`（按账号实际值） |
 
-切换时用 `--region` 传 region，并把页面/接口基址换成上表右列。
+切换时只需 `--region` 传 region —— `scripts/collect.mjs` 会按 region 整套切页面与接口基址
+（国服 `mihoyo.com` / 国际服 `hoyolab.com`），登录 iframe 的 host 判定也跟着切。
+官方再换域名时用 `--api <url> --page <url>` 覆盖，或设 `ZZZ_LOGIN_FRAME_RE` 改登录 iframe 正则。
 国际服的实际 region 值从 `/api/zzz/index` 的请求参数里读，读不到时按账号所在服务器兜底，并在结果里注明。
 
 ## 2. 打开页面并判断是否已登录
@@ -536,6 +538,14 @@ node scripts/build-report.mjs --data data --out output/report.html
 可以直接发给别人、单独打开，不需要附带 `assets/` 目录。
 控制台会打印关键指标与校验告警——**把这些告警当失败处理，不要带着告警交付**。
 
+**「改配置就生效」是硬约定**：配色经 CSS 变量注入（`--accent` / `--detail-good` / `--detail-bad` / `--loss-stamp`），
+面板标题与勾选文案在构建时替换模板占位符（`copy.chartTitle` / `copy.detailTitle` / `copy.mergeToggle`）。
+新增配置项时也要按这两条通道接上，**不要在 CSS/JS 里另写一份硬编码**——那会让配置变成摆设（踩过）。
+
+**成本口径一律扣垫抽**：每金 / 每 UP 均用「官方总抽 − `next_s_cur_times`」，与官方 `avr_up_count` 对齐；
+垫抽进度由 `channels[].pityCap`（常驻/独家/重映 90、音擎/回响/邦布 80）算出百分比，
+**只显示在第二屏详情正文里**（问号方块 + 绿色斜纹条），主图面板头不放。
+
 **默认不要读 `references/report-rules.md`。** 模板已经实现全部规则，一条命令就是完整产物。
 只有当下面任一情况成立时，才去读那份规范：
 
@@ -547,19 +557,23 @@ node scripts/build-report.mjs --data data --out output/report.html
 
 | 层 | 位置 | 改什么 |
 |---|---|---|
-| **配置** | `config/report.json` | 称号分档、标签阈值与去重、配色值、文案、图例、频道定义、隐私规则。**90% 的调整都在这层** |
+| **配置** | `config/report.json` | 称号分档、标签阈值与去重、配色值、文案、图例、频道定义、保底抽数（`channels[].pityCap`）、隐私规则。**90% 的调整都在这层**，改完重跑构建即生效 |
 | **实现** | `scripts/build-report.mjs` + `assets/report/` | 口径算法与版式。改这层要同步 `report-rules.md` |
-| **资源** | `assets/report/icons/`、`assets/avatars/`、`assets/items/` | `icons/` 是 64px 压缩版，**构建时内嵌进 HTML 用的就是它**；`avatars/` 与 `items/` 是 96px 原图，供重新生成 `icons/` |
+| **资源** | `assets/report/icons/`、`assets/avatars/`、`assets/items/` | `icons/` 是 64px 压缩版，**构建时内嵌进 HTML 用的就是它**；`avatars/` 与 `items/` 是 96px 原图。缺图**不要手动找**，跑 `scripts/sync-icons.mjs` |
 | **规范** | `references/report-rules.md` | 记录「为什么这样算、为什么这样画」以及踩过的坑。**不要为了改行为去改它**；它是给维护者看的 |
 
 改配置不需要读规范；改实现必须先读规范、改完再回来同步。
 
-**新增角色/音擎图标后要重跑一次压缩**（否则报表里那张图会用占位图）：
+**图标不用手动找**：接口每条记录都带 `icon` URL，跑一次就补齐缺的（会自动重跑 64px 压缩）：
 
 ```bash
 python3 -m pip install pillow      # 只需一次
-node scripts/make-icons.mjs        # assets/{avatars,items}/ 96px → assets/report/icons/ 64px
+node scripts/sync-icons.mjs        # 扫 data/ 里所有 item_id，缺哪张下哪张 + 刷新 64px
+node scripts/sync-icons.mjs --check   # 只检查不下载，CI / 自检用
 ```
+
+`sync-icons.mjs` 会把头像与图标都裁成 96px 方形存档，再调 `make-icons.mjs` 生成 64px 版；
+下载失败的会列出来，报表用占位图兜底，不会裂图。
 
 `make-icons.mjs` 会把头像做圆形透明蒙版、物品保持方形，边长统一缩到 64px。
 报表构建时把这些 64px 图 base64 内嵌进 HTML——**不缩就会让产物从 3.7 MB 涨到 6 MB+**。

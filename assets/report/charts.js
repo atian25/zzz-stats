@@ -9,6 +9,12 @@
   const R = window.__REPORT__;
   if (!R) return;
   const CFG = R.config;
+  /*
+   * 图标去重表：数据里只存 hash（avatarKey / iconKey），真正 base64 在 R.icons 里各存一份。
+   * 这张表把 232 次内嵌压成 74 份，HTML 从 3.7 MB 降到 2.0 MB，读图行为完全一致。
+   */
+  const ICONS = R.icons || {};
+  const iconOf = (key) => (key && ICONS[key]) || '';
 
   // ------------------------------------------------------------- 小工具
 
@@ -186,10 +192,6 @@
    * 图表区是 flex 撑满的，标签每多一行就压缩图表高度；
    * 超过两行会把柱体和图例挤在一起，所以超出部分折叠成「+N」，点开才展开。
    */
-  // 只保留一行：第二行就会把图表压到 476px（1280 宽），柱体和图例开始打架
-  const TAG_ROW_LIMIT = 1;
-  let tagsExpanded = false;
-
   function renderTags() {
     const row = $('#tags');
     row.innerHTML = '';
@@ -200,6 +202,12 @@
         : t.id === 'multi-gold' ? 'neutral'
         : t.id === 'near-miss' ? 'info'
         : 'positive';
+      /*
+       * 颜色来自 config.tags.tone（构建时已经按 tone 名解析成色值写进每个 tag），
+       * 不再依赖 CSS 里再写一份同义的色值——否则改配置里的正/负向颜色不会生效。
+       * 用 style.color 直接给值，CSS 的 data-tone 只保留兜底。
+       */
+      if (t.tone) n.style.color = t.tone;
       n.appendChild(el('i', 'dot'));
       n.appendChild(document.createTextNode(t.name));
       n.dataset.tip = t.tip || t.name;
@@ -286,8 +294,8 @@
     const LABEL_LINE = 18;   // 给总抽数留出的一行高度
     const avatarItems = [];
     rounds.forEach((r, i) => {
-      // avatar 字段是 build-report 内嵌好的 data URL（不再依赖 assets 目录）
-      const stack = [...r.losts.map((x) => x.avatar), r.avatar, ...r.side.map((x) => x.avatar)].filter(Boolean);
+      // avatarKey 是构建时算的图标 hash，iconOf() 从 R.icons 取出 data URL（不再依赖 assets 目录）
+      const stack = [...r.losts.map((x) => iconOf(x.avatarKey)), iconOf(r.avatarKey), ...r.side.map((x) => iconOf(x.avatarKey))].filter(Boolean);
       stack.forEach((src, layer) => {
         avatarItems.push({
           value: [i, r.total],
@@ -309,6 +317,14 @@
 
     const maxTotal = Math.max(...rounds.map((r) => r.total), 1);
     const axisMax = Math.ceil((maxTotal + 18) / 30) * 30;
+    /*
+     * 不歪率右轴上限按数据定，不写死 60%。
+     * 写死的话，比这个账号更欧的曲线会顶到框外被截断（50% 的号看不出来，70% 的号就会）。
+     * 规则：峰值向上取整到 10 的倍数，留 10% 头部空间，但上限不超过 100
+     * （不歪率是百分比，110% 的坐标轴会被读成 bug）。
+     */
+    const winPeak = Math.max(0, ...R.chart.winRate);
+    const winMax = Math.min(100, Math.max(10, Math.ceil((winPeak + 10) / 10) * 10));
 
     return {
       animation: false,
@@ -332,7 +348,7 @@
         {
           type: 'value',
           min: 0,
-          max: 60,
+          max: winMax,
           splitLine: { show: false },
           axisLabel: { color: '#6c6c78', fontSize: 10.5, formatter: '{value}%' },
         },
@@ -504,7 +520,14 @@
     const list = $('#detail-list');
     list.innerHTML = '';
     if (!rows.length) {
-      list.appendChild(el('div', 'detail-empty', CFG.copy.detailEmpty));
+      /*
+       * 空频段也要画垫抽行：音擎回响正是「垫了 12 抽、一金未出」的典型，
+       * 只显示「这个频段还没有 S 级记录」等于把唯一有信息量的数藏起来了。
+       */
+      const pityOnly = buildPityRow(ch.pity);
+      if (pityOnly) list.appendChild(pityOnly);
+      const empty = el('div', 'detail-empty', CFG.copy.detailEmpty);
+      list.appendChild(empty);
       return;
     }
 
@@ -516,7 +539,16 @@
       else groups.push({ version: row.version, rows: [row] });
     }
 
-    const maxPulls = 100;
+    /*
+     * 垫抽行放在**最新版本组的内部、第一行**，不是列表外面。
+     *
+     * 原因纯排版：外面那一层没有版本括号的缩进（1px 括号 + 7px gap + 版本号宽度），
+     * 放外面会比下面的头像整体左移 42px，一眼就能看出没对齐。
+     * 放进去后问号块和头像、绿条和红条都落在同一列。
+     */
+    const pityRow = buildPityRow(ch.pity);
+    if (pityRow && groups.length) groups[0].rows.unshift({ __pity: true });
+
     for (const g of groups) {
       const wrap = el('div', 'detail-group');
       const bracket = el('div', 'detail-bracket');
@@ -525,9 +557,10 @@
       const rowsBox = el('div', 'detail-rows');
 
       for (const row of g.rows) {
+        if (row.__pity) { rowsBox.appendChild(pityRow); continue; }
         const line = el('div', 'detail-row');
         const img = el('img', 'detail-icon');
-        img.src = row.icon || '';
+        img.src = iconOf(row.iconKey);
         img.alt = '';
         // 不用 loading="lazy"：图标只有 96px，但懒加载会让截图/打印时还没滚到的行是空白。
         // icon 已内嵌成 data URL，缺失时 build-report 会替换成占位图。
@@ -579,6 +612,52 @@
       lines.push(`本轮 ${row.pulls} 抽 · 无歪`);
     }
     return lines.join('\n');
+  }
+
+  // -------------------------------------------------------------- 垫抽
+
+  /*
+   * 垫抽行：正文里的一行，不是标题上的数字。
+   *
+   * 造型照官方调频页：左边一个金色问号方块（还没出的那个 S 是谁 = 未知），
+   * 右边一条绿色斜纹进度条，条内写「已垫 N 抽」。
+   *
+   * 为什么放进正文而不是面板头：
+   *   1) 它是「这一档还差多少」的状态，和下面每一金的横条是同一套读法——条长＝进度；
+   *   2) 面板头要挤 6 个 tab + 勾选框 + meta，再塞一条进度条会两边都看不清；
+   *   3) 玩家在详情里逐金往上翻，最后看到的就是「垫到哪了」，顺序天然对。
+   *
+   * 数据来自 index.json 的 type_stats[].next_s_cur_times，构建时已算好
+   * {cur, cap, remain, pct, last}；前端只负责画，不重复算。
+   */
+  function buildPityRow(pity) {
+    if (!pity || pity.cap == null || !pity.cur) return null;
+
+    const row = el('div', 'detail-row pity-row');
+
+    // 问号方块：下一个 S 未知，所以画「?」而不是头像
+    const tile = el('div', 'pity-tile');
+    tile.textContent = '?';
+    tile.setAttribute('aria-hidden', 'true');
+
+    const track = el('div', 'detail-track');
+    const bar = el('div', 'detail-bar pity-bar');
+    // 条长＝进度占比，与详情其他横条同一套「长度即数值」的读法
+    const pct = Math.max(0, Math.min(1, (pity.pct ?? 0) / 100));
+    bar.style.width = `max(${CFG.numbers.detailBarMinPx}px, calc((100% - 34px) * ${pct.toFixed(4)}))`;
+    bar.textContent = `已垫${pity.cur}抽`;
+    track.appendChild(bar);
+
+    row.appendChild(tile);
+    row.appendChild(track);
+    // 剩 ≤ 10 抽就该变红：马上就要出了
+    row.dataset.near = String(pity.remain != null && pity.remain <= 10);
+
+    const last = pity.last
+      ? `\n上一个 S：${pity.last.name}${pity.last.version ? `（v${pity.last.version}）` : ''}`
+      : '';
+    row.dataset.tip = `已垫 ${pity.cur} 抽，还差 ${pity.remain ?? '—'} 抽到保底（${pity.cap} 抽保底）${last}`;
+    return row;
   }
 
   // ------------------------------------------------------------- tooltip

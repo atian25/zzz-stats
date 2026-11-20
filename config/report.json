@@ -1,10 +1,9 @@
 {
-  "$schema": "./report.schema.json",
   "schema": "zzz-stats/report-config@1",
   "version": "2026-11",
   "_comment": "报表口径与文案的唯一来源。改称号、改阈值、改配色都只改这里，不要改 scripts/ 或 assets/report/。",
   "numbers": {
-    "_comment": "sPityExpect × fiftyFifty = 角色池每 UP 期望抽数（62.5 × 1.5 = 93.75），只在文档和标签文案里用作理论基准；判档一律用账号自己的均值。detailBarDivisor：详情条满格对应的抽数（100 抽 = 满格）。 countsTowardTotals：邦布抽卡用的是邦布币，和调频券不是同一种货币，所以不计入「总抽卡数 / 平均每金」这些跨频道汇总。",
+    "_comment": "sPityExpect × fiftyFifty = 角色池每 UP 期望抽数（62.5 × 1.5 = 93.75），只在文档和标签文案里用作理论基准；判档一律用账号自己的均值。detailBarDivisor：详情条满格对应的抽数（100 抽 = 满格）。 countsTowardTotals：邦布抽卡用的是邦布币，和调频券不是同一种货币，所以不计入「总抽卡数 / 平均每金」这些跨频道汇总。channels[].pityCap：该频段官方保底抽数（常驻/独家/重映 90，音擎/回响 80，邦布 80，见 references/api.md §5）。",
     "sPityExpect": 62.5,
     "fiftyFifty": 1.5,
     "extremePulls": 40,
@@ -22,7 +21,8 @@
       "detailLabel": "独家",
       "kind": "avatar",
       "has5050": true,
-      "countsTowardTotals": true
+      "countsTowardTotals": true,
+      "pityCap": 90
     },
     {
       "id": 3,
@@ -32,7 +32,8 @@
       "detailLabel": "音擎",
       "kind": "weapon",
       "has5050": true,
-      "countsTowardTotals": true
+      "countsTowardTotals": true,
+      "pityCap": 80
     },
     {
       "id": 1,
@@ -42,7 +43,8 @@
       "detailLabel": "常驻",
       "kind": "permanent",
       "has5050": false,
-      "countsTowardTotals": true
+      "countsTowardTotals": true,
+      "pityCap": 90
     },
     {
       "id": 5,
@@ -52,7 +54,8 @@
       "detailLabel": "邦布",
       "kind": "bangboo",
       "has5050": false,
-      "countsTowardTotals": false
+      "countsTowardTotals": false,
+      "pityCap": 80
     },
     {
       "id": 102,
@@ -62,7 +65,8 @@
       "detailLabel": "复刻角色",
       "kind": "avatar",
       "has5050": true,
-      "countsTowardTotals": true
+      "countsTowardTotals": true,
+      "pityCap": 90
     },
     {
       "id": 103,
@@ -72,7 +76,8 @@
       "detailLabel": "复刻音擎",
       "kind": "weapon",
       "has5050": true,
-      "countsTowardTotals": true
+      "countsTowardTotals": true,
+      "pityCap": 80
     }
   ],
   "titles": {

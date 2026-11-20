@@ -13,7 +13,8 @@
  * 这份脚本是「口径的唯一实现」。文档只描述结果，不再重复算法。
  * 用法：node scripts/build-report.mjs [--data data] [--out report.html]
  */
-import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -45,6 +46,21 @@ const DATA_DIR = resolve(ROOT, argOf('data', 'data'));
 const OUT_FILE = resolve(ROOT, argOf('out', 'output/report.html'));
 
 const CFG = JSON.parse(readFileSync(join(ROOT, 'config/report.json'), 'utf8'));
+
+/*
+ * region → 区服名。
+ *
+ * 报表次行原来写死「国服」，国际服账号会显示成国服，属于直接错。
+ * 映射来自 SKILL.md §2 的对照表（prod_gf_cn / jp / us / eu / sg）；
+ * 认不出的 region 原样显示，不猜。
+ */
+const SERVER_LABELS = {
+  prod_gf_cn: '国服',
+  prod_gf_jp: '日服',
+  prod_gf_us: '美服',
+  prod_gf_eu: '欧服',
+  prod_gf_sg: '亚服',
+};
 
 // ---------------------------------------------------------------- 读取原始数据
 
@@ -277,19 +293,34 @@ const channelReports = CFG.channels.map((ch) => {
   const rounds = ch.kind === 'permanent' || ch.kind === 'bangboo' ? markGuaranteed(buildRounds(golds)) : roundsOf(ch);
   const stats = statsOf(ch.enum);
   const officialPulls = num(stats?.total_count) ?? rounds.reduce((s, r) => s + r.total, 0);
-  const recordPulls = rounds.reduce((s, r) => s + r.total, 0) + rounds.reduce((s, r) => s + r.side.reduce((x, y) => x + y.count, 0), 0);
-  const perGold = golds.length ? officialPulls / golds.length : null;
+  const pity = num(stats?.next_s_cur_times) ?? 0;
+  /*
+   * 扣垫抽后再算每金成本。
+   *
+   * 官方 total_count 含「已经抽掉、但还没出 S」的垫抽。把它摊进每个金里，
+   * 等于把一个尚未结算的成本算进历史均值——官方自己的 avr_up_count 也是扣掉垫抽的
+   * （常驻 650 抽 / 9 金 = 72.2，官方 65.8 = (650-58)/9；复刻角色 90/1=90，官方 76 = (90-14)/1）。
+   * 角色池这次垫抽恰好是 0，所以旧口径没露馅；换个号就会系统性偏非，称号也会跟着偏。
+   */
+  const effectivePulls = Math.max(0, officialPulls - pity);
+  const perGold = golds.length ? effectivePulls / golds.length : null;
   return {
     ...ch,
     golds,
     rounds,
+    officialPulls,
+    effectivePulls,
+    pity,
+    pityCap: ch.pityCap ?? null,
     stats: stats
       ? {
           pulls: officialPulls,
+          effectivePulls,
+          pity,
+          pityCap: ch.pityCap ?? null,
           sCount: num(stats.s_count),
           upCount: num(stats.up_count),
           upAvg: num(stats.avr_up_count),
-          pity: num(stats.next_s_cur_times),
           hasDataVers: stats.has_data_vers ?? [],
         }
       : null,
@@ -299,7 +330,8 @@ const channelReports = CFG.channels.map((ch) => {
 
 const character = channelReports.find((c) => c.key === 'character_up');
 const charRounds = character.rounds;
-const pullsPerUp = charRounds.length ? character.stats.pulls / charRounds.length : null;
+// 每 UP 均同样扣垫抽：分母是「已经结算的金」，垫着的抽数还没换来金，不该摊进去
+const pullsPerUp = charRounds.length ? character.effectivePulls / charRounds.length : null;
 const winRate = cumulativeWinRate(charRounds);
 const finalWinRate = winRate.length ? winRate[winRate.length - 1] : null;
 
@@ -527,7 +559,12 @@ const report = {
     nicknameKnown: Boolean(meta.nickname),
     uid: String(meta.uid ?? ''),
     region: meta.region ?? 'prod_gf_cn',
-    serverLabel: '国服',
+    /*
+     * 区服名：优先按 region 查表，查不到再看 meta.server（cn / os），最后原样显示。
+     * 过去写死「国服」——国际服账号的报表会印着「国服」，直接是错的。
+     */
+    serverLabel: SERVER_LABELS[String(meta.region ?? '')]
+      ?? (meta.server === 'os' ? '国际服' : meta.server === 'cn' ? '国服' : String(meta.region ?? '')),
     fetchedAt: meta.fetched_at ?? null,
     versionFrom: versions[0] ?? null,
     versionTo: versions[versions.length - 1] ?? null,
@@ -557,12 +594,30 @@ const report = {
     perGold: c.perGold,
     goldCount: c.golds.length,
     rounds: c.rounds.length,
+    // 垫抽进度：前端详情头的进度条直接消费这几项，不再自己算
+    pity: {
+      cur: c.pity,
+      cap: c.pityCap,
+      remain: c.pityCap == null ? null : Math.max(0, c.pityCap - c.pity),
+      pct: c.pityCap ? Math.min(100, Math.round((c.pity / c.pityCap) * 1000) / 10) : null,
+      /*
+       * 上一个 S：垫抽这个数的起点就是它。
+       * 只写「已垫 58 / 90」读者还得自己想「从哪开始垫的」；
+       * 带上名字与版本，「这 58 抽是抽在谁之后」才有上下文。
+       * 整条频道还没出过金（如回响 103）时是 null，前端不显示这一行。
+       */
+      last: (() => {
+        const g = c.golds[c.golds.length - 1];
+        return g ? { name: g.name, itemId: g.itemId, version: g.version, recordTime: g.recordTime } : null;
+      })(),
+    },
   })),
   details,
   kpi: [
     { key: 'winRate', label: '角色池不歪', value: finalWinRate == null ? '—' : `${finalWinRate}%`, unit: '' },
     { key: 'pullsPerUp', label: '每 UP 角色', value: metrics.pullsPerUp ?? '—', unit: '抽' },
-    { key: 'weaponPerUp', label: '每 UP 音擎', value: (() => { const w = channelReports.find((c) => c.key === 'weapon_up'); return w.stats?.upCount ? Math.round((w.stats.pulls / w.stats.upCount) * 10) / 10 : '—'; })(), unit: '抽' },
+    // 每金 / 每 UP 一律用「官方总抽 − 当前垫抽」：垫抽还没结算成金，摊进历史均值会让称号系统性偏非
+    { key: 'weaponPerUp', label: '每 UP 音擎', value: (() => { const w = channelReports.find((c) => c.key === 'weapon_up'); const n = w.stats?.upCount; return n ? Math.round((w.effectivePulls / n) * 10) / 10 : '—'; })(), unit: '抽' },
     { key: 'permanentPerGold', label: '常驻每金', value: (() => { const p = channelReports.find((c) => c.key === 'permanent'); return p.perGold ? Math.round(p.perGold * 10) / 10 : '—'; })(), unit: '抽' },
     { key: 'bangbooPerGold', label: '每邦布', value: (() => { const b = channelReports.find((c) => c.key === 'bangboo'); return b.perGold ? Math.round(b.perGold * 10) / 10 : '—'; })(), unit: '抽' },
   ],
@@ -582,54 +637,68 @@ const report = {
 // ---------------------------------------------------------------- 渲染
 
 /*
- * 把用到的图标读成 base64 内嵌进 HTML。
+ * 图标内嵌 + 去重。
  *
  * 为什么内嵌：报表经常被单独发出去（发文件、贴到别的对话、当附件）。
  * 如果只写相对路径 `assets/avatars/x.png`，接收方拿不到 assets 目录，
  * 就会看到一堆空框 —— 图表头像和详情图标全没了。
- * 图标都是 96px，用户自己的账号通常也就几十到两百张，内嵌后仍在 2 MB 量级。
+ *
+ * 为什么要去重：同一张图在 HTML 里会出现很多次（同一角色反复 UP、歪出、
+ * 十连副金，图标在「逐金」和「合并」两种详情里还各存一份）。
+ * 旧实现每次都在数据里塞一整串 base64，产物 3.7 MB 里唯一内容只有不到 1 MB。
+ *
+ * 现在的做法：
+ *   1) 按文件内容 sha1 去重 → 一份图标只编码一次，落到 `ICONS[hash]`；
+ *   2) 数据里只存 `{ icon: hash }`（图表头像）/ `{ icon: hash }`（详情图标）；
+ *   3) 前端用一次 `ICONS[...]` 取回 data URL，肉眼无差别，产物体积砍掉 2/3。
  */
 function inlineImages(report) {
-  const cache = new Map();
-  /*
-   * 主图头像最终只显示 22px、详情图标 26px，96px 原图直接内嵌会把 HTML 撑到 6 MB。
-   * 缩到 64px 再转 WebP（QPng 体积的 1/4），肉眼观感没有差别。
-   */
+  const byHash = new Map();   // sha1 → dataURL
+  const byId = new Map();     // `${dir}/${id}` → hash|null
+  let missing = 0;
+
   const encode = (dir, id) => {
     const key = `${dir}/${id}`;
-    if (cache.has(key)) return cache.get(key);
+    if (byId.has(key)) return byId.get(key);
     // 优先用压缩过的 64px 版本（assets/report/icons/<dir>），没有再退回原图
     const small = join(ROOT, 'assets/report/icons', dir, `${id}.png`);
     const full = join(ROOT, 'assets', dir, `${id}.png`);
-    const file = existsSync(small) ? small : full;
-    let out = null;
-    if (existsSync(file)) {
-      out = `data:image/png;base64,${readFileSync(file).toString('base64')}`;
-    } else {
+    let file = existsSync(small) ? small : existsSync(full) ? full : null;
+    let buf = file ? readFileSync(file) : null;
+    if (!buf) {
+      missing += 1;
+      console.warn(`  ⚠️  缺图标 assets/${dir}/${id}.png，用占位图代替`);
       const fb = join(ROOT, 'assets/items/_fallback.png');
-      out = existsSync(fb) ? `data:image/png;base64,${readFileSync(fb).toString('base64')}` : null;
-      if (out) console.warn(`  ⚠️  缺图标 assets/${dir}/${id}.png，用占位图代替`);
+      file = existsSync(fb) ? fb : null;
+      buf = file ? readFileSync(file) : null;
     }
-    cache.set(key, out);
-    return out;
+    if (!buf) {
+      byId.set(key, null);
+      return null;
+    }
+    const hash = createHash('sha1').update(buf).digest('hex').slice(0, 16);
+    if (!byHash.has(hash)) byHash.set(hash, `data:image/png;base64,${buf.toString('base64')}`);
+    byId.set(key, hash);
+    return hash;
   };
 
-  // 主图头像
+  // 主图头像：数据里只留图标 hash，前端用 ICONS[hash] 还原
   for (const r of report.chart.rounds) {
-    r.avatar = encode('avatars', r.itemId);
-    for (const s of r.side) s.avatar = encode('avatars', s.itemId);
-    for (const x of r.losts ?? []) x.avatar = encode('avatars', x.itemId);
+    r.avatarKey = encode('avatars', r.itemId);
+    for (const s of r.side) s.avatarKey = encode('avatars', s.itemId);
+    for (const x of r.losts ?? []) x.avatarKey = encode('avatars', x.itemId);
   }
   // 详情图标
   for (const ch of Object.values(report.details)) {
     for (const mode of ['all', 'merged']) {
-      for (const row of ch[mode]) row.icon = encode('items', row.itemId);
+      for (const row of ch[mode]) row.iconKey = encode('items', row.itemId);
       for (const row of ch[mode]) {
-        for (const s of row.side ?? []) s.icon = encode('items', s.itemId);
+        for (const s of row.side ?? []) s.iconKey = encode('items', s.itemId);
       }
     }
   }
-  return cache.size;
+  report.icons = Object.fromEntries(byHash);
+  return { unique: byHash.size, used: byId.size, missing };
 }
 
 const template = readFileSync(join(ROOT, 'assets/report/template.html'), 'utf8');
@@ -637,13 +706,54 @@ const chartsJs = readFileSync(join(ROOT, 'assets/report/charts.js'), 'utf8');
 const chartsCss = readFileSync(join(ROOT, 'assets/report/charts.css'), 'utf8');
 const echartsJs = readFileSync(join(ROOT, 'assets/vendor/echarts.min.js'), 'utf8');
 
-const inlined = inlineImages(report);
+const icons = inlineImages(report);
 
-const html = template
+/*
+ * 配置注入 CSS 变量。
+ *
+ * 「改配色只改 config」是这份 skill 对外的承诺，但主色 / 歪章色 / 详情条色过去在
+ * charts.css 里各写了一份硬编码，改配置纹丝不动。这里把颜色统一灌进 CSS 变量：
+ *   --accent / --loss-stamp / --detail-good / --detail-bad / --ink-*
+ * 之后再配置里改值，构建产物立刻生效，前端 CSS 不用动。
+ */
+const cssVars = {
+  accent: CFG.colors.accent,
+  lossStamp: CFG.colors.lossStamp,
+  detailGood: CFG.colors.detailGood,
+  detailBad: CFG.colors.detailBad,
+  extremeTop: CFG.colors.extreme?.top,
+  goodTop: CFG.colors.good?.top,
+  badTop: CFG.colors.bad?.top,
+  multiGoldDot: CFG.colors.multiGoldDot,
+};
+const cssVarBlock = (() => {
+  const pairs = Object.entries(cssVars)
+    .filter(([, v]) => typeof v === 'string' && v)
+    .map(([k, v]) => `  --${k.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)}: ${v};`);
+  return pairs.length ? `:root {\n${pairs.join('\n')}\n}\n` : '';
+})();
+
+// 文案也一律从配置来：过去 copy.chartTitle / detailTitle / mergeToggle 有定义没人读
+const textSubs = (() => {
+  const map = {
+    '/*__COPY_CHART_TITLE__*/': CFG.copy.chartTitle ?? '抽卡总览',
+    '/*__COPY_DETAIL_TITLE__*/': CFG.copy.detailTitle ?? '抽卡详情',
+    '/*__COPY_MERGE_TOGGLE__*/': CFG.copy.mergeToggle ?? '显示真实抽数',
+  };
+  return map;
+})();
+
+let html = template
+  .replace('/*__CONFIG_CSS_VARS__*/', () => cssVarBlock)
   .replace('/*__CHARTS_CSS__*/', () => chartsCss)
   .replace('/*__ECHARTS__*/', () => echartsJs)
   .replace('/*__REPORT_DATA__*/', () => `window.__REPORT__ = ${JSON.stringify(report)};`)
   .replace('/*__CHARTS_JS__*/', () => chartsJs);
+for (const [token, text] of Object.entries(textSubs)) {
+  // 文案来自本地配置，但仍做一次 HTML 转义，避免配置里写了尖括号把模板打坏
+  const esc = String(text).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  html = html.split(token).join(esc);
+}
 
 mkdirSync(dirname(OUT_FILE), { recursive: true });
 writeFileSync(OUT_FILE, html);
@@ -670,6 +780,24 @@ for (const c of channelReports) {
   if (c.golds.length !== c.stats.sCount) {
     warn.push(`${c.label}: 金数 ${c.golds.length} ≠ 官方 s_count ${c.stats.sCount}`);
   }
+  /*
+   * 扣垫抽口径的自检：我们算的「每金」应当等于官方 avr_up_count。
+   * 官方这个字段本身就是 (total_count - next_s_cur_times) / s_count，
+   * 对不上说明垫抽读错了、或 total_count 不是同一个口径——这比金数对得上更有价值。
+   */
+  if (c.stats.upAvg != null && c.stats.upAvg > 0) {
+    /*
+     * 官方 avr_up_count 的分母是 up_count，没有 UP 的频道（常驻 / 邦布 / 空池）退回 s_count。
+     * 实测 6/6 频道都严格等于 (total_count − next_s_cur_times) / 分母：
+     *   独家 87.9 · 音擎 73.8 · 常驻 65.8 · 邦布 48.6 · 复刻角色 76 · 回响 0。
+     * 对不上说明垫抽读错或 total_count 口径变了——这比「金数对得上」更能抓到问题。
+     */
+    const denom = (c.stats.upCount || 0) > 0 ? c.stats.upCount : c.stats.sCount;
+    const ours = denom ? (c.stats.pulls - (c.stats.pity ?? 0)) / denom : null;
+    if (ours != null && Math.abs(ours - c.stats.upAvg) > 0.1) {
+      warn.push(`${c.label}: 每 ${denom === c.stats.upCount ? 'UP' : '金'} ${ours.toFixed(1)} ≠ 官方 avr_up_count ${c.stats.upAvg}（垫抽口径可能不一致）`);
+    }
+  }
   if (c.has5050) {
     const sumRounds = c.rounds.reduce((s, r) => s + r.total, 0);
     if (Math.abs(sumRounds - (c.stats.pulls - pity)) > 0) {
@@ -683,7 +811,7 @@ if (report.totals.pullsOfficial != null && report.totals.pullsOfficial !== nonBa
 }
 
 const sizeMB = (Buffer.byteLength(html) / 1024 / 1024).toFixed(2);
-console.log(`报表 → ${OUT_FILE}（${sizeMB} MB，内嵌 ${inlined} 张图标，可单独发送）`);
+console.log(`报表 → ${OUT_FILE}（${sizeMB} MB，内嵌 ${icons.unique} 张图标去重后引用 ${icons.used} 处，可单独发送）`);
 console.log(`  角色池 ${metrics.upCount} UP / ${metrics.pulls} 抽 / 每 UP ${metrics.pullsPerUp} / 不歪 ${metrics.winRate}% / 称号「${metrics.title?.name}」`);
 console.log(`  KPI: ${report.kpi.map((k) => `${k.label} ${k.value}${k.unit}`).join(' · ')}`);
 console.log(`  标签: ${tags.map((t) => t.name).join(' / ') || '（无）'}`);

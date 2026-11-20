@@ -9,10 +9,14 @@
   --ink: #f2f2f4;
   --ink-dim: #9a9aa6;
   --ink-faint: #6c6c78;
+  /* 这几个是「改配置就生效」的落点：构建时由 config/report.json → colors 覆盖 */
   --accent: #f5c04a;
   --good: #2e8f45;
   --bad: #ff5f6d;
   --extreme: #3f7bff;
+  --loss-stamp: #ff5f6d;
+  --detail-good: #2e8f45;
+  --detail-bad: #ff5f6d;
   --mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
 }
@@ -210,8 +214,9 @@ html, body {
 }
 .tag .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .tag[data-tone="positive"] { color: var(--accent); }
+/* 兜底色：真实颜色由 charts.js 按 config.tags.tone 写到行内 style.color 上 */
 .tag[data-tone="negative"] { color: var(--bad); }
-.tag[data-tone="neutral"] { color: #7be0ff; }
+.tag[data-tone="neutral"] { color: var(--multi-gold-dot, #7be0ff); }
 .tag[data-tone="info"] { color: var(--extreme); }
 .tag:hover { background: color-mix(in srgb, currentColor 22%, transparent); }
 
@@ -406,7 +411,7 @@ html, body {
  * 外层再改 flex 会把图标和轨道挤变形（踩过）。
  */
 .detail-list {
-  padding: 0 14px 4px;
+  padding: 6px 14px 4px;
   height: 480px;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -498,19 +503,19 @@ html, body {
   white-space: nowrap;
   overflow: hidden;
 }
-.detail-bar[data-side="good"] { background: var(--good); }
+.detail-bar[data-side="good"] { background: var(--detail-good); }
 .detail-bar[data-side="bad"] {
   background:
     repeating-linear-gradient(115deg, rgba(0, 0, 0, 0.13) 0 4px, transparent 4px 8px),
-    var(--bad);
+    var(--detail-bad);
 }
 .detail-stamp {
   flex: 0 0 auto;
   width: 26px;
   height: 20px;
-  border: 1px solid var(--bad);
+  border: 1px solid var(--loss-stamp);
   border-radius: 3px;
-  color: var(--bad);
+  color: var(--loss-stamp);
   font-size: 10px;
   font-weight: 700;
   display: flex;
@@ -520,6 +525,62 @@ html, body {
 }
 .detail-stamp[data-empty="true"] { border-color: transparent; }
 .detail-empty { padding: 16px; text-align: center; color: var(--ink-faint); font-size: 12px; }
+
+
+/* ------------------------------------------------------------ 垫抽进度 */
+
+/*
+ * 垫抽行：正文里的一条，造型照官方调频页——
+ * 左边金色问号方块（下一个 S 未知），右边绿色斜纹进度条，条内写「已垫 N 抽」。
+ *
+ * 它复用 .detail-row / .detail-track / .detail-bar 的布局，
+ * 所以和下面每一金的横条天然对齐成同一列、同样的高度。
+ */
+.pity-row {
+  /*
+   * 上边距要比普通行大：这一行紧贴 tab 下划线，26px 的问号方块
+   * 视觉上会被上面那条金色下划线「压住」。留 8px 让它呼吸。
+   */
+  margin-top: 8px;
+  margin-bottom: 6px;
+  /*
+   * 不要加分隔线（border-bottom / hr）。
+   * 这一行就在 tab 下划线正下方，再加一条横线会读成「常驻」的第二个下划线；
+   * 而且它铺满整行宽度，比 tab 下划线长得多，反而像页面的分割线。
+   * 留白（margin）足够把「当前进度」和下面的历史金分开。
+   */
+  cursor: default;
+}
+/* 高度与详情图标一致（26px），问号用金色描边方块，和真实头像区分开 */
+.pity-tile {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 700;
+  color: #3a2a05;
+  background: linear-gradient(160deg, #f6d27a, #c8871f);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+/*
+ * 绿色斜纹条：斜纹方向和详情里的「红条（非酋）」一致，
+ * 但用绿＝「还在正常进度里」，快到保底才转红（见 [data-near]）。
+ */
+.pity-bar {
+  background:
+    repeating-linear-gradient(115deg, rgba(0, 0, 0, 0.12) 0 4px, transparent 4px 8px),
+    var(--detail-good, #2e8f45);
+}
+.pity-row[data-near="true"] .pity-bar {
+  background:
+    repeating-linear-gradient(115deg, rgba(0, 0, 0, 0.13) 0 4px, transparent 4px 8px),
+    var(--detail-bad, #ff5f6d);
+}
 
 /* --------------------------------------------------------------- 响应式 */
 
