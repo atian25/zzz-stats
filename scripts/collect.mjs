@@ -288,25 +288,10 @@ async function smsLogin(drv, frame, { ask, log, sleep, LOGGED_IN }) {
 
   /*
    * 手机号来源，优先级从高到低：
-   *   1. --phone=<号码>       agent 已经问到了，直接传
-   *   2. --phone-file=<路径>   号码写在文件里（对话里粘过的值可以先落文件）
-   *   3. 终端提问             仅当用户自己在本机手动跑；agent 代跑时没有 TTY，会明确报错
-   *
-   * 另外维护一份**本地缓存**（<data>/.phone）：同一台机器第二次登录时，
-   * agent 可以直接把它当成 ask_user 的默认值，用户按一下确认就行，
-   * 不用每次重新敲 11 位数字。
-   *
-   * 缓存只存手机号、只在本机、且 data/ 已在 .gitignore 里（不入库）。
-   * 想清掉就删 <data>/.phone。
+   *   1. --phone=<号码>      agent 已经问到了，直接传
+   *   2. --phone-file=<路径>  号码写在文件里（对话里粘过的值可以先落文件）
+   *   3. 终端提问            仅当用户自己在本机手动跑；agent 代跑时没有 TTY，会明确报错
    */
-  const phoneCacheFile = join(DATA_DIR, '.phone');
-  const cachedPhone = (() => {
-    try {
-      const v = readFileSync(phoneCacheFile, 'utf8').trim();
-      return /^\d{11}$/.test(v) ? v : null;
-    } catch { return null; }
-  })();
-
   const phoneArg = argOf('phone', null) || argOf('phone', process.env.ZZZ_PHONE);
   let phone = phoneArg;
   if (!phone) {
@@ -317,15 +302,11 @@ async function smsLogin(drv, frame, { ask, log, sleep, LOGGED_IN }) {
         validate: (v) => /^\d{11}$/.test(v),
       });
     } else if (stdin.isTTY) {
-      const hint = cachedPhone ? `（直接回车沿用 ${cachedPhone.slice(0, 3)}****${cachedPhone.slice(-4)}）` : '';
-      const input = (await ask(`请输入手机号（11 位，仅用于填入官方登录框）${hint}`)).trim();
-      phone = input || cachedPhone || '';
-      if (!phone) throw new Error('没输入手机号，已中止。');
+      phone = (await ask('请输入手机号（11 位，仅用于填入官方登录框）')).trim();
     } else {
       throw new Error(
         '需要手机号但没有来源。agent 代跑时请传 --phone=<11 位>（推荐），' +
-        '或在对话里问到后写入文件再传 --phone-file=<路径>。' +
-        (cachedPhone ? `\n上次用过的号码：${cachedPhone}（本机缓存，可作默认值）` : '')
+        '或在对话里问到后写入文件再传 --phone-file=<路径>。'
       );
     }
   }
@@ -333,11 +314,6 @@ async function smsLogin(drv, frame, { ask, log, sleep, LOGGED_IN }) {
   if (!/^\d{11}$/.test(phone)) {
     throw new Error(`手机号格式不对（需要 11 位数字，收到 ${phone.length} 位），已中止。`);
   }
-  // 填进去了才写缓存：填不进去说明号码本身有问题，缓存它没意义
-  try {
-    mkdirSync(DATA_DIR, { recursive: true });
-    writeFileSync(phoneCacheFile, phone);
-  } catch { /* 缓存失败不影响登录 */ }
   if (await fill('手机号', phone) !== 'ok') throw new Error('手机号填不进去。');
   log('手机号已填入');
 
@@ -366,12 +342,6 @@ async function smsLogin(drv, frame, { ask, log, sleep, LOGGED_IN }) {
    *
    * 默认文件路径固定成 <data>/_verify/sms-code.txt，
    * 这样 agent 不用额外协商路径，按约定写就行。
-   *
-   * 为什么验证码不用「agent 直接问、问完传参」这一条路？
-   * 因为**短信要等**：点完「获取验证码」之后，用户手机上什么时候收到是不确定的。
-   * 手机号是已知的，问一次就够；验证码得等它来，agent 没法在同一个工具调用里等用户回复。
-   * 所以设计成「脚本停在这里轮询文件，agent 拿到码再写进去」——
-   * 对用户来说还是一句话的事，中间那层是给 agent 的。
    */
   const codeFile = resolve(ROOT, argOf('code-file', join(VERIFY_DIR, 'sms-code.txt')));
   let code = argOf('code', null) || argOf('code', process.env.ZZZ_SMS_CODE);
@@ -1008,37 +978,7 @@ async function collectAll(drv) {
 
 // ------------------------------------------------------------------ 主流程
 
-/**
- * 只读地报告本机记住的手机号，不动浏览器、不登录。
- *
- * 用途：agent 准备 ask_user 问手机号之前先跑一下这个，
- * 拿到上次用过的号码就能把它做进选项里，用户按一下确认即可。
- *
- *   node scripts/collect.mjs --show-cached-phone
- *   → 13800138000        （有缓存）
- *   → （无输出，退出码 1）（没缓存）
- */
-function showCachedPhone() {
-  const f = join(DATA_DIR, '.phone');
-  try {
-    const v = readFileSync(f, 'utf8').trim();
-    if (/^\d{11}$/.test(v)) {
-      console.log(v);
-      return true;
-    }
-  } catch {}
-  return false;
-}
-
 async function main() {
-  if (has('show-cached-phone')) {
-    if (!showCachedPhone()) {
-      console.error('[zzz] 本机没有记住手机号。');
-      process.exit(1);
-    }
-    return;
-  }
-
   const headless = !has('headed');
   const drv = await openDriver({
     cdpUrl: argOf('cdp', null),
