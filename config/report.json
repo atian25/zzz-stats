@@ -1,0 +1,345 @@
+{
+  "$schema": "./report.schema.json",
+  "schema": "zzz-stats/report-config@1",
+  "version": "2026-11",
+  "_comment": "报表口径与文案的唯一来源。改称号、改阈值、改配色都只改这里，不要改 scripts/ 或 assets/report/。",
+  "numbers": {
+    "_comment": "sPityExpect × fiftyFifty = 角色池每 UP 期望抽数（62.5 × 1.5 = 93.75），只在文档和标签文案里用作理论基准；判档一律用账号自己的均值。detailBarDivisor：详情条满格对应的抽数（100 抽 = 满格）。 countsTowardTotals：邦布抽卡用的是邦布币，和调频券不是同一种货币，所以不计入「总抽卡数 / 平均每金」这些跨频道汇总。",
+    "sPityExpect": 62.5,
+    "fiftyFifty": 1.5,
+    "extremePulls": 40,
+    "multiGoldSortGap": 9,
+    "detailBarDivisor": 100,
+    "detailBarMinPx": 44,
+    "segmentLabelMin": 8
+  },
+  "channels": [
+    {
+      "id": 2,
+      "key": "character_up",
+      "enum": "GACHA_TYPE_CHARACTER_UP",
+      "label": "独家频段",
+      "detailLabel": "独家",
+      "kind": "avatar",
+      "has5050": true,
+      "countsTowardTotals": true
+    },
+    {
+      "id": 3,
+      "key": "weapon_up",
+      "enum": "GACHA_TYPE_WEAPON_UP",
+      "label": "音擎频段",
+      "detailLabel": "音擎",
+      "kind": "weapon",
+      "has5050": true,
+      "countsTowardTotals": true
+    },
+    {
+      "id": 1,
+      "key": "permanent",
+      "enum": "GACHA_TYPE_PERMANENT",
+      "label": "常驻频段",
+      "detailLabel": "常驻",
+      "kind": "permanent",
+      "has5050": false,
+      "countsTowardTotals": true
+    },
+    {
+      "id": 5,
+      "key": "bangboo",
+      "enum": "GACHA_TYPE_BANGBOO",
+      "label": "邦布频段",
+      "detailLabel": "邦布",
+      "kind": "bangboo",
+      "has5050": false,
+      "countsTowardTotals": false
+    },
+    {
+      "id": 102,
+      "key": "character_return",
+      "enum": "GACHA_TYPE_CHARACTER_RETURN",
+      "label": "独家重映",
+      "detailLabel": "复刻角色",
+      "kind": "avatar",
+      "has5050": true,
+      "countsTowardTotals": true
+    },
+    {
+      "id": 103,
+      "key": "weapon_return",
+      "enum": "GACHA_TYPE_WEAPON_RETURN",
+      "label": "音擎回响",
+      "detailLabel": "复刻音擎",
+      "kind": "weapon",
+      "has5050": true,
+      "countsTowardTotals": true
+    }
+  ],
+  "titles": {
+    "_comment": "按「角色池每 UP 均（含歪）」10 档，边界与名称来自 2026-11 的工坊样本拟合。改档位只改这个数组，按 maxPullsPerUp 升序排列。",
+    "metric": "pullsPerUp",
+    "tiers": [
+      {
+        "maxPullsPerUp": 62.5,
+        "name": "终极无敌至尊欧皇",
+        "tone": "lucky"
+      },
+      {
+        "maxPullsPerUp": 80,
+        "name": "万里挑一至尊欧皇",
+        "tone": "lucky"
+      },
+      {
+        "maxPullsPerUp": 90,
+        "name": "欧气满满大欧皇",
+        "tone": "lucky"
+      },
+      {
+        "maxPullsPerUp": 95,
+        "name": "欧非守恒",
+        "tone": "neutral"
+      },
+      {
+        "maxPullsPerUp": 99,
+        "name": "欧气附体小欧皇",
+        "tone": "lucky"
+      },
+      {
+        "maxPullsPerUp": 105,
+        "name": "欧气不足小非酋",
+        "tone": "unlucky"
+      },
+      {
+        "maxPullsPerUp": 110,
+        "name": "薛定谔的非欧",
+        "tone": "unlucky"
+      },
+      {
+        "maxPullsPerUp": 117,
+        "name": "超级至尊非酋",
+        "tone": "unlucky"
+      },
+      {
+        "maxPullsPerUp": 125,
+        "name": "千里挑一大非酋",
+        "tone": "unlucky"
+      },
+      {
+        "maxPullsPerUp": null,
+        "name": "终极无敌至尊非酋",
+        "tone": "unlucky"
+      }
+    ]
+  },
+  "tags": {
+    "_comment": "kind=metric 看整体指标；kind=series 看连续段；kind=event 看事件计数；kind=round 看单轮性质。conditions 全部满足才出现。",
+    "tone": {
+      "positive": {
+        "color": "#F5C04A"
+      },
+      "negative": {
+        "color": "#FF5F6D"
+      },
+      "neutral": {
+        "color": "#7BE0FF"
+      },
+      "info": {
+        "color": "#3F7BFF"
+      }
+    },
+    "rules": [
+      {
+        "id": "lucky-aura",
+        "name": "欧气附体",
+        "tone": "positive",
+        "kind": "metric",
+        "any": [
+          {
+            "metric": "multiGoldRounds",
+            "op": ">=",
+            "value": 1
+          },
+          {
+            "metric": "extremeRounds",
+            "op": ">=",
+            "value": 2
+          }
+        ],
+        "tip": "十连出过 {multiGoldRounds} 次双金 · {extremeRounds} 次在 {extremePulls} 抽内出金"
+      },
+      {
+        "id": "great-luck",
+        "name": "运势极佳",
+        "tone": "positive",
+        "kind": "metric",
+        "all": [
+          {
+            "metric": "maxUpStreak",
+            "op": ">=",
+            "value": 4
+          }
+        ],
+        "tip": "最长 {maxUpStreak} 连 UP",
+        "suppressWhen": [
+          "up-streak"
+        ]
+      },
+      {
+        "id": "bad-streak",
+        "name": "时运不济",
+        "tone": "negative",
+        "kind": "metric",
+        "all": [
+          {
+            "metric": "maxLossStreak",
+            "op": ">=",
+            "value": 3
+          }
+        ],
+        "tip": "最长 {maxLossStreak} 连歪",
+        "suppressWhen": [
+          "loss-streak"
+        ]
+      },
+      {
+        "id": "unlucky-aura",
+        "name": "非酋附体",
+        "tone": "negative",
+        "kind": "metric",
+        "all": [
+          {
+            "metric": "pullsPerUp",
+            "op": ">",
+            "value": 110
+          }
+        ],
+        "tip": "每 UP 均 {pullsPerUp} 抽"
+      },
+      {
+        "id": "up-streak",
+        "nameTemplate": "代理人 {k} 连 UP",
+        "tone": "positive",
+        "kind": "series",
+        "series": "upStreak",
+        "_comment": "breakOnGuaranteed：上一轮十连带出了非 UP 副金，说明下一发是大保底，不算 50/50 连胜，必须打断连 UP。关掉会把 4 连算成 5 连。 minK：单发成的「1 连」不算标签；每个不同长度各出一个标签，不是只留最长。",
+        "breakOnGuaranteed": true,
+        "tipTemplate": "{versions}：{chain}",
+        "minK": 3
+      },
+      {
+        "id": "loss-streak",
+        "nameTemplate": "代理人 {k} 连歪",
+        "tone": "negative",
+        "kind": "series",
+        "series": "lossStreak",
+        "tipTemplate": "{versions}：{chain}",
+        "minK": 3,
+        "_comment": "minK：单发成的「1 连」不算标签；每个不同长度各出一个标签，不是只留最长。"
+      },
+      {
+        "id": "multi-gold",
+        "nameTemplate": "十连双金",
+        "tone": "neutral",
+        "kind": "event",
+        "event": "multiGold",
+        "showCount": true,
+        "tipTemplate": "{list}"
+      },
+      {
+        "id": "near-miss",
+        "nameTemplate": "似非实欧",
+        "tone": "info",
+        "kind": "round",
+        "match": {
+          "offAbove": 0,
+          "totalBelowMean": true
+        },
+        "showCount": true,
+        "tipTemplate": "{list}"
+      }
+    ],
+    "_prioComment": "优先级从高到低。冲突时保留优先级靠前者：「运势极佳/时运不济」是宏观概括，一旦有具体的 K 连 UP / K 连歪标签，前者就多余了（同一件事说两遍），所以被 suppress。「欧气附体」与「非酋附体」互斥：前者看双金/极欧，后者看均值过高，同时成立时以非酋为准（负向信息更有行动价值）。"
+  },
+  "colors": {
+    "_comment": "堆叠柱下段＝歪掉的抽数，上段＝UP 本身。柱体表达运气，红章表达 50/50 结果，两者不是一回事。",
+    "extreme": {
+      "top": "#3F7BFF",
+      "off": "#1B3C78"
+    },
+    "good": {
+      "top": "#2E8F45",
+      "off": "#1B5E2A"
+    },
+    "bad": {
+      "top": "#FF5F6D",
+      "off": "#A81E28"
+    },
+    "winRateLine": "#F2E23C",
+    "multiGoldDot": "#7BE0FF",
+    "versionDivider": "#3A3A42",
+    "lossStamp": "#FF5F6D",
+    "detailGood": "#2E8F45",
+    "detailBad": "#FF5F6D",
+    "accent": "#F5C04A",
+    "qrPlate": "#FFFFFF"
+  },
+  "copy": {
+    "chartTitle": "抽卡总览",
+    "detailTitle": "抽卡详情",
+    "titleRowMeta": "{upCount} 个 UP · {pulls} 抽",
+    "detailMetaAll": "{goldCount} 金 · 每金 {perGold} 抽",
+    "detailMetaMerged": "{upCount} 次 UP · 每 UP {perUp} 抽",
+    "detailEmpty": "这个频段还没有 S 级记录",
+    "mergeToggle": "显示真实抽数",
+    "legend": [
+      {
+        "text": "红＝超出均值",
+        "swatch": "bad"
+      },
+      {
+        "text": "深色段＝歪掉的抽数",
+        "swatch": "badOff"
+      },
+      {
+        "text": "蓝＝极欧 ≤ {extremePulls} 抽",
+        "swatch": "extreme"
+      },
+      {
+        "text": "绿＝欧",
+        "swatch": "good"
+      },
+      {
+        "text": "黄线＝累计不歪率"
+      },
+      {
+        "text": "青点＝十连双金 ×{multiGoldRounds}"
+      }
+    ],
+    "tip": {
+      "multiGoldRound": "本发十连双金",
+      "nearMiss": "似非实欧，白赚大保底",
+      "direct": "总共 {total} 抽，直出",
+      "guaranteed": "总共 {total} 抽，大保底，上个池子歪了「{from}」",
+      "lost": "总共 {total} 抽，大保底，{off} 抽歪{names}",
+      "winRate": "累计不歪率 {rate}%"
+    },
+    "legendTail": "官方接口 · {goldCount} 条 S 记录",
+    "repo": {
+      "url": "https://github.com/atian25/zzz-stats",
+      "label": "github.com/atian25/zzz-stats",
+      "_comment": "报表右上角的来源链接。改仓库地址只改这里。"
+    }
+  },
+  "privacy": {
+    "_comment": "三态循环：0 全显示 → 1 仅打码 UID → 2 全打码。对外截图请先点到 2。",
+    "maskName": {
+      "keepFirst": true,
+      "mask": "*"
+    },
+    "maskUid": {
+      "keepHead": 3,
+      "keepTail": 2,
+      "mask": "*"
+    }
+  }
+}
