@@ -325,6 +325,15 @@
      */
     const winPeak = Math.max(0, ...R.chart.winRate);
     const winMax = Math.min(100, Math.max(10, Math.ceil((winPeak + 10) / 10) * 10));
+    /*
+     * 右轴下限留一点负向余量，别让 0% 贴死底边。
+     *
+     * 为什么：开局的累计不歪率是 0%（还没赢过），这段线正好画在 grid 底边上，
+     * 和灰色 x 轴基线重合，1.4px 的描边再被 grid 裁掉一半 —— 结果就是
+     * 「折线开头没了」。用户看到的是一个从中间才开始的曲线，会以为数据缺了。
+     * 留 -4% 的余量后，0% 这条线落在底边上方，整条曲线自始至终可见。
+     */
+    const winMin = -Math.max(2, Math.round(winMax * 0.04));
 
     return {
       animation: false,
@@ -347,10 +356,18 @@
         },
         {
           type: 'value',
-          min: 0,
+          min: winMin,
           max: winMax,
           splitLine: { show: false },
-          axisLabel: { color: '#6c6c78', fontSize: 10.5, formatter: '{value}%' },
+          /*
+           * 负刻度只是为了让 0% 的线不贴死底边（见上面 winMin），
+           * 但「-2%」这种刻度对读者没有意义，直接不显示。
+           */
+          axisLabel: {
+            color: '#6c6c78',
+            fontSize: 10.5,
+            formatter: (v) => (v < 0 ? '' : `${v}%`),
+          },
         },
       ],
       tooltip: {
