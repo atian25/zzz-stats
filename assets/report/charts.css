@@ -394,7 +394,37 @@ html, body {
 .merge-toggle[data-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
 .detail-meta { font-size: 11px; color: var(--ink-faint); font-family: var(--mono); }
 
-.detail-list { padding: 0 14px 4px; }
+/*
+ * 详情区固定高度 + 内部滚动。
+ *
+ * 各频道行数差异极大（独家 41 行、复刻音擎 0 行）。随内容自适应会让页面高度
+ * 剧烈变化，滚动条被浏览器收回，详情卡在视口里跳动几百像素；
+ * 按最大频道锁定高度又会在空频道留下一大片空白。
+ * 固定一个适中高度并允许内部滚动，两个问题都没有了。
+ *
+ * 注意：不要给 #detail-list 加 display:flex —— 内部 .detail-group 已用 flex 布局，
+ * 外层再改 flex 会把图标和轨道挤变形（踩过）。
+ */
+.detail-list {
+  padding: 0 14px 4px;
+  height: 480px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #3a3a45 transparent;
+}
+.detail-list::-webkit-scrollbar { width: 8px; }
+.detail-list::-webkit-scrollbar-thumb { background: #3a3a45; border-radius: 4px; }
+.detail-list::-webkit-scrollbar-thumb:hover { background: #4a4a57; }
+.detail-list::-webkit-scrollbar-track { background: transparent; }
+
+/* 空状态在剩余空间里居中，避免一大片死白 */
+.detail-list .detail-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 
 .detail-group { display: flex; gap: 7px; margin-bottom: 5px; }
 .detail-bracket {
