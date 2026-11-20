@@ -203,6 +203,39 @@ node scripts/collect.mjs --wait=b   # 或 ZZZ_WAIT_MODE=b
 - 验证码约 60 秒失效，agent 拿到就要立刻写入，别攒着。
 - 脚本只把值填进官方表单，不代填、不猜、不落盘（除验证码文件的瞬时中转）。
 
+### 短信表单长什么样（改代码前必读）
+
+登录框是 Element UI，几个不写下来必然踩的点：
+
+| 元素 | 选择器 | 注意 |
+|---|---|---|
+| 手机号输入框 | `input[placeholder*="手机号"]`，`maxlength=11` | 只收 11 位 |
+| 验证码输入框 | `input[placeholder*="验证码"]`，`maxlength=6` | — |
+| 区号 | `.area-code` 文本 `+86` | **写死的，没有下拉**，所以只支持国内号 |
+| 协议勾选 | `input[type=checkbox]` | **不勾会卡在校验上**，必须在点发送前勾上 |
+| 发送按钮 | 文本含「获取验证码」 | 未填手机号时是 `disabled` |
+| 提交按钮 | 文本精确等于「登录」 | 同上 |
+
+**填值必须用原生 setter + 事件，直接赋值 `el.value = x` 无效**（Element UI 读的是内部状态）：
+
+```js
+(() => {
+  const el = [...document.querySelectorAll('input')].find(i => (i.placeholder||'').includes('手机号'));
+  if (!el) return 'no-input';
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  setter.call(el, '13xxxxxxxxx');
+  el.dispatchEvent(new Event('input',  { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  return 'ok';
+})()
+```
+
+**表单是异步渲染的**：刚拿到 frame 时 DOM 里往往还没有这些 input。
+必须**轮询等它出现**（等 ~10 秒），查一次就判「页面结构变了」是错的。
+
+登录判定沿用 §4 的口径。提交后最多等 60 秒；仍无登录态就报「验证码错误或需要滑块验证」，
+**不要重复提交、也不要重新发短信**。
+
 只有**用户明确说自己在本机命令行手动跑**时，才会走 stdin 提问；
 非交互环境下没给值会立刻报错说明，不会挂住。
 
@@ -222,6 +255,31 @@ agent 代跑时写 `<data>/_verify/qr-refresh` 这个信号文件触发。
 
 3. **登录框默认是「短信登录」，不是扫码。** 要切到扫码：点 `.qr-login-btn` 这个图标（默认 32px，hover 才显示「扫码登录」气泡）。
    点不动就先试坐标点击，再不行才请用户点一下。
+
+   **判断当前处于哪个模式，只认 `location.hash`，不要靠图片尺寸猜：**
+
+   | hash | 模式 |
+   |---|---|
+   | `#/login/captcha` | 短信登录（默认落在这里） |
+   | `#/login/qr` | 扫码 |
+
+   踩过的坑：早先按「有没有 ≥120px 的图片」判断，但**短信页里本来就有一张 232×80 的横幅图**，
+   于是误判成「已在扫码模式」，打印了一个根本不存在的二维码路径——用户拿着扫，扫半天没反应。
+   正确的判据是 hash，再叠加「图片近似正方形」作为二次确认：
+
+   ```js
+   (() => {
+     const qr = [...document.images]
+       .filter(i => (i.src || '').startsWith('data:image'))
+       .map(i => ({ w: i.naturalWidth, h: i.naturalHeight, src: i.src }))
+       .find(i => i.w >= 120 && i.h >= 120 && Math.abs(i.w - i.h) <= 8);   // 近似正方形
+     return { hash: location.hash || '', hasQr: !!qr, qr };
+   })()
+   ```
+
+   实测真二维码 **260×260**；登录框里另有一张 60×60 的 logo 也是 data URL，靠上面的尺寸条件滤掉。
+   切模式时首轮可能报 `no-target`（图标还没进 DOM），**多等几轮再判定**，别一次就报错。
+
 
 4. **二维码是 data URL，直接读，不要截屏裁图。** 切到扫码后，frame 里会出现一张二维码 `<img>`：
 
@@ -454,6 +512,11 @@ node scripts/build-report.mjs                          # 读 data/，写 output/
 node scripts/build-report.mjs --data data --out output/report.html
 ```
 
+> **参数两种写法都支持**：`--out output/x.html`（空格）和 `--out=output/x.html`（等号）。
+> 这条专门记下来，因为早期两个脚本都只认空格形式，传等号会被**静默忽略、悄悄用默认值**——
+> 不报错、不提示，你以为写到了 A，实际写在 B。`collect.mjs` 的 `--login=sms` 和
+> `build-report.mjs` 的 `--out=` 都栽过。改参数解析时，两种形式都要覆盖。
+
 输出 `output/report.html`（默认路径，已被 `.gitignore` 忽略；换用 `--out` 可改）：
 **真正的单文件**——数据、ECharts、以及用到的图标全部内嵌，
 可以直接发给别人、单独打开，不需要附带 `assets/` 目录。
@@ -503,6 +566,16 @@ node scripts/make-icons.mjs        # assets/{avatars,items}/ 96px → assets/rep
 | 接口返回 `-400005 参数错误` | `vers` 超过 10 个或用了不属于该频道的版本，分片重来 |
 | 接口返回非 0 且非 -100 | 原样把 `retcode` / `message` 报给用户，不盲目重试 |
 | 页面改版、接口路径变了 | 看 `index_*.js` 里的 `/api/zzz/*` 路径，更新本文件与 `references/api.md` |
+| 误报「已在扫码模式」，用户扫了没反应 | 用 `location.hash` 判断，别用图片尺寸 —— 短信页有张 232×80 的横幅会骗过尺寸判断 |
+| 换图后新码立刻显示「已过期」 | 刷新时忘了重置计时起点（`issuedAt`），新码还在用旧时间算 |
+| 用户扫的还是上一张废码 | 二维码覆盖了同名文件，浏览器/组件缓存了旧图；改成带时间戳的新文件名 |
+| 用户说「扫了但没反应」，其实早跑完了 | 进程结束时没有可见反馈；见 §2.1「两种档位都要给用户可见的回应」 |
+| 等了半天才有回应 | 用 `sleep N` 等扫码了；应让等待跟着进程走（`job_output` + `wait`），不要定时轮询 |
+| 短信表单「找不到」 | 表单异步渲染，要轮询等 DOM 出现；别查一次就判失败 |
+| 短信字段填不进去 | 直接赋 `el.value` 无效，Element UI 需要原生 setter + `input`/`change` 事件 |
+| 短信一直提交不了 | 协议 checkbox 没勾；未勾选时提交按钮卡住 |
+| 短信收了验证码却登录失败 | 验证码约 60 秒失效；也确认区号只有 `+86`（页面写死，不支持境外号） |
+| 参数传了没生效 | 检查两种写法都支持：`--k v` 和 `--k=v`，早期只认前者会静默忽略 |
 
 ## 数据产物
 
@@ -512,7 +585,11 @@ data/
 ├── index.json                # 6 个频道的汇总统计
 ├── cur_pool_stat_2.json      # 当前卡池（按频道，6 个）
 ├── hist_pool_stat_2.json     # 历史卡池 + 每金记录（按频道，6 个）
-└── _verify/login-qr.png      # 扫码阶段临时产物，不要提交、不要复用
+└── _verify/
+    ├── login-qr-<时间戳>-<序号>.png   # 当次二维码（每次换图都是新文件名，防缓存）
+    ├── login-qr-<时间戳>-<序号>.svg   # 同上的 SVG 版本（仅宿主不支持图片 URL 时用）
+    ├── qr-refresh                    # 写入即触发的「换一张」信号（无终端时用）
+    └── sms-code.txt                  # 短信验证码中转，读一次就删
 ```
 
 `data/` 整体被 `.gitignore` 忽略。
@@ -525,3 +602,9 @@ data/
 - **不要尝试「导出 cookie 再 curl」**。`document.cookie` 只能看到 `ltuid_v2` / `account_id_v2` 这类标识，真正的鉴权凭证 `ltoken_v2` / `cookie_token_v2` 是 HttpOnly；CDP 的 `Storage.getCookies` 虽然读得到，但那等于把**完整账号凭证**落盘，风险比 authkey 高一个量级。用浏览器代发请求就够了。
 - 「登录一次、后续免登录」靠的是用户自己 Chrome 里的会话；`retcode:-100` 才是真的过期。
 - **`data/` 必须被 `.gitignore` 忽略**，里面有 UID 和每一金的记录。
+- **手机号 / 验证码不进代码、不进文档、不入库。** 它们只由用户在对话里提供，agent 转交时
+  走命令行参数或一次性文件；验证码文件读完即删。写测试、写示例一律用占位符。
+- **二维码图片服务是临时的。** 只绑 `127.0.0.1`、只服务 `.png`/`.svg`、路径锁死在二维码目录，
+  采集结束由 `finally` 关闭。**不要**改成 `0.0.0.0`、**不要**把整个 `data/` 挂出去
+  （里面有 UID 和每金记录）、**不要**让它常驻。
+- **不要在对话里回显完整手机号**，需要提示时打码（`134****0891`）。
