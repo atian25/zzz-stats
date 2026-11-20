@@ -465,93 +465,6 @@
       chart.setOption({ series: [{ markArea: { data: [] } }, {}, { markLine: { data: [] } }] });
     }, true);
 
-    /*
-     * 详情行 → 主图柱子 的联动高亮。
-     *
-     * 只有部分情况下真的有对应柱子：
-     *   - 主图只画一个频道（默认「独家」）
-     *   - 详情有 6 个频道可切
-     *   - 详情在「逐金」模式下有 41 行，而柱子只有 27 根
-     * 所以用 recordTime 精确匹配，匹配不到就什么都不做，不要瞎高亮。
-     */
-    const chartRoundIndex = new Map();
-    (R.chart?.rounds ?? []).forEach((r, i) => chartRoundIndex.set(String(r.recordTime), i));
-    // 主图对应的频道：取 chart.rounds 里出现的那个（生成时就固定为当前主频道）
-    const chartChannelId = String(R.chart?.channelId ?? '');
-
-    /*
-     * 详情行 → 主图柱子高亮。
-     *
-     * 直接改 series 数据项的 itemStyle（而不是 dispatchAction + markArea）：
-     * highlight/downplay 在 SVG renderer 下对自定义配色几乎看不出变化，
-     * markArea 又因为 setOption 合并策略容易被吞掉。
-     * 这里给非目标柱加透明度、目标柱加描边，对比最直接。
-     */
-    /*
-     * 详情行 → 主图柱子高亮。
-     *
-     * 关键：每次都基于**原始数据**重建 itemStyle，不要读当前 option 再改。
-     * 读当前 option 会把上一次的 opacity 当成原始值继续叠加，
-     * 结果是第一次就对、第二次全暗（实测确实踩到了）。
-     */
-    /*
-     * 详情行 → 主图柱子高亮。
-     *
-     * 两个坑，都踩过：
-     *   1) 不能读当前 option 再改 itemStyle —— 上一次的 opacity 会被当成原始值继续叠加，
-     *      第二次起全部变暗。必须每次从干净快照重建。
-     *   2) 不能重建整个 data 项 —— 会丢掉 label / emphasis 配置（柱内数字就没了）。
-     *      正确做法是先拍一张 data 深拷贝，之后只在快照上改 itemStyle。
-     */
-    let hlIndex = null;
-    let dataSnapshot = null;
-
-    const takeSnapshot = () => {
-      if (dataSnapshot || !chart) return;
-      const opt = chart.getOption();
-      // 只快照前两根柱（off / up）；散点、折线、头像不参与高亮
-      dataSnapshot = [0, 1].map((si) => JSON.parse(JSON.stringify(opt.series?.[si]?.data ?? [])));
-    };
-
-    const applyHighlight = (idx) => {
-      if (!chart) return;
-      if (hlIndex === idx) return;
-      takeSnapshot();
-      hlIndex = idx;
-      const series = [0, 1].map((si) => ({
-        data: dataSnapshot[si].map((d, i) => {
-          const item = typeof d === 'object' && d !== null ? { ...d } : { value: d };
-          item.itemStyle = { ...(item.itemStyle ?? {}) };
-          if (idx === null) {
-            delete item.itemStyle.opacity;
-            delete item.itemStyle.borderColor;
-            delete item.itemStyle.borderWidth;
-          } else if (i === idx) {
-            item.itemStyle.opacity = 1;
-            item.itemStyle.borderColor = '#f5c04a';
-            item.itemStyle.borderWidth = 2;
-          } else {
-            item.itemStyle.opacity = 0.26;
-          }
-          return item;
-        }),
-      }));
-      chart.setOption({ series });
-    };
-
-    const clearChartHighlight = () => applyHighlight(null);
-
-    $('#detail-list').addEventListener('mouseover', (e) => {
-      const row = e.target.closest('.detail-row');
-      if (!row || !chart) return;
-      if (row.dataset.ch !== chartChannelId) return clearChartHighlight();
-      const idx = chartRoundIndex.get(row.dataset.rt);
-      if (idx === undefined) return clearChartHighlight();
-      applyHighlight(idx);
-    });
-
-    $('#detail-list').addEventListener('mouseleave', clearChartHighlight, true);
-
     window.addEventListener('resize', () => chart && chart.resize());
   }
 
@@ -613,14 +526,6 @@
 
       for (const row of g.rows) {
         const line = el('div', 'detail-row');
-        /*
-         * 每行记下它对应主图的哪根柱。
-         * 用 recordTime 做键，不用下标：详情是时间倒序、主图是正序，
-         * 而且详情里还有歪出的金（41 行 vs 27 柱），下标根本对不上。
-         * 只有「真实抽数（合并）模式 + 当前频道 == 主图频道」时才有对应柱子。
-         */
-        line.dataset.rt = String(row.recordTime ?? '');
-        line.dataset.ch = String(ch.id);
         const img = el('img', 'detail-icon');
         img.src = row.icon || '';
         img.alt = '';

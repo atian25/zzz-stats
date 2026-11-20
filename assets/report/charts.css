@@ -423,7 +423,21 @@ html, body {
   height: 26px;
   /* 有悬浮说明，光标与其他可悬浮元素一致 */
   cursor: pointer;
+  /*
+   * 悬浮高亮整行。
+   * 用负外边距把高亮背景撑到行外，视觉上像一条整宽的横带，
+   * 而不是只包住图标和条——后者看起来像「选中了图标」。
+   */
+  margin-inline: -6px;
+  padding-inline: 6px;
+  border-radius: 6px;
+  transition: background-color .12s ease;
 }
+.detail-row:hover {
+  background: rgba(240, 240, 241, 0.07);
+}
+/* 悬浮时把条稍微提亮，配合行背景一起强调 */
+.detail-row:hover .detail-bar { filter: brightness(1.12); }
 .detail-icon {
   flex: 0 0 auto;
   width: 26px;
