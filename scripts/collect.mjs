@@ -19,7 +19,7 @@
  * 扫码阶段会把二维码存成 data/_verify/login-qr.png 并打印路径；扫完按回车继续。
  * 不读取 cookie、不保存请求头，只取三个接口的响应体。
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
@@ -31,7 +31,16 @@ const ROOT = resolve(HERE, '..');
 
 const args = process.argv.slice(2);
 const has = (f) => args.includes(`--${f}`);
+/*
+ * 读命令行参数。两种写法都支持：
+ *   --login sms    （空格分隔）
+ *   --login=sms    （等号）
+ * 早先只认空格形式，传 --login=sms 会被静默忽略、
+ * 悄悄走回默认扫码流程 —— 这类「参数没报错但没生效」最难查。
+ */
 const argOf = (f, d) => {
+  const eq = args.find((a) => a.startsWith(`--${f}=`));
+  if (eq) return eq.slice(f.length + 3) || d;
   const i = args.indexOf(`--${f}`);
   return i >= 0 && args[i + 1] ? args[i + 1] : d;
 };
@@ -48,7 +57,19 @@ const MAX_VERS = 10;
 const log = (...a) => console.log('[zzz]', ...a);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/*
+ * 交互题问。
+ * 只在真 TTY 下可用 —— 非 TTY 时 stdin 没有输入源，
+ * rl.question 会永久挂起，表现为「脚本卡住但没有任何提示」。
+ * 与其静默挂死，不如立刻报错并说明该怎么办。
+ */
 async function ask(question) {
+  if (!stdin.isTTY) {
+    throw new Error(
+      `需要交互输入（${question}），但当前不是终端环境。\n` +
+      '→ 请让 agent 用「终端会话」跑这个脚本，或你本地手动执行。'
+    );
+  }
   const rl = createInterface({ input: stdin, output: stdout });
   const answer = await rl.question(`${question} … `);
   rl.close();
@@ -68,6 +89,16 @@ const pause = (msg = '按回车继续') => ask(msg);
  */
 const UID_RE_SRC = String.raw`/UID\s*[:：]?\s*\d{6,}/`;
 
+/*
+ * 登录判定表达式，扫码与短信两条路径共用。
+ * 与 pageState 同一口径，避免两处写岔。
+ */
+const LOGGED_IN = `(() => {
+  const t = document.body ? document.body.innerText : '';
+  return ${UID_RE_SRC}.test(t) || t.indexOf('UP数量') >= 0 || t.indexOf('总调频次数') >= 0
+    ? 'logged-in' : null;
+})()`;
+
 const pageState = `(() => {
   const root = document.querySelector('main.page');
   const text = document.body ? document.body.innerText : '';
@@ -85,7 +116,111 @@ const pageState = `(() => {
 /**
  * @param {import('./drivers.mjs').CdpDriver | any} drv 驱动实例（接口见 drivers.mjs）
  */
-async function loginFlow(drv) {
+/**
+ * 判断默认登录方式。
+ * 默认扫码：不用输手机号、不用等短信，体验最短。
+ * 只有当调用方明确要求、或环境变量指定时才走短信。
+ */
+function detectLoginMode() {
+  return 'qr';
+}
+
+/**
+ * 短信验证码登录（给没装米游社的用户）。
+ *
+ * 前提：必须在**真终端**里跑（stdin 是 TTY）。
+ * 手机号和验证码都由用户在终端里输入 —— 脚本只负责填进官方表单，
+ * 不代填、不猜、不落盘。
+ *
+ * 三条硬约束：
+ *   1. 「获取验证码」只点一次，不自动重试（频繁请求会被风控）
+ *   2. 验证码由用户自己输入，脚本不接触短信通道
+ *   3. 页面区号写死 `+86`，所以只支持国内手机号
+ */
+async function smsLogin(drv, frame, { ask, log, sleep, LOGGED_IN }) {
+  /*
+   * 登录框是异步渲染的，刚进 frame 时表单往往还没进 DOM。
+   * 这里轮询等它出现，而不是查一次就判失败 —— 早先那版会误报「页面结构变了」。
+   */
+  let form = null;
+  for (let i = 0; i < 20; i += 1) {
+    form = await drv.evaluateInFrame(frame, `(() => {
+      const inputs = [...document.querySelectorAll('input')];
+      const phone = inputs.find(i => (i.placeholder || '').indexOf('手机号') >= 0);
+      const code = inputs.find(i => (i.placeholder || '').indexOf('验证码') >= 0);
+      return {
+        hasPhone: !!phone, hasCode: !!code,
+        areaCode: (document.querySelector('.area-code') || {}).textContent || '',
+      };
+    })()`);
+    if (form?.hasPhone && form?.hasCode) break;
+    await sleep(500);
+  }
+  if (!form?.hasPhone || !form?.hasCode) throw new Error('没找到短信登录表单（页面结构可能变了）。');
+
+  log(`短信登录，区号 ${form.areaCode || '+86'}（页面写死，仅支持国内号码）`);
+
+  const fill = (which, value) => drv.evaluateInFrame(frame, `(() => {
+    const inputs = [...document.querySelectorAll('input')];
+    const el = inputs.find(i => (i.placeholder || '').indexOf(${JSON.stringify(which)}) >= 0);
+    if (!el) return 'no-input';
+    // Element UI 依赖原生 setter + input 事件才会更新内部状态
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    setter.call(el, ${JSON.stringify(value)});
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return 'ok';
+  })()`);
+
+  const phone = (await ask('请输入手机号（11 位，仅用于填入官方登录框）')).trim();
+  if (!/^\d{6,15}$/.test(phone)) throw new Error('手机号格式不对，已中止。');
+  if (await fill('手机号', phone) !== 'ok') throw new Error('手机号填不进去。');
+  log('手机号已填入');
+
+  // 勾选协议（不勾会卡在校验上）
+  await drv.evaluateInFrame(frame, `(() => {
+    const cb = [...document.querySelectorAll('input')].find(i => i.type === 'checkbox');
+    if (cb && !cb.checked) cb.click();
+    return cb ? cb.checked : 'no-checkbox';
+  })()`);
+
+  // 只点一次，绝不自动重试
+  const sent = await drv.evaluateInFrame(frame, `(() => {
+    const b = [...document.querySelectorAll('button')].find(x => (x.textContent || '').indexOf('获取验证码') >= 0);
+    if (!b) return 'no-button';
+    if (b.disabled) return 'disabled';
+    b.click();
+    return 'clicked';
+  })()`);
+  log(sent === 'clicked' ? '已请求发送验证码（只请求一次，不会重复发）' : `发送验证码：${sent}`);
+
+  const code = (await ask('请输入收到的验证码（通常 60 秒内有效）')).trim();
+  if (!/^\d{4,8}$/.test(code)) throw new Error('验证码格式不对，已中止。');
+  if (await fill('验证码', code) !== 'ok') throw new Error('验证码填不进去。');
+  log('验证码已填入');
+
+  const submitted = await drv.evaluateInFrame(frame, `(() => {
+    const b = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === '登录');
+    if (!b) return 'no-button';
+    if (b.disabled) return 'disabled';
+    b.click();
+    return 'clicked';
+  })()`);
+  log(`提交登录：${submitted}`);
+
+  const deadline = Date.now() + 60000;
+  while (Date.now() < deadline) {
+    if (await drv.evaluate(LOGGED_IN) === 'logged-in') {
+      log('登录成功 ✓');
+      return;
+    }
+    await sleep(1500);
+  }
+  throw new Error('短信登录后仍未检测到登录态。可能是验证码错误，或需要完成滑块验证。');
+}
+
+async function loginFlow(drv, opts = {}) {
+  const mode = String(opts.mode || process.env.ZZZ_LOGIN_MODE || detectLoginMode()).toLowerCase();
   // 等到「已挂载 且 状态明确」：mounted 但既没 logged-out 也没 UID，说明还在加载
   const ready = await drv.waitFor(`(() => {
     const s = ${pageState};
@@ -101,6 +236,14 @@ async function loginFlow(drv) {
     return;
   }
 
+  /*
+   * 登录方式：
+   *   qr    —— 扫码（默认，需要米游社 App）
+   *   sms   —— 短信验证码（给没装米游社的用户用的备选路线）
+   *
+   * 自动判断依据：让 agent 在交付二维码之前先问一句「扫码还是短信」，
+   * 由调用方传 --login=sms；环境变量 ZZZ_LOGIN_MODE 也可以。
+   */
   // 1) 点登录（按元素点，不用坐标——多数环境不支持坐标级输入）
   const clicked = await drv.evaluate(`(() => {
     const b = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === '登录');
@@ -128,6 +271,15 @@ async function loginFlow(drv) {
     return;
   }
   log('已进入登录 frame');
+
+  /*
+   * 分流点。
+   * 登录框默认就停在短信登录页（#/login/captcha），所以走短信不需要切 tab。
+   */
+  if (mode === 'sms') {
+    await smsLogin(drv, frame, { ask, log, sleep, LOGGED_IN });
+    return;
+  }
 
   // 3) 默认是短信登录，切到扫码。图标不在 = 已经在扫码模式，不用点。
   for (let i = 0; i < 6; i += 1) {
@@ -275,13 +427,6 @@ async function loginFlow(drv) {
   } else {
     log('扫码后会自动继续，不需要任何操作。');
   }
-
-  // 与 pageState 同一口径，避免两处不一致
-  const LOGGED_IN = `(() => {
-    const t = document.body ? document.body.innerText : '';
-    return ${UID_RE_SRC}.test(t) || t.indexOf('UP数量') >= 0 || t.indexOf('总调频次数') >= 0
-      ? 'logged-in' : null;
-  })()`;
 
   // 心跳里附带的页面快照：出问题时能直接看出「扫码前后页面到底有没有变化」
   const snapshot = `(() => {
@@ -498,7 +643,7 @@ async function main() {
 
   try {
     await drv.open(PAGE);
-    await loginFlow(drv);
+    await loginFlow(drv, { mode: argOf('login', process.env.ZZZ_LOGIN_MODE || 'qr') });
 
     const uid = await readUid(drv);
     if (!uid) throw new Error('拿不到 UID。确认账号已绑定《绝区零》角色。');
