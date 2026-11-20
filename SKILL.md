@@ -337,11 +337,11 @@ sum(cur_records[].count) + type_stats[].next_s_cur_times == type_stats[].total_c
 ## 9. 出报表：直接用模板，不要重新发明
 
 ```bash
-node scripts/build-report.mjs                          # 读 data/，写 .out/report.html
-node scripts/build-report.mjs --data data --out .out/report.html
+node scripts/build-report.mjs                          # 读 data/，写 output/report.html
+node scripts/build-report.mjs --data data --out output/report.html
 ```
 
-输出 `.out/report.html`（默认路径，已被 `.gitignore` 忽略；换用 `--out` 可改）：
+输出 `output/report.html`（默认路径，已被 `.gitignore` 忽略；换用 `--out` 可改）：
 **真正的单文件**——数据、ECharts、以及用到的图标全部内嵌，
 可以直接发给别人、单独打开，不需要附带 `assets/` 目录。
 控制台会打印关键指标与校验告警——**把这些告警当失败处理，不要带着告警交付**。

@@ -25,10 +25,10 @@
 ## 0. 怎么出报表
 
 ```bash
-node scripts/build-report.mjs          # data/ → .out/report.html
+node scripts/build-report.mjs          # data/ → output/report.html
 ```
 
-产物：单文件 `.out/report.html`，内联数据、ECharts 与用到的图标（base64），可单独发送。
+产物：单文件 `output/report.html`，内联数据、ECharts 与用到的图标（base64），可单独发送。
 ECharts 5.6.0 已 vendored 在 `assets/vendor/echarts.min.js`（校验见 §7），报表不联网、不用 CDN。
 
 ## 1. 口径

@@ -27,13 +27,13 @@ const argOf = (name, fallback) => {
 };
 const DATA_DIR = resolve(ROOT, argOf('data', 'data'));
 /*
- * 默认输出到 .out/report.html，而不是仓库根。
+ * 默认输出到 output/report.html，而不是仓库根。
  *
  * 原因：这个文件每次构建都会变，放在根目录容易和「已提交的产物」混淆，
  * 也容易让用户打开一份旧的还以为是新的。固定路径 + 已被 .gitignore 忽略，
  * 刷新同一个地址就是最新版。
  */
-const OUT_FILE = resolve(ROOT, argOf('out', '.out/report.html'));
+const OUT_FILE = resolve(ROOT, argOf('out', 'output/report.html'));
 
 const CFG = JSON.parse(readFileSync(join(ROOT, 'config/report.json'), 'utf8'));
 

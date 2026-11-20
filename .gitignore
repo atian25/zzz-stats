@@ -1,9 +1,9 @@
 # 采集产物：官方接口原始 JSON、meta、浏览器 profile 与验证截图（含账号 UID），禁止入库
 /data/
 
-# 报表产物：由 scripts/build-report.mjs 生成，固定输出到 .out/ 方便反复刷新同一路径
-/out/
-/.out/
+# 报表产物：由 scripts/build-report.mjs 生成，固定输出到 output/ 方便反复刷新同一路径
+# （不用 .out/ 之类带点的名字，macOS Finder 默认隐藏点开头目录，用户会找不到）
+/output/
 /report.html
 
 # 隔离 Chrome profile（--launch 模式会创建）

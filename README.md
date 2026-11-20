@@ -55,7 +55,7 @@ agent 会自己打开官方页面、把二维码交给你扫、抓完数据出�
 node scripts/collect.mjs
 
 # 2) 出图
-node scripts/build-report.mjs      # → .out/report.html
+node scripts/build-report.mjs      # → output/report.html
 ```
 
 想让浏览器显示出来、自己看着扫，加 `--headed`；想锁定零依赖方案，加 `--driver cdp`。
@@ -91,7 +91,7 @@ scripts/drivers.mjs         # 浏览器驱动适配层：playwright / cdp 两套
 scripts/make-icons.mjs      # 从 96px 原图生成 64px 压缩图标（报表内嵌用，需 Pillow）
 scripts/fetch-in-page.js    # 只借「页内执行 JS」一个能力的取数脚本（无 Node 环境也能用）
 scripts/save-in-page-json.mjs # 把上面那段脚本的结果落成 data/
-scripts/build-report.mjs    # 出图：data/ + config → .out/report.html
+scripts/build-report.mjs    # 出图：data/ + config → output/report.html
 assets/report/              # 报表模板（template.html / charts.js / charts.css）
 assets/report/icons/        # 64px 压缩图标，构建时 base64 内嵌进 HTML
 assets/vendor/echarts.min.js# ECharts 5.6.0（随仓库分发，不用 CDN）
@@ -103,7 +103,7 @@ references/report-rules.md  # 报表口径与呈现约定（规范层，维护�
 
 报表右上角带仓库链接（`config/report.json` 的 `copy.repo` 可改），方便拿到图的人反查生成方式。
 
-> `.out/report.html` 是**自包含单文件**：数据、ECharts、用到的图标全部内嵌，
+> `output/report.html` 是**自包含单文件**：数据、ECharts、用到的图标全部内嵌，
 > 可以单独发给别人直接打开，不依赖 `assets/` 目录。
 
 ## 报表口径
