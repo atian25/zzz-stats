@@ -17,6 +17,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 
 import { createHash } from 'node:crypto';
 import { join, dirname, resolve, relative, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { wantsHelp, printHelp, WORK_DIR_NOTE } from './cli-help.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /*
@@ -33,6 +34,22 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * —— 既会被 skill 升级覆盖，含 UID 的 `data/` 也会绕过 `.gitignore` 的根锚定规则，
  * 变成可提交状态。
  */
+if (wantsHelp()) {
+  printHelp('build-report', {
+    summary: '把采集到的数据集构建成单文件 HTML 报表',
+    options: [
+      { flag: '--data <dir>', desc: '数据集目录。不传时只看 data/ 下唯一的一份；有多份会报错退出' },
+      { flag: '--out <file>', desc: '产物路径，默认 output/report-<数据集名>.html' },
+      { flag: '--cwd <dir>', desc: '用户工作目录，默认当前目录；data/ 与 output/ 相对它算' },
+      { flag: '--help, -h', desc: '打印本帮助后退出，不读数据、不写文件' },
+    ],
+    notes: [
+      WORK_DIR_NOTE,
+      '--data 认任意相对/绝对路径：开发本仓库时用 --data fixtures/tianzhu（fixtures/ 不进运行期兜底）。',
+    ],
+  });
+}
+
 const SKILL_DIR = resolve(HERE, '..');
 const args = process.argv.slice(2);
 /*
@@ -60,31 +77,38 @@ const WORK_DIR = resolve(argOf('cwd', process.cwd()));
  * 不写成根目录平铺：多份数据集混在一起时，`index.json` 只会剩下最后一个账号的，
  * 而 `cur_pool_stat_*.json` 却是另一个账号的——两者拼起来算出的报表是错的，还不会报错。
  *
- * 没传 `--data` 时的兜底：按 `data/` → `fixtures/` 的顺序找存放数据集的父目录
- * （`data/` 是用户运行期的落点，`fixtures/` 是这个仓库自己开发期的落点），
- * 父目录下恰好只有一份数据集就直接用它；有多份**报错退出**，不猜。
- * 猜错不会报错——报表照样生成，只是数字属于另一个账号，
+ * 没传 `--data` 时的兜底：**只看 `data/`**。恰好只有一份数据集就直接用它；
+ * 有多份**报错退出**，不猜。猜错不会报错——报表照样生成，只是数字属于另一个账号，
  * 这种「看起来成功了但内容是错的」比直接失败难发现得多。
+ *
+ * **不要把这个兜底扩大到 `fixtures/`。** `fixtures/` 是本仓库开发期的概念，
+ * 用户项目里 `fixtures/` 是很常见的目录名（前端项目尤其）。一旦兜底把 `fixtures/` 算进来，
+ * 用户在自己项目里跑构建就会读到那里的数据、生成一份「数字看着正常但来自别的数据集」的报表。
+ * 本仓库开发时用 `--data fixtures/tianzhu` 显式指定，那条路不受影响。
  */
-const DATA_PARENTS = ['data', 'fixtures'];
+const DATA_PARENT = 'data';
 function pickDataDir() {
   const explicit = argOf('data', null);
   if (explicit) return resolve(WORK_DIR, explicit);
-  for (const name of DATA_PARENTS) {
-    const base = resolve(WORK_DIR, name);
-    if (!existsSync(base)) continue;
-    const found = readdirSync(base, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => join(base, d.name))
-      .filter((p) => existsSync(join(p, 'index.json')));
-    if (found.length === 1) return found[0];
-    if (found.length > 1) {
-      console.error(`${name}/ 下有 ${found.length} 份数据集，用 --data 指定要哪一份：`);
-      for (const p of found) console.error(`  node skills/zzz-stats/scripts/build-report.mjs --data ${relative(WORK_DIR, p)}`);
-      process.exit(1);
-    }
+  const base = resolve(WORK_DIR, DATA_PARENT);
+  if (!existsSync(base)) {
+    console.error(`找不到数据集：${base} 不存在。`);
+    console.error('  → 先跑采集，或用 --data 指定数据集目录（开发本仓库时用 --data fixtures/tianzhu）。');
+    process.exit(1);
   }
-  return resolve(WORK_DIR, 'data');
+  const found = readdirSync(base, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => join(base, d.name))
+    .filter((p) => existsSync(join(p, 'index.json')));
+  if (found.length === 1) return found[0];
+  if (found.length > 1) {
+    console.error(`data/ 下有 ${found.length} 份数据集，用 --data 指定要哪一份：`);
+    for (const p of found) console.error(`  node skills/zzz-stats/scripts/build-report.mjs --data ${relative(WORK_DIR, p)}`);
+    process.exit(1);
+  }
+  console.error(`data/ 下没有数据集（需要有 index.json 的子目录）。`);
+  console.error('  → 先跑采集，或用 --data 指定数据集目录（开发本仓库时用 --data fixtures/tianzhu）。');
+  process.exit(1);
 }
 const DATA_DIR = pickDataDir();
 /*

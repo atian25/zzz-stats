@@ -28,6 +28,7 @@ import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { findChrome, chromeArgs } from './drivers.mjs';
+import { wantsHelp, printHelp, WORK_DIR_NOTE } from './cli-help.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /*
@@ -36,6 +37,27 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  *   WORK_DIR：用户工作目录，`--cwd` 优先，否则 `process.cwd()`
  * 报表产物和截图都相对 WORK_DIR 算——截图截的是用户项目里的那份 HTML。
  */
+if (wantsHelp()) {
+  printHelp('screenshot', {
+    summary: '给本地报表截图（验收用两档尺寸 / 对外用的 README 头图）',
+    options: [
+      { flag: '--html <file>', desc: '要截的报表。不传时在 output/ 下找唯一的 report-*.html；有多份会报错' },
+      { flag: '--out-dir <dir>', desc: '截图落点，默认 docs/shots' },
+      { flag: '--width <n> --height <n>', desc: '只截一个尺寸（两个都要给）' },
+      { flag: '--privacy <0|1|2>', desc: '先把眼睛按钮点到 N：0 全显示 / 1 打码 UID / 2 全打码' },
+      { flag: '--chart <名>', desc: '切到指定主图频段 tab（如 音擎）' },
+      { flag: '--filter <档>', desc: '只留指定版本档位（如 2；多个用 1,2）' },
+      { flag: '--detail <名>', desc: '切底部详情面板的频段 tab（如 独家重映）' },
+      { flag: '--collapse', desc: '收起主图，让详情面板进首屏' },
+      { flag: '--preview', desc: '出 README 头图：整页 2x，强制打码到 2 并断言' },
+      { flag: '--out-file <file>', desc: '配合 --preview 指定输出，默认 docs/preview.png' },
+      { flag: '--cwd <dir>', desc: '用户工作目录，默认当前目录' },
+      { flag: '--help, -h', desc: '打印本帮助后退出，不启动浏览器' },
+    ],
+    notes: [WORK_DIR_NOTE],
+  });
+}
+
 const SKILL_DIR = resolve(HERE, '..');
 
 const args = process.argv.slice(2);
@@ -63,11 +85,17 @@ const abs = (p) => (isAbsolute(p) ? p : resolve(WORK_DIR, p));
  *   1) `--html` 显式指定，优先；
  *   2) `output/` 下恰好一份 `report-*.html` → 用它（单数据集项目不用写参数）；
  *   3) 有多份 → 报错退出，不猜（截错账号的图比失败更糟，README 头图是对外公开的）。
+ *
+ * **找报表的目录固定是 WORK_DIR/output，不受 `--out-dir` 影响。**
+ * `--out-dir` 只表示「截图往哪写」。早期这里复用了 `--out-dir` 去找报表，
+ * 于是 `--out-dir /tmp/x` 会同时改变「从哪读报表」和「往哪写截图」两件事——
+ * 用户只想换输出位置，却连输入都换了，属于一个参数担两个语义。
  */
+const HTML_SEARCH_DIR = abs('output');
 function pickHtml() {
   const explicit = argOf('html', null);
   if (explicit) return abs(explicit);
-  const outDir = abs(argOf('out-dir', 'output'));
+  const outDir = HTML_SEARCH_DIR;
   const candidates = existsSync(outDir)
     ? readdirSync(outDir).filter((f) => /^report-.*\.html$/.test(f)).map((f) => join(outDir, f))
     : [];
@@ -80,6 +108,7 @@ function pickHtml() {
   return abs('output/report.html');
 }
 const HTML = pickHtml();
+/** 截图落点。跟「从哪读报表」无关，读报表固定看 WORK_DIR/output。 */
 const OUT_DIR = abs(argOf('out-dir', 'docs/shots'));
 const SINGLE_W = argOf('width', null);
 const SINGLE_H = argOf('height', null);

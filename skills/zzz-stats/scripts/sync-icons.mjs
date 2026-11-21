@@ -30,6 +30,7 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
+import { wantsHelp, printHelp, WORK_DIR_NOTE } from './cli-help.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /*
@@ -37,6 +38,25 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  *   SKILL_DIR：skill 本体，图标缓存写这里（`assets/report/icons/`，随 skill 发布）
  *   WORK_DIR：用户工作目录，`--cwd` 优先，否则 `process.cwd()`；数据集从这里读
  */
+if (wantsHelp()) {
+  printHelp('sync-icons', {
+    summary: '按数据集里的 icon URL 补齐缺失图标，下载即裁 64px',
+    options: [
+      { flag: '--check', desc: '只检查不下载（CI / 自检用），有缺图退出 1' },
+      { flag: '--data <dir>', desc: '数据集目录或父目录。不传时只看 data/ 下的数据集' },
+      { flag: '--concurrency <n>', desc: '并发下载数，默认 4（上限 8）' },
+      { flag: '--cwd <dir>', desc: '用户工作目录，默认当前目录' },
+      { flag: '--help, -h', desc: '打印本帮助后退出，不下载、不写文件' },
+    ],
+    notes: [
+      WORK_DIR_NOTE,
+      '图标写进 skill 的 assets/report/icons/（随 skill 发布），这是本脚本唯一写 skill 目录的地方。',
+      '需要 Pillow：python3 -m pip install pillow',
+      '开发本仓库时用 --data fixtures/tianzhu（fixtures/ 不进运行期兜底）。',
+    ],
+  });
+}
+
 const SKILL_DIR = resolve(HERE, '..');
 
 const args = process.argv.slice(2);
@@ -49,7 +69,7 @@ const argOf = (name, fallback) => {
 
 const WORK_DIR = resolve(argOf('cwd', process.cwd()));
 /*
- * 数据集目录：跟 build-report.mjs 同一套兜底（`data/` → `fixtures/`，只有一份就直接用）。
+ * 数据集目录：跟 build-report.mjs 同一套规则——**兜底只看 `data/`**，不看 `fixtures/`。
  * 这里传的是「数据集父目录」或「单个数据集目录」都行——父目录下会扫所有子目录。
  */
 const ICONS_DIR = join(SKILL_DIR, 'assets/report/icons');
@@ -82,16 +102,21 @@ function resolveDataDirs() {
     if (subs.length) return subs;
     return [dir];
   }
-  for (const name of ['data', 'fixtures']) {
-    const base = resolve(WORK_DIR, name);
-    if (!existsSync(base)) continue;
+  /*
+   * 兜底**只看 `data/`**，不要扩大到 `fixtures/`。
+   * `fixtures/` 是本仓库开发期的概念，用户项目里这名字很常见（前端尤其）；
+   * 算进来就会去读别人项目里的测试数据。本仓库开发时用 `--data fixtures/tianzhu` 显式指定。
+   */
+  const base = resolve(WORK_DIR, 'data');
+  if (existsSync(base)) {
     const subs = readdirSync(base, { withFileTypes: true })
       .filter((d) => d.isDirectory())
       .map((d) => join(base, d.name))
       .filter((p) => existsSync(join(p, 'index.json')));
     if (subs.length) return subs;
   }
-  console.error(`在 ${WORK_DIR} 下没找到 data/ 或 fixtures/ 里的数据集，先跑采集。`);
+  console.error(`在 ${WORK_DIR}/data/ 下没找到数据集，先跑采集。`);
+  console.error('  → 开发本仓库时用 --data fixtures/tianzhu 显式指定。');
   process.exit(1);
 }
 

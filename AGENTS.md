@@ -41,9 +41,12 @@
 
 - `fixtures/<数据集名>/` 一份数据集一个目录，`fixtures/tianzhu/` 与 `fixtures/joker/` 平级，
   **这两个目录入库**（它们是开发基线，不是运行期产物）。
-- 出图与采集都用 `--data` 指定：`--data fixtures/tianzhu`。`--data` 的兜底会依次看
-  `data/` → `fixtures/`，所以仓库里直接跑 `node skills/zzz-stats/scripts/build-report.mjs`
-  也能找到数据集；有多份且没写 `--data` 时构建**报错退出**，不猜。
+- 出图与采集都用 `--data` 显式指定：`--data fixtures/tianzhu`。
+- **运行期兜底只认 `data/`，绝不认 `fixtures/`。** 不传 `--data` 时脚本只看用户工作目录下的
+  `data/`：恰好一份就用它，多份报错退出，没有就报「找不到数据集」。
+  这条踩过：兜底一度写成依次看 `data/` → `fixtures/`，结果用户项目里只要有 `fixtures/` 目录
+  （前端项目极常见）就会被读走，生成一份「数字看着正常但来自别的数据集」的报表。
+  本仓库开发时靠 `--data fixtures/xxx` 显式指定，那条路不受兜底规则影响。
 - **fixtures 里的数据必须脱敏后再入库。** 这是公开仓库：`meta.json` 的 `uid` 是假值
   （`10000001` / `10000002`），昵称沿用「天猪 / joker」。真实 UID 永不入库——
   采集脚本写出的原始 `data/` 带真 UID，那整份目录在 `.gitignore` 里。

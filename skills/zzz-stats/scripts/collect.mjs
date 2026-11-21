@@ -27,6 +27,41 @@ import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { createServer } from 'node:http';
 import { openDriver } from './drivers.mjs';
+import { wantsHelp, printHelp, WORK_DIR_NOTE } from './cli-help.mjs';
+
+/*
+ * --help 必须在**解析参数之后、任何副作用之前**处理。
+ * 这个脚本早期不认 --help，误跑一次就直接进采集流程（要扫码登录）——
+ * 那种「只想看用法，结果弹出一个登录二维码」是最坏的误触。
+ */
+if (wantsHelp()) {
+  printHelp('collect', {
+    summary: '采集《绝区零》调频数据，落成 data/<账号>/*.json',
+    options: [
+      { flag: '--data <dir>', desc: '数据集目录，默认 data/current（一个账号一个子目录）' },
+      { flag: '--cwd <dir>', desc: '用户工作目录，默认当前目录；data/ 与 .chrome-profile/ 相对它算' },
+      { flag: '--driver <name>', desc: 'playwright / cdp，默认自动挑（有 Playwright 用它，否则零依赖 CDP）' },
+      { flag: '--cdp <url>', desc: '连一个已经开着的 Chrome，例如 http://127.0.0.1:9222（登录态可复用）' },
+      { flag: '--port <n>', desc: 'CDP 端口，默认 9222' },
+      { flag: '--profile <dir>', desc: '隔离 Chrome profile 目录，默认 .chrome-profile' },
+      { flag: '--headed', desc: '显示浏览器窗口，方便自己扫码' },
+      { flag: '--login <mode>', desc: 'qr / sms，默认 qr' },
+      { flag: '--phone <n>', desc: '短信登录的手机号（也可用 ZZZ_PHONE）' },
+      { flag: '--phone-file <f>', desc: '从文件读手机号' },
+      { flag: '--code <n>', desc: '短信验证码（也可用 ZZZ_SMS_CODE）' },
+      { flag: '--code-file <f>', desc: '从文件读验证码，读完即删' },
+      { flag: '--wait <mode>', desc: '等待方式 a / b，默认 a（也可用 ZZZ_WAIT_MODE）' },
+      { flag: '--region <r>', desc: '区服，默认 prod_gf_cn；国际服走 prod_gf_jp/us/eu/sg 等' },
+      { flag: '--api <url>', desc: '硬覆盖接口基址（官方换域名时用）' },
+      { flag: '--page <url>', desc: '硬覆盖页面地址' },
+      { flag: '--help, -h', desc: '打印本帮助后退出，不启动浏览器' },
+    ],
+    notes: [
+      WORK_DIR_NOTE,
+      '不读取、不保存 cookie 与请求头，只取三个接口的响应体。',
+    ],
+  });
+}
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /*

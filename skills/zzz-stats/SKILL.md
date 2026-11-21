@@ -536,7 +536,7 @@ sum(cur_records[].count) + type_stats[].next_s_cur_times == type_stats[].total_c
 ## 9. 出报表：直接用模板，不要重新发明
 
 ```bash
-# 不传 --data 时自动找 data/（没有就找 fixtures/），只有一份数据集就直接用
+# 不传 --data 时只看 data/，只有一份数据集就直接用；有多份或没有都会报错退出，不猜
 node skills/zzz-stats/scripts/build-report.mjs
 # 多份时明确指定；产物默认 output/report-<数据集名>.html
 node skills/zzz-stats/scripts/build-report.mjs --data data/tianzhu
