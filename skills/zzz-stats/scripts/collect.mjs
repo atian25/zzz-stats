@@ -28,6 +28,7 @@ import { stdin, stdout } from 'node:process';
 import { createServer } from 'node:http';
 import { openDriver } from './drivers.mjs';
 import { wantsHelp, printHelp, WORK_DIR_NOTE } from './cli-help.mjs';
+import { purgeAndLog } from './verify-cleanup.mjs';
 
 /*
  * --help 必须在**解析参数之后、任何副作用之前**处理。
@@ -50,6 +51,7 @@ if (wantsHelp()) {
       { flag: '--phone-file <f>', desc: '从文件读手机号' },
       { flag: '--code <n>', desc: '短信验证码（也可用 ZZZ_SMS_CODE）' },
       { flag: '--code-file <f>', desc: '从文件读验证码，读完即删' },
+      { flag: '--keep-verify', desc: '排障用：保留 _verify/ 下的二维码与验证码文件，默认登录成功后立即删除' },
       { flag: '--wait <mode>', desc: '等待方式 a / b，默认 a（也可用 ZZZ_WAIT_MODE）' },
       { flag: '--region <r>', desc: '区服，默认 prod_gf_cn；国际服走 prod_gf_jp/us/eu/sg 等' },
       { flag: '--api <url>', desc: '硬覆盖接口基址（官方换域名时用）' },
@@ -132,6 +134,12 @@ const API = argOf('api', EP.api);
  */
 const DATA_DIR = resolve(WORK_DIR, argOf('data', 'data/current'));
 const VERIFY_DIR = join(DATA_DIR, '_verify');
+/*
+ * 默认清理 `_verify/` 下的临时凭据文件（二维码截图 / 验证码中转 / 换图信号）。
+ * 登录成功即清一次，main 的 finally 再兜一次——见 scripts/verify-cleanup.mjs 里的说明。
+ * `--keep-verify` 只给排障用：确认「二维码到底存成什么样」时需要留下证据。
+ */
+const KEEP_VERIFY = has('keep-verify') || /^--keep-verify=(true|1|yes)?$/i.test(args.find((a) => a.startsWith('--keep-verify=')) ?? '');
 const CFG = JSON.parse(readFileSync(join(SKILL_DIR, 'config/report.json'), 'utf8'));
 const CHANNELS = CFG.channels;
 const MAX_VERS = 10;
@@ -455,6 +463,8 @@ async function smsLogin(drv, frame, { ask, log, sleep, LOGGED_IN }) {
   while (Date.now() < deadline) {
     if (await drv.evaluate(LOGGED_IN) === 'logged-in') {
       log('登录成功 ✓');
+      // 短信路线没有二维码，但 sms-code.txt 里是明文验证码，同样不能留在盘上
+      purgeAndLog({ dir: VERIFY_DIR, keep: KEEP_VERIFY, log, when: '登录成功' });
       return;
     }
     await sleep(1500);
@@ -855,6 +865,14 @@ async function loginFlow(drv, opts = {}) {
     throw new Error('等待登录超时');
   }
   log('登录成功 ✓');
+  /*
+   * 扫码成功那一刻就清，**不要等整个采集跑完**。
+   *
+   * 登录一旦成功，这些二维码就已经作废了；但它们**仍然能被扫**（扫了只会提示失效），
+   * 而后面还要跑 6 个频道的采集，没必要让废弃的登录码在盘上多躺几十秒。
+   * 失败路径由 main 的 finally 兜底，这里删过也无所谓（幂等）。
+   */
+  purgeAndLog({ dir: VERIFY_DIR, keep: KEEP_VERIFY, log, when: '登录成功' });
 }
 
 // ------------------------------------------------------------------ 取数
@@ -1046,13 +1064,43 @@ async function main() {
     log('──────────────── 完成 ────────────────');
     log(`UID ${uid} · 6 个频道 · 合计 ${totPulls} 抽（不含邦布）`);
     log(`数据已落盘：${DATA_DIR}`);
-    log('下一步：node scripts/build-report.mjs   → 生成报表');
+    log('下一步：node skills/zzz-stats/scripts/build-report.mjs --data ' + DATA_DIR + '   → 生成报表');
     log('✅ 采集结束，进程即将退出。');
   } finally {
     await drv.close?.();
     // 图片服务只在采集期间需要，取完立刻收掉，不留监听端口
     stopImageServer();
+    /*
+     * 兜底清理：登录失败、采集中途抛错都不能把二维码留在盘上。
+     * （Ctrl-C / kill 不经过这里——async main 的 finally 在 SIGINT 下根本不执行，
+     *   实测过；那两条路由文件末尾的信号处理负责，见那里的说明。）
+     * 成功路径在 loginFlow 里已经删过一次，这次通常是 0 个（幂等，不会再报一行）。
+     * 必须排在 stopImageServer 之后 —— 先把出口关掉再删文件，顺序反了中间会有一段
+     * 「服务还开着、文件已经被删」的空窗。
+     */
+    purgeAndLog({ dir: VERIFY_DIR, keep: KEEP_VERIFY, log, when: '收尾' });
   }
+}
+
+/*
+ * Ctrl-C / kill 不会跑 async main 的 finally。
+ *
+ * 实测过（`node` 里 async main + finally：SIGINT 后 finally 根本不执行），
+ * 所以不能指望 finally 兜住「用户中途按 Ctrl-C」这条路——
+ * 而那恰恰是最容易留下二维码的操作（用户扫不动、等不及、直接掐掉）。
+ *
+ * 这里显式挂信号处理：**只用同步 API**（rmSync 等），不在信号回调里 await。
+ * 信号回调里再去等异步操作，进程可能在它跑完之前就退出了。
+ * 删完再 `process.exit(130)`（SIGINT 的常规退出码）。
+ */
+for (const [sig, code] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]]) {
+  process.on(sig, () => {
+    try {
+      stopImageServer();
+      purgeAndLog({ dir: VERIFY_DIR, keep: KEEP_VERIFY, log, when: `收到 ${sig}` });
+    } catch { /* 退出路径上不要再抛 */ }
+    process.exit(code);
+  });
 }
 
 main().catch((e) => {
