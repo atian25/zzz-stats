@@ -15,7 +15,7 @@
  *   node scripts/screenshot.mjs --privacy 2           # 截图前先点全打码（对外用）
  *   node scripts/screenshot.mjs --preview             # README 预览图 → docs/preview.png（整页 2x，强制打码）
  *   node scripts/screenshot.mjs --chart 音擎 --filter 2
- *   node scripts/screenshot.mjs --detail 复刻角色     # 切底部详情面板的频段
+ *   node scripts/screenshot.mjs --detail 独家重映     # 切底部详情面板的频段
  *
  * 只依赖本机 Chrome，不需要 Playwright，不联网。
  * 浏览器查找复用 drivers.mjs 的 findChrome()，与采集期同一份候选列表。
@@ -61,10 +61,10 @@ const PRIVACY = argOf('privacy', null);
 const CHART = argOf('chart', null);
 const FILTER = argOf('filter', null);
 /*
- * --detail 复刻角色     切底部「抽卡详情」面板的频段 tab（按 .detail-tab 的文字匹配）
+ * --detail 独家重映     切底部「抽卡详情」面板的频段 tab（按 .detail-tab 的文字匹配）
  *
- * 和 --chart 分开：主图只画有 50/50 且折出过 UP 的频道（独家/音擎/复刻），
- * 详情面板要覆盖全部 6 个频段（含常驻/邦布/复刻音擎）。两者能点的 tab 不是同一批，
+ * 和 --chart 分开：主图只画有 50/50 且折出过 UP 的频道（独家 / 音擎 / 独家重映），
+ * 详情面板要覆盖全部 6 个频段（含常驻/邦布/音擎回响）。两者能点的 tab 不是同一批，
  * 所以必须两个参数，不能共用一个。
  */
 const DETAIL = argOf('detail', null);
@@ -160,7 +160,7 @@ function withState(srcHtml, { privacy, chartLabel, filters, detailLabel, collaps
     });` : ''}
     ${wantsDetail ? `var dtabs = [].slice.call(document.querySelectorAll('.detail-tab'));
     var dwant = ${JSON.stringify(String(detailLabel))};
-    // 详情面板的 tab 遍布全部 6 个频段，文字是「复刻角色」这种短名，同样先精确后包含
+    // 详情面板的 tab 遍布全部 6 个频段，文字是「独家重映」这种短名，同样先精确后包含
     var dtab = dtabs.filter(function (t) { return t.textContent.trim() === dwant; })[0]
             || dtabs.filter(function (t) { return t.textContent.indexOf(dwant) >= 0; })[0];
     if (dtab) dtab.click();` : ''}

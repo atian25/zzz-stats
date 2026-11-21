@@ -517,7 +517,7 @@ const channelReports = CFG.channels.map((ch) => {
    *
    * 官方 total_count 含「已经抽掉、但还没出 S」的垫抽。把它摊进每个金里，
    * 等于把一个尚未结算的成本算进历史均值——官方自己的 avr_up_count 也是扣掉垫抽的
-   * （常驻 650 抽 / 9 金 = 72.2，官方 65.8 = (650-58)/9；复刻角色 90/1=90，官方 76 = (90-14)/1）。
+   * （常驻 650 抽 / 9 金 = 72.2，官方 65.8 = (650-58)/9；独家重映 90/1=90，官方 76 = (90-14)/1）。
    * 角色池这次垫抽恰好是 0，所以旧口径没露馅；换个号就会系统性偏非，称号也会跟着偏。
    */
   const effectivePulls = Math.max(0, officialPulls - pity);
@@ -737,7 +737,14 @@ function evaluateTags() {
       const groups = rule.any ? [rule.any] : [rule.all ?? []];
       const hit = groups.some((group) => group.every((c) => compare(metrics[c.metric] ?? 0, c.op, c.value)));
       if (!hit) continue;
-      out.push({ id: rule.id, name: fill(rule.name, metrics), tone, tip: fill(rule.tip ?? rule.name, vars), bars: [] });
+      /*
+       * `highlight` 决定前端悬浮时怎么高亮，**由配置声明、不在前端按 id 硬编码**：
+       *   'line' → A 类：跟不歪率有关的标签（非酋翻身记 / 薛定谔的非酋）。
+       *            悬浮时整条折线置顶提亮、柱状图整片压暗，没有「命中柱」的概念。
+       *   缺省    → B 类：绑定柱位的标签（多金 / 连段 / 似非实欧等），压暗补集。
+       * 以后再加 A 类标签只改 config，不动 charts.js。
+       */
+      out.push({ id: rule.id, name: fill(rule.name, metrics), tone, tip: fill(rule.tip ?? rule.name, vars), bars: [], highlight: rule.highlight ?? null });
       continue;
     }
 
@@ -836,7 +843,8 @@ function evaluateTags() {
            * 音擎那几组会被错画到角色池的柱子上——不会报错，只是高亮错柱子。
            *
            * 所以只把稳定标识（频道内的 sort 序号）带给前端，
-           * 由前端按「当前频道」自己映射成柱位，映射逻辑与多金青点完全共用一份。
+           * 由前端按「当前频道」自己映射成柱位——这就是悬浮高亮用的那条链路
+           * （`barsOfTag()` → `sort` → 柱位），只有这一个入口，别处不要再写第二份。
            */
           multiGoldSorts: groups.flatMap((g, gi) => [
             ...(gi ? [null] : []),
@@ -1043,7 +1051,7 @@ const report = {
    *
    * 只收「有 50/50」且「真的折出了 UP 轮」的频道：
    *   - 常驻 / 邦布没有 UP 概念，折不出「这一轮花多少抽换到 UP」，画出来没有意义；
-   *   - 复刻角色 / 复刻音擎常常是 0 轮（账号没抽过），留着会给出一个点进去全空的 tab。
+   *   - 独家重映 / 音擎回响常常是 0 轮（账号没抽过），留着会给出一个点进去全空的 tab。
    * 一个都没有时 charts 为空数组，前端会跳过整块图表而不是崩在 Math.max(...[])。
    */
   charts: channelReports
@@ -1206,7 +1214,6 @@ const cssVars = {
   extremeTop: CFG.colors.extreme?.top,
   goodTop: CFG.colors.good?.top,
   badTop: CFG.colors.bad?.top,
-  multiGoldDot: CFG.colors.multiGoldDot,
 };
 const cssVarBlock = (() => {
   const pairs = Object.entries(cssVars)
@@ -1279,7 +1286,7 @@ for (const c of channelReports) {
     /*
      * 官方 avr_up_count 的分母是 up_count，没有 UP 的频道（常驻 / 邦布 / 空池）退回 s_count。
      * 实测 6/6 频道都严格等于 (total_count − next_s_cur_times) / 分母：
-     *   独家 87.9 · 音擎 73.8 · 常驻 65.8 · 邦布 48.6 · 复刻角色 76 · 回响 0。
+     *   独家 87.9 · 音擎 73.8 · 常驻 65.8 · 邦布 48.6 · 独家重映 76 · 音擎回响 0。
      * 对不上说明垫抽读错或 total_count 口径变了——这比「金数对得上」更能抓到问题。
      */
     const denom = (c.stats.upCount || 0) > 0 ? c.stats.upCount : c.stats.sCount;
@@ -1306,7 +1313,7 @@ if (report.totals.pullsOfficial != null && report.totals.pullsOfficial !== nonBa
  * 为什么要有这条：右轴（不歪率）曾经「修好又退回去」一次——
  * 左轴改成了「先读配置 axisPullsMax」，右轴漏了同一步、只留了自适应，
  * 于是角色池显 60%、音擎显 80%，跨图没法对比。
- * 之所以没被发现，是因为复刻角色那栏峰值恰好 100%、自适应出来也是 100%，
+ * 之所以没被发现，是因为独家重映那栏峰值恰好 100%、自适应出来也是 100%，
  * 随便点开一个频道看着是对的。
  *
  * 这里做的不是「验证图表」，而是**验证产物里每个频道都拿到了配置的固定上限**：

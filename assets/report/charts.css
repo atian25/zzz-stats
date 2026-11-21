@@ -233,7 +233,7 @@ html, body {
 .tag[data-tone="positive"] { color: var(--accent); }
 /* 兜底色：真实颜色由 charts.js 按 config.tags.tone 写到行内 style.color 上 */
 .tag[data-tone="negative"] { color: var(--bad); }
-.tag[data-tone="neutral"] { color: var(--multi-gold-dot, #7be0ff); }
+.tag[data-tone="neutral"] { color: var(--ink); }
 .tag[data-tone="info"] { color: var(--extreme); }
 .tag:hover { background: color-mix(in srgb, currentColor 22%, transparent); }
 /*
@@ -578,7 +578,7 @@ html, body {
 /*
  * 详情区固定高度 + 内部滚动。
  *
- * 各频道行数差异极大（独家 41 行、复刻音擎 0 行）。随内容自适应会让页面高度
+ * 各频道行数差异极大（独家 41 行、音擎回响 0 行）。随内容自适应会让页面高度
  * 剧烈变化，滚动条被浏览器收回，详情卡在视口里跳动几百像素；
  * 按最大频道锁定高度又会在空频道留下一大片空白。
  * 固定一个适中高度并允许内部滚动，两个问题都没有了。

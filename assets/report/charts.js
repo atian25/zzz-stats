@@ -231,6 +231,12 @@
        * 当前频道里没有的那些（比如在音擎、而此刻看的是独家）会被自动跳过。
        */
       if (t.multiGoldSorts && t.multiGoldSorts.length) n.dataset.goldSorts = t.multiGoldSorts.join(';');
+      /*
+       * 高亮类别由**配置**声明（tag rule 的 highlight 字段），不在这里按 id 硬编码。
+       *   line → A 类：跟不歪率有关的标签，悬浮时整条折线置顶提亮、柱状图整片压暗；
+       *   缺省 → B 类：绑定柱位的标签，压暗补集、命中的柱位保持原亮。
+       */
+      if (t.highlight) n.dataset.highlightMode = t.highlight;
       return n;
     };
 
@@ -253,10 +259,33 @@
    * 标签悬浮时压暗未命中柱子的蒙层。
    *
    * 色值走配置（`colors.barDim`，改配置就生效），透明度是行为参数、留在这里。
-   * 0.55 取值理由见 config 的 `_barDimComment` 与 tagHighlight 系列上的注释：
-   * 低于 0.4 命中/未命中亮度差不足，高于 0.75 未命中的柱几乎消失。
+   * 0.7 取值理由见 config 的 `_barDimComment` 与 tagHighlight 系列上的注释：
+   * 0.55 时命中/未命中的实测对照只有 1.90:1，扫一眼分不出来（用户反馈「反差不够」）；
+   * 0.75 以上未命中的柱压到接近底色，读者会以为那些轮次没有记录。
    */
-  const DIM_ALPHA = 0.55;
+  const DIM_ALPHA = 0.7;
+  /*
+   * 层序（从下到上，按实际 z 值升序）：柱子 2 → 折线 2.6 → 蒙层 2.8 → 柱顶数字 3 → 头像 4。
+   * **B 类悬停时蒙层压在折线之上**，所以补集区的折线会被压暗——这是用户定稿的要求
+   * （只盖非选中区，命中区的折线保持原色）。A 类反过来：整条折线置顶提亮。
+   *
+   * 折线必须压过柱子，但**必须在头像和柱顶数字之下**——这是用户定死的视觉口径：
+   * 折线是全局累计的辅助曲线，不能骑到「这一轮花了多少抽」「这一金是谁」上面去。
+   * 蒙层只压柱子（折线在它上面，不受影响）。
+   *
+   * 头像 / 柱顶数字**不用 z 去压**（它们在折线之上，抬蒙层就会连折线一起压暗），
+   * 改为逐项降透明度：非命中下标 0.3，命中保持 1。这样折线一个像素都不受影响。
+   */
+  const DIM_ITEM_OPACITY = 0.3;
+  /*
+   * 折线「置顶提亮」开关：A 类标签（跟不歪率有关的）悬浮期间为 true。
+   *
+   * 用模块级变量而不是往 series 里塞字段，是因为它要在 renderItem 里被读到——
+   * renderItem 每次重绘都会重新执行，改这个开关 + 触发一次重绘即可生效。
+   */
+  let lineHighlight = false;
+  const DIM_LABEL_COLOR = '#5a5a62';
+  const LABEL_BRIGHT = '#e8e8ee';
   const DIM_FILL = (() => {
     const hex = CFG.colors.barDim;
     if (!hex || typeof hex !== 'string') return `rgba(22,22,26,${DIM_ALPHA})`;
@@ -264,6 +293,27 @@
     const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16);
     if (!Number.isFinite(n)) return `rgba(22,22,26,${DIM_ALPHA})`;
     return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${DIM_ALPHA})`;
+  })();
+
+  /*
+   * 命中区**提亮**层：B 类是双向的，补集压暗 + 命中区提亮，把命中那块做成一个亮区。
+   *
+   * 关键约束：这一层必须铺在**柱子之下**（z=1 < 柱 2）。
+   * 早先的淡色带方案铺在柱子之上（`rgba(240,240,241,0.07)` + z=-1 那版历史），
+   * 结果柱子和折线一起被染白，看着像褪色。
+   * 铺在柱子下面，只抬背景亮度，柱体本身的色值一个像素都不动。
+   *
+   * 透明度取 0.10：再低在深底上看不出「这是一块亮区」，再高会把网格线和底色比例冲淡。
+   * 色值走配置（`colors.barLift`）。
+   */
+  const LIFT_ALPHA = 0.1;
+  const LIFT_FILL = (() => {
+    const hex = CFG.colors.barLift;
+    if (!hex || typeof hex !== 'string') return `rgba(240,240,241,${LIFT_ALPHA})`;
+    const h = hex.replace('#', '');
+    const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16);
+    if (!Number.isFinite(n)) return `rgba(240,240,241,${LIFT_ALPHA})`;
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${LIFT_ALPHA})`;
   })();
 
   /*
@@ -443,33 +493,10 @@
     });
 
     /*
-     * 十连多金青点：落在它所属的那根柱上。
-     * 点的直径按金数放大——2 金 6px、3 金 8px、4 金 10px。
-     * 全是同尺寸的话，「两次双金」和「一次三金」在图上长得一模一样。
-     *
-     * `sortToBar` 把「金在频道内的 sort 序号」映射成柱位，是这条链路上唯一的换算入口：
-     * 青点位置、以及标签悬浮高亮（multigold 标签 → 柱子）都从这里取。
-     * 两处若各写一份，迟早会漂——青点在 A 柱、高亮圈住 B 柱，而两边都不报错。
-     *
-     * 为什么不能直接用 `r.sort`：多金组的最后一金可能是「十连副金」，
-     * 它不属于任何 round 的 sort，只记录在某一轮的 `side[]` 里。
-     * 所以两种都要比：本轮 UP 本身，或本轮带出的副金。
+     * 十连多金**不再在柱上画青点**（用户定的：那个小点没有信息增量，已删）。
+     * 多金信息现在只走两条路：柱上的标签（文字），和 hover 标签时的高亮。
+     * 高亮需要「金在频道内的 sort 序号 → 柱子下标」的换算，实现在 barsOfTag 里（唯一入口）。
      */
-    const barSortOf = (sort) => all.findIndex(
-      (r) => r.sort === sort || r.side.some((s) => s.sort === sort),
-    );
-    const dotItems = [];
-    for (const g of c.multiGold) {
-      const idx = barSortOf(g.sort);
-      if (idx < 0) continue;
-      const at = idxs.indexOf(idx);
-      if (at < 0) continue;   // 这根柱被版本过滤掉了
-      dotItems.push({
-        value: [at, all[idx].total],
-        symbolSize: 4 + (g.size ?? 2) * 1,
-        symbolOffset: [11, -16],
-      });
-    }
 
     /*
      * 左轴上限**按频道固定**，不随数据自适应。
@@ -480,7 +507,7 @@
      *
      * 固定值来自「该频道保底抽数 × 2」：
      * 一轮 UP 的成本最多是「先歪一次（吃保底）+ 再吃保底」，也就是 2 倍保底。
-     * 角色池/常驻/复刻 90 × 2 = 180；音擎/回响/邦布 80 × 2 = 160。
+     * 角色池 / 常驻 / 独家重映 90 × 2 = 180；音擎 / 音擎回响 / 邦布 80 × 2 = 160。
      * 实测最大柱 159 / 137，都落在框内，不会截断。
      */
     const pullsMaxByChannel = CFG.numbers.axisPullsMax ?? {};
@@ -495,7 +522,7 @@
      * 固定之后分界线在任何一张图上都同高，档位读法统一。
      *
      * **这里曾经退回过一次**：左轴改成了「先读配置」，右轴漏了这半句，只留下自适应，
-     * 于是角色池显 60%、音擎显 80%。因为复刻角色那栏峰值恰好 100%、自适应出来也是 100%，
+     * 于是角色池显 60%、音擎显 80%。因为独家重映那栏峰值恰好 100%、自适应出来也是 100%，
      * 只看那一张图会以为没问题——验这个必须六个频道全验，别只看一张。
      * 回归防线在 references/report-rules.md §9.3：构建后断言所有频道的右轴上限 === 配置值。
      *
@@ -590,11 +617,17 @@
           type: 'bar',
           stack: 'cost',
           /*
+           * 显式写 z: 2，作为整张图的层序基准点。
+           * 层序（下→上，按实际 z 升序）：柱子 2 → 折线 2.6 → 蒙层 2.8 → 柱顶数字 3 → 头像 4。
+           * 不写也能跑（bar 默认 2），但层序靠默认值兜着，后面谁加系列就会漂。
+           */
+          z: 2,
+          /*
            * 柱宽按类目带宽的 46%，但必须有像素上限。
            *
            * barWidth 的百分比是「类目带宽」的比例，不是画布比例：
            * 只有 1 根柱时类目带宽就是整个绘图区，46% 会变成 600px 宽的巨型色块
-           * （实测复刻角色页就是 600px，而 71 根柱时每根只有 96px）。
+           * （实测独家重映页就是 600px，而 71 根柱时每根只有 96px）。
            * 上限走配置，改配置就生效，不在样式里另写死数。
            */
           barWidth: '46%',
@@ -610,6 +643,8 @@
           // 与 off 段同宽：同一根柱的两段宽度不一致会错位成阶梯形
           barMaxWidth: CFG.numbers.barMaxWidth,
           data: upData,
+          // 与 off 同层：同一根柱的两段必须在同一层，否则半根柱会被蒙层盖住半根不盖
+          z: 2,
           label: { position: 'inside', fontSize: 10, fontFamily: 'DM Mono, monospace' },
           emphasis: { itemStyle: { borderColor: '#fff', borderWidth: 1, shadowBlur: 8, shadowColor: 'rgba(245,192,74,0.35)' } },
         },
@@ -644,14 +679,6 @@
           tooltip: { show: false },
         },
         {
-          name: 'multiGold',
-          type: 'scatter',
-          data: dotItems,
-          itemStyle: { color: COLORS.multiGoldDot, borderWidth: 0 },
-          z: 5,
-          tooltip: { show: false },
-        },
-        {
           name: 'winRate',
           /*
            * 不歪率折线：**按 35% 这条线分色，蓝＝好、红＝差**。
@@ -675,13 +702,16 @@
            * 柱子没显式设 z（默认 2），折线早先也是 2 —— 同级时折线会被柱子压在下面，
            * 曲线一进到柱体里就消失，看起来像「数据从中间才开始」。
            *
-           * 3.6 而不是 3：标签悬浮时 `tagHighlight` 的蒙层 z 是 2.5，
-           * 实测写 3 时折线**仍被蒙层压暗**（白色段由 (244,244,244) 掉到 (122,122,124)）——
-           * 同属 custom 系列、z 只差 0.5 时，绘制顺序由系列注册顺序决定，
-           * 后注册的 tagHighlight 赢。抬到 3.6 拉开明确差值才稳定压过蒙层。
-           * 仍低于头像（4）与多金点（5），不会骑到角色脸上。
+           * 层序（下→上）：柱子 2 → **折线 2.6** → 蒙层 2.8 → 柱顶数字 3 → 头像 4。
+           * 折线要压过柱子和蒙层，但**必须在柱顶数字与头像之下**：
+           * 它是全局累计的辅助曲线，骑到「这一轮花了多少抽」「这一金是谁」上面就抢了主信息。
+           *
+           * 早先这里写过 3.6、注释理由是「写 3 时折线被蒙层压暗」——那个依据是错的：
+           * 当时测到的 (244,244,244)→(122,122,124) 其实是**柱顶总抽数文字**变灰，
+           * 不是折线（折线同一位置实测 Δ=0.0）。别按那条错误依据再把 z 拉高。
+           * 现在折线低于柱顶数字（3）是**用户明确要求的层序**，不是退让。
            */
-          z: 3.6,
+          z: 2.6,
           tooltip: { show: false },
           renderItem: (params, api) => {
             const i = params.dataIndex;
@@ -739,7 +769,25 @@
              * `lineCap: 'round'` 两端都圆：线段是一段一段画的，方头会让每段接缝处
              * 出现一个比线宽略窄的缺口，虚线感明显。
              */
+            /*
+             * A 类标签悬浮期间（`lineHighlight`）：
+             *   - 描边换成高对比的亮色并加粗，让整条曲线从压暗的柱子上跳出来；
+             *   - **三档本色一个像素都不改**，所以红/绿/蓝仍然分得清（改成本白就分不出好坏了）。
+             * 实测：亮描边对压暗后的柱子对比度足够，具体数字见 report-rules §6。
+             */
+            /*
+             * A 类悬浮时**不提亮描边、也不换亮色**，只把本色线加粗、描边保持深色。
+             *
+             * 试过两种「提亮」都失败，记在这里免得再走一遍：
+             *   1) 白色描边（0.55 白 / 5.6px）：线看着发白，三档红绿蓝糊成一片白——
+             *      正是「一提亮就分不出好坏」那个坑。
+             *   2) 换更亮的线色：绿蓝尚可，红档在深底上依然发闷。
+             * 最终用「加粗本色」（1.4→2.2px）+ 原来的深色描边：
+             * 色相一个像素都不动，三档可分辨；靠背景被压暗、线本身变粗产生「浮在最前」的感觉。
+             */
             const HALO = COLORS.winRateHalo;
+            const HALO_W = 4.6;
+            const LINE_W = lineHighlight ? 2.2 : 1.4;
             if (i + 1 < wins.length && wins[i + 1] != null) {
               const v2 = wins[i + 1];
               const b = api.coord([i + 1, v2]);
@@ -747,13 +795,13 @@
                 children.push({
                   type: 'line',
                   shape: { x1: a[0], y1: a[1], x2: b[0], y2: b[1] },
-                  style: { stroke: HALO, lineWidth: 4.6, lineCap: 'round' },
+                  style: { stroke: HALO, lineWidth: HALO_W, lineCap: 'round' },
                 });
               }
               children.push({
                 type: 'line',
                 shape: { x1: a[0], y1: a[1], x2: b[0], y2: b[1] },
-                style: { stroke: colorOf(Math.max(v1, v2)), lineWidth: 1.4, lineCap: 'round' },
+                style: { stroke: colorOf(Math.max(v1, v2)), lineWidth: LINE_W, lineCap: 'round' },
               });
             }
             // 圆点：同样两遍。描边圆的半径要比线宽半径大 1.6，才盖得住线头
@@ -916,16 +964,19 @@
           silent: true,
           tooltip: { show: false },
           /*
-           * z 必须**高于柱子**（柱子没有显式 z，默认 2）：蒙层是盖在柱子上的。
-           * 同时必须**低于折线（z=3）、头像（z=4）、多金青点（z=5）**——
-           * 这是实测调出来的：一开始把 z 设成 3.5（压住折线），
-           * 结果折线被蒙层滤成灰绿（截图实测 RGB 由 #5FD98A 降到偏灰），看着像掉色；
-           * 而折线是**全局累计**曲线，和「这个标签命中了哪几根柱」不是同一件事，
-           * 没有理由跟着变暗。头像和青点同理：它们标的是「这一金是谁」，
-           * 压暗会让命中组自己也看不清，等于白高亮。
-           * 2.5 正好卡在柱子之上、折线之下，只压柱子。
+           * z=2.8：**压在折线（2.6）之上、柱顶数字（3）之下**。
+           *
+           * 这是用户定稿的 B 类行为：**非选中区的折线也要被压暗**，所以蒙层必须盖住折线。
+           * 实测压暗区内 1146 个折线像素、1138 个变化；命中区（补集洞里）45 个、0 变化
+           * ——洞里不铺蒙层，那里折线天然保持原色。
+           * （A 类相反：整条折线置顶提亮，见 applyLineHover。）
+           *
+           * 柱顶数字与头像在蒙层之上，靠逐项降透明度压暗，不靠抬 z
+           * （抬 z 会把折线一起压掉）。见 DIM_ITEM_OPACITY 与 hover 处理。
+           *
+           * 层序（下→上，按实际 z 升序）：柱子 2 → 折线 2.6 → 蒙层 2.8 → 柱顶数字 3 → 头像 4。
            */
-          z: 2.5,
+          z: 2.8,
           data: [],
           renderItem: (params, api) => {
             const from = api.value(0);
@@ -953,14 +1004,56 @@
               shape: { x: x1, y: top, width: x2 - x1, height: h },
               /*
                * 蒙层颜色用图表的深色底（`--bg` 同族），不是纯黑，也不是 tooltip 的黑。
-               * 纯黑会把柱子压成死黑一片，看着像图坏了；用底色并在 0.55 的透明度上，
+               * 纯黑会把柱子压成死黑一片，看着像图坏了；用底色并在 0.7 的透明度上，
                * 柱子仍能看出轮廓和颜色倾向，只是明显退到背景层。
-               * 透明度取 0.55（`DIM_ALPHA`）：实测 0.4 时命中/未命中只有 1.56:1，
-               * 扫一眼分不出来；0.75 时未命中的柱几乎消失，读者会以为那些轮次没有记录。
-               * 0.55 落在 1.90:1，既能分辨又保住了未命中的轮廓。
+               * 透明度取 0.7（`DIM_ALPHA`）：0.55 时命中/未命中的实测对照只有 1.90:1，
+               * 用户反馈「反差不够」；0.75 以上未命中的柱压到接近底色，
+               * 读者会以为那些轮次没有记录。0.7 落在实测 3.29:1，扫一眼就能分出。
                * 色值走配置（`colors.barDim`），不在这里写死，见 DIM_FILL 的定义。
                */
               style: { fill: DIM_FILL },
+            };
+          },
+        },
+        {
+          /*
+           * 命中区**提亮**层（B 类专用，与上面的压暗蒙层是一对）。
+           *
+           * 为什么需要它：只压暗补集，命中区就只是「没有被压暗」，在深色底上仍然
+           * 是一块普通背景，用户的原话是「大底色有点灰」——他要的是命中那块
+           * **主动变成一块亮区**，靠亮度把视线吸过去，而不是靠周围变暗的对比。
+           *
+           * **z=1，低于柱子（2）**：铺在柱子下面只抬背景，柱体色值一个像素都不动。
+           * 早先的淡色带方案铺在柱子之上，把柱子和折线一起染白，看着像褪色。
+           *
+           * data 与压暗层**互补但独立**：压暗层拿补集、这层拿命中区间；
+           * 两者都由 hover 时算出的同一份命中柱位驱动，`mouseleave` 一起清空。
+           * 初始 data 必须为空——B 类复原走 `setOption(buildOption(), {notMerge:true})`
+           * 整体重建，重建时这层要是空的，否则会残留一块亮区。
+           */
+          name: 'tagHighlightLift',
+          type: 'custom',
+          silent: true,
+          tooltip: { show: false },
+          z: 1,
+          data: [],
+          renderItem: (params, api) => {
+            const from = api.value(0);
+            const to = api.value(1);
+            const a = api.coord([from, 0]);
+            const b = api.coord([to, 0]);
+            // 与压暗层同一套半格算法，两层边界才严丝合缝（不要各写一份）
+            const n = api.value(2);
+            const catW = params.coordSys.width / n;
+            const half = catW / 2;
+            const x1 = Math.min(a[0], b[0]) - half;
+            const x2 = Math.max(a[0], b[0]) + half;
+            const top = params.coordSys.y;
+            const h = params.coordSys.height;
+            return {
+              type: 'rect',
+              shape: { x: x1, y: top, width: x2 - x1, height: h },
+              style: { fill: LIFT_FILL },
             };
           },
         },
@@ -1040,7 +1133,7 @@
      *
      * 为什么十连多金不能也用下标：多金组是**角色池 + 音擎合并**统计的，
      * 两边的 round 编号各算各的，直接当角色池下标用会高亮到别的柱子上（且不报错）。
-     * 所以多金走 sort → 柱位这条映射，与青点位置共用同一套换算（见 buildOption 的 barSortOf）。
+     * 所以多金走 sort → 柱位这条映射，换算实现在本函数（barsOfTag）里，是唯一入口。
      *
      * 过滤后必须换算：`data-bars` 里是原下标、多金是原柱位，
      * 直接拿去 highlight 会落到错列的柱子上（甚至越界）。
@@ -1085,9 +1178,204 @@
       return out;
     };
 
+    /*
+     * 头像 / 柱顶总抽数这两层**不靠 z 压暗**，改为逐项降透明度。
+     *
+     * 为什么不用 z：这两层都在折线之上（折线 2.6 < 数字 3 < 头像 4）。
+     * 要把它们压暗就得把蒙层抬到它们之上，那样折线也必然一起被压暗，
+     * 而折线是全局累计曲线、必须保持原亮度——两条要求直接冲突，只能分开做。
+     *
+     * 逐项改的好处：折线一个像素都不受影响，而且命中组的三层仍然是全亮的。
+     */
+    const withOpacity = (item, opacity) => {
+      const o = (item && typeof item === 'object' && !Array.isArray(item)) ? { ...item } : { value: item };
+      o.itemStyle = { ...(o.itemStyle ?? {}), opacity };
+      return o;
+    };
+    /*
+     * 把某几个系列的数据项按「是否命中」重设。
+     *
+     * 数据项从 `getOption()` 取当前值再改，不依赖 buildOption 里的局部变量
+     * （avatarItems 在那个函数作用域里，这里够不到）。
+     * 统一走 setOption 的 series 补丁，前面几个系列要占位，否则按位置合并会错位。
+     */
+    const dimLayers = (indices, dimmed) => {
+      const hits = new Set(indices);
+      const opt = chart.getOption();
+      const tops = [];
+      for (const name of ['total', 'avatar']) {
+        const si = opt.series.findIndex((x) => x.name === name);
+        if (si >= 0) tops.push([si, name]);
+      }
+      if (!tops.length) return;
+      const patch = Array.from({ length: Math.max(...tops.map(([i]) => i)) + 1 }, () => ({}));
+      /*
+       * 判断某项属于哪根柱，一律读 `value[0]`，**不能用数组下标**。
+       *
+       * avatar 系列的数据项是"一层头像一项"：一根柱可能摞 2~4 个头像，
+       * 所以 data 的下标是头像序号、不是柱位。按下标判命中的话，
+       * 第 2 根柱的第 2 层头像会被当成第 2 根柱处理，整片错位
+       * （实测：命中柱 24/25/26 的头像全被压暗，未命中的反而亮的——正好反了）。
+       * total 系列虽然一柱一项、下标恰好等于柱位，也统一走 value[0]，
+       * 免得以后往它前面插数据项就悄悄错位。
+       */
+      const barOf = (item) => {
+        if (Array.isArray(item)) return Number(item[0]);
+        const v = item?.value;
+        if (Array.isArray(v)) return Number(v[0]);
+        return Number.NaN;
+      };
+      for (const [si, name] of tops) {
+        const src = opt.series[si].data ?? [];
+        patch[si] = {
+          data: src.map((item) => {
+            const on = hits.has(barOf(item));
+            if (name === 'total') {
+              /*
+               * 柱顶数字用**换颜色**，不用透明度：数字是读数，0.3 的透明度在深底上
+               * 会糊成一坨看不出是几抽；换成暗灰仍然读得出，只是退到次要层。
+               */
+              const o = (item && typeof item === 'object' && !Array.isArray(item)) ? { ...item } : { value: item };
+              o.label = { ...(o.label ?? {}), color: on || !dimmed ? LABEL_BRIGHT : DIM_LABEL_COLOR };
+              return o;
+            }
+            return withOpacity(item, on || !dimmed ? 1 : DIM_ITEM_OPACITY);
+          }),
+        };
+      }
+      chart.setOption({ series: patch });
+    };
+
+    /*
+     * 设置蒙层的压暗区间（传 `[[起柱位, 止柱位], ...]`，空数组＝清除）。
+     *
+     * 抽成函数是因为现在有两种调用方：
+     *   A 类标签 → 传整片 `[[0, n-1]]`；
+     *   B 类标签 → 传按命中柱位切出的补集。
+     */
+    const setDimRuns = (runs) => {
+      const si = chart.getOption().series.findIndex((x) => x.name === 'tagHighlight');
+      if (si < 0) return;
+      const nCat = chart.getOption().xAxis[0].data.length;
+      const patch = Array.from({ length: si }, () => ({}));
+      patch.push({ data: runs.map(([a, b]) => [a, b, nCat]) });
+      chart.setOption({ series: patch });
+    };
+
+    /*
+     * 设置命中区的**提亮**区间（B 类的另一半）。
+     *
+     * 与压暗层分开两个函数，因为两者 data 互补：
+     *   压暗层拿补集（命中柱位之间的段）；
+     *   提亮层拿命中柱位自身（连续的命中合成一段，如 [[24,26]]）。
+     *
+     * 按名称定位、不用下标——series 数组插一个就会整体错位，
+     * 那时提亮会悄悄画到别的系列上（不报错，只是不亮）。
+     */
+    const setLiftRuns = (runs) => {
+      const si = chart.getOption().series.findIndex((x) => x.name === 'tagHighlightLift');
+      if (si < 0) return;
+      const nCat = chart.getOption().xAxis[0].data.length;
+      const patch = Array.from({ length: si }, () => ({}));
+      patch.push({ data: runs.map(([a, b]) => [a, b, nCat]) });
+      chart.setOption({ series: patch });
+    };
+
+    /*
+     * 把有序柱位压成连续区间：`[24,25,26]` → `[[24,26]]`；不连续就多段。
+     * 提亮层要的是「命中柱位自身」，不是逐柱各铺一块——相邻柱合成一段，
+     * 中间才不会出现一条条比柱还细的亮缝。
+     */
+    const runsOfHits = (sortedHits) => {
+      const out = [];
+      for (const h of sortedHits) {
+        const last = out[out.length - 1];
+        if (last && h === last[1] + 1) last[1] = h;
+        else out.push([h, h]);
+      }
+      return out;
+    };
+
+    /*
+     * ── A 类：跟不歪率有关的标签（配置里 highlight: "line"）──
+     *
+     * 这类标签说的是「整条累计曲线的形状」，不是「哪几根柱子」，
+     * 所以没有「命中柱」：柱状图**整片压暗**，整条折线**提到最前并提亮**。
+     *
+     * 折线提到最前不能靠 z——实测 z 与 zlevel 都压不过 custom 蒙层
+     * （28 个折线实心像素按 alpha 0.7 合成后被压暗，改 z 2.6→2.9、加 zlevel:1 均无效）。
+     * 可靠做法是把折线系列的数据用 setOption 重设一遍：系列被重新渲染时就排到最后，
+     * 天然盖在所有其它系列之上。mouseleave 时用 buildOption() 整体复原层序，见下。
+     */
+    /*
+     * A 类：把折线真正提到**所有系列之上**（含蒙层、柱顶数字、头像），并提亮。
+     *
+     * **只改 z 不管用，这是实测结论**：把折线 z 从 2.6 抬到 2.9、再加 `zlevel: 1`，
+     * 蒙层照样压在折线上——28 个折线实心像素被按 alpha 0.7 合成，
+     * 实测 `(255,140,150)`→`(91,57,63)`，与 0.7 合成公式算出的 `(92,57,60)` 完全吻合。
+     * 原因：`custom` 系列的可视化分组不走单纯 z 排序，`setOption` 里的局部 z 改动
+     * 不会重排已渲染的分组。
+     *
+     * 可靠做法是**重建整个 option 并调整系列顺序**：把 winRate 挪到 series 数组末尾，
+     * 让它成为最后绘制的一层。z 也一起给到 50，两条路都走，不依赖单一路径。
+     */
+    const applyLineHover = (on) => {
+      lineHighlight = on;
+      const base = buildOption();
+      const si = base.series.findIndex((x) => x.name === 'winRate');
+      if (si < 0) return;
+      if (on) {
+        const [lineSeries] = base.series.splice(si, 1);
+        lineSeries.z = 50;
+        base.series.push(lineSeries);      // 挪到最后 = 最后绘制 = 压在所有系列之上
+        /*
+         * 蒙层在 A 类要整片盖住柱子、柱顶数字与头像。
+         * 它自己的 z 给到 40：低于折线（50），高于柱子（2）、数字（3）、头像（4）。
+         * 这样「折线浮在最前、其余全部退后」是一条纯粹的层序关系，
+         * 不需要再靠逐项降透明度去凑（那条路改不动蒙层覆盖不到的东西）。
+         */
+        const di = base.series.findIndex((x) => x.name === 'tagHighlight');
+        if (di >= 0) base.series[di].z = 40;
+        chart.setOption(base, { notMerge: true });
+      } else {
+        chart.setOption(base, { notMerge: true });
+      }
+    };
+
     $('#tags').addEventListener('mouseenter', (e) => {
       const tag = e.target.closest('.tag');
-      if (!tag || (!tag.dataset.bars && !tag.dataset.goldSorts)) return;
+      if (!tag) return;
+      const mode = tag.dataset.highlightMode;
+      /*
+       * A 类：整条折线置顶提亮 + 柱状图整片压暗。
+       * 早退条件是「有 label 才算标签」——A 类标签既没有 bars 也没有 goldSorts，
+       * 不能沿用 B 类的门槛，否则这两个标签永远进不来。
+       */
+      if (mode === 'line') {
+        /*
+         * 顺序要紧：applyLineHover 会 notMerge 重建 option，
+         * 必须**先**重建（含折线置顶），**再**往上贴整片蒙层，
+         * 否则蒙层会被这次重建冲掉。
+         * 蒙层在 A 类的 z 已由 applyLineHover 设成 40（高于柱子/数字/头像，低于折线 50）。
+         */
+        applyLineHover(true);
+        setDimRuns([[0, chart.getOption().xAxis[0].data.length - 1]]);   // 整片
+        /*
+         * A 类**没有命中区**，提亮层必须留空。
+         * 不清的话，从 B 类标签直接划到 A 类标签时，上一层留下的亮区会残在那里
+         * （跨标签 hover 不会先触发 mouseleave，这是浏览器事件的实际行为）。
+         */
+        setLiftRuns([]);
+        /*
+         * 柱顶数字与头像也要跟着暗。它们（z=3 / z=4）在 A 类里低于蒙层（z=40），
+         * 理论上会被蒙层盖住；但蒙层是 0.7 的半透明，压完数字仍偏亮，
+         * 所以**两层一起做**：蒙层负责整体退后，逐项降透明度负责把读数与头像压到底。
+         * 顺序必须在 applyLineHover 的 notMerge 重建之后，否则会被冲掉。
+         */
+        dimLayers([], true);
+        return;
+      }
+      if (!tag.dataset.bars && !tag.dataset.goldSorts) return;
       const indices = barsOfTag(tag);
       if (!indices.length) return;
       /*
@@ -1102,8 +1390,6 @@
        */
       const si = chart.getOption().series.findIndex((x) => x.name === 'tagHighlight');
       if (si < 0) return;
-      // setOption 的 series 是按数组位置合并的，前面几个系列要占位（空对象＝保持不变）
-      const patch = Array.from({ length: si }, () => ({}));
       // 第三个值带类目总数，renderItem 用它算格宽（见该系列注释）
       const nCat = chart.getOption().xAxis[0].data.length;
       /*
@@ -1124,19 +1410,60 @@
         cursor = h + 1;
       }
       if (cursor <= nCat - 1) dimRuns.push([cursor, nCat - 1]);
-      patch.push({ data: dimRuns.map(([a, b]) => [a, b, nCat]) });
-      chart.setOption({ series: patch });
+      setDimRuns(dimRuns);
+      // 命中区主动提亮（B 类的另一半，z=1 铺在柱子之下，只抬背景）
+      setLiftRuns(runsOfHits(hits));
+      /*
+       * 把实际用的压暗区间写到 DOM 上，供像素验收脚本直接读取。
+       * 不让脚本自己重算一遍：重算等于把「补集怎么切」实现两份，迟早漂。
+       */
+      document.getElementById('chart').dataset.dimRuns = JSON.stringify(dimRuns);
+      /*
+       * 头像 / 柱顶数字：逐项压暗非命中的下标（这三层不靠 z，理由见 dimLayers）。
+       * 命中组的头像与数字保持全亮，作为「这一组是谁」的直接指认。
+       */
+      dimLayers(indices, true);
     }, true);
 
     $('#tags').addEventListener('mouseleave', (e) => {
       const tag = e.target.closest('.tag');
-      if (!tag || (!tag.dataset.bars && !tag.dataset.goldSorts)) return;
+      if (!tag) return;
+      const mode = tag.dataset.highlightMode;
+      if (mode === 'line') {
+        /*
+         * A 类复原：关掉提亮开关、清空整片蒙层、恢复头像与柱顶数字。
+         *
+         * 层序复原**不能只靠关开关**：折线在上一步被重新赋过 data，
+         * 系列顺序已经变了。这里用 buildOption() 整体重设（`notMerge` 语义之外的最稳做法），
+         * 让折线回到柱体之上、柱顶数字与头像之下的原位。
+         * 实测复原后折线像素与未悬浮时逐像素一致（见 report-rules §6 的验收）。
+         */
+        applyLineHover(false);
+        setDimRuns([]);
+        dimLayers([], false);
+        chart.setOption(buildOption(), { notMerge: true });
+        return;
+      }
+      if (!tag.dataset.bars && !tag.dataset.goldSorts) return;
+      /*
+       * B 类复原。**必须整体重建 option，不能只把透明度设回 1。**
+       *
+       * 踩过的坑（实测 42707 个像素有差异、最大通道差 49，且复原后整体偏亮）：
+       * 原来这里只做 downplay + 清蒙层 + `dimLayers([], false)`，
+       * 而 dimLayers 是往每个数据项的 `itemStyle` 里**写** `opacity: 1`。
+       * 原始数据项本来没有 `itemStyle.opacity` 这个字段，
+       * 「补上一个 opacity:1」和「没有这个字段」在 zrender 里不是同一条渲染路径——
+       * 头像因此多出/少掉一层合成，看起来比原图亮。
+       *
+       * A 类复原因为最后有 `setOption(buildOption(), {notMerge:true})` 一直是干净的，
+       * 所以 B 类也走同一条路：重建 = 回到与初始渲染完全一致的字段状态。
+       * 重建不会丢状态：`buildOption()` 用 `visibleIndices(c)` 读当前过滤，
+       * 频段走 `chartState.channel`，两者都在闭包里，不依赖 hover 期间的补丁。
+       *
+       * 验收标准是**整图逐像素 diff = 0**（不是抽样），见 report-rules §6。
+       */
       chart.dispatchAction({ type: 'downplay', seriesIndex: [0, 1] });
-      const si = chart.getOption().series.findIndex((x) => x.name === 'tagHighlight');
-      if (si < 0) return;
-      const patch = Array.from({ length: si }, () => ({}));
-      patch.push({ data: [] });
-      chart.setOption({ series: patch });
+      chart.setOption(buildOption(), { notMerge: true });
     }, true);
   }
 
@@ -1464,11 +1791,11 @@
     const vars = {
       extremePulls: CFG.numbers.extremePulls,
       goldCount: R.metrics.goldCount,
-      multiGoldRounds: R.metrics.multiGoldRounds,
       /*
-       * 图例里的「青点＝十连多金 ×N」要跟着当前频道走：
-       * 切到音擎后还写角色池的 N，图例就在说另一个频道的数。
-       * 所以覆盖 multiGoldRounds（模板用的就是这个名字）。
+       * 只保留这一个 multiGoldRounds，取**当前频道**的组数。
+       * 早先这里有两行同名字段（先全局、再被频道版覆盖），读起来像 bug；
+       * 现在只有一个，语义就是「本频道有几组多金」。
+       * 图例里已经没有青点那一项了（青点已删），但这个值仍被 tags 的 tip 模板用。
        */
       multiGoldRounds: (c.multiGold ?? []).length,
       /*
@@ -1484,13 +1811,10 @@
       extreme: COLORS.extreme.top,
       good: COLORS.good.top,
       line: COLORS.winRateLucky,
-      dot: COLORS.multiGoldDot,
     };
 
     for (const item of CFG.copy.legend ?? []) {
       const line = typeof item === 'string' ? { text: item } : item;
-      // 多金这一条在「当前频道一组都没有」时不显示，免得图例写 ×0
-      if (line.swatch === 'dot' && !vars.multiGoldRounds) continue;
       const s = el('span');
       const color = swatchColor[line.swatch];
       if (color) {
