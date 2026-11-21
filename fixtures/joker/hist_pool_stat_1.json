@@ -1,0 +1,132 @@
+{
+ "retcode": 0,
+ "message": "OK",
+ "data": {
+  "cur_ver": "3.3",
+  "list": [
+   {
+    "gacha_type": "GACHA_TYPE_PERMANENT",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.4",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1141",
+      "name": "莱卡恩",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1141.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "80",
+      "record_time": "1736428996",
+      "sort": "470"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_PERMANENT",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.2",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1021",
+      "name": "猫又",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1021.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "80",
+      "record_time": "1728482829",
+      "sort": "390"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_PERMANENT",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.0",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "14114",
+      "name": "拘缚者",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/63fa95fc651002fde0a8edc535eb915a.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "80",
+      "record_time": "1721942213",
+      "sort": "310"
+     },
+     {
+      "item_id": "1041",
+      "name": "「11号」",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1041.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "34",
+      "record_time": "1721940530",
+      "sort": "230"
+     },
+     {
+      "item_id": "14104",
+      "name": "硫磺石",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/5401033b46f120a988e3e3edd5e8be81.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "79",
+      "record_time": "1721918113",
+      "sort": "196"
+     },
+     {
+      "item_id": "1021",
+      "name": "猫又",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1021.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "68",
+      "record_time": "1720320790",
+      "sort": "117"
+     },
+     {
+      "item_id": "1101",
+      "name": "珂蕾妲",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1101.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "49",
+      "record_time": "1720186049",
+      "sort": "49"
+     }
+    ]
+   }
+  ]
+ }
+}

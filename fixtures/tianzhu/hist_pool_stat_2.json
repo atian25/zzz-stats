@@ -1,0 +1,672 @@
+{
+ "retcode": 0,
+ "message": "OK",
+ "data": {
+  "cur_ver": "3.3",
+  "list": [
+   {
+    "gacha_type": "GACHA_TYPE_CHARACTER_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "3.1",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1581",
+      "name": "蕾米埃尔",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1581.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "8",
+      "record_time": "1785292144",
+      "sort": "2348"
+     },
+     {
+      "item_id": "1581",
+      "name": "蕾米埃尔",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1581.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "78",
+      "record_time": "1785292101",
+      "sort": "2340"
+     },
+     {
+      "item_id": "1581",
+      "name": "蕾米埃尔",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1581.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "71",
+      "record_time": "1785292028",
+      "sort": "2262"
+     },
+     {
+      "item_id": "1041",
+      "name": "「11号」",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1041.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "37",
+      "record_time": "1785291962",
+      "sort": "2191"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_CHARACTER_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "3.0",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1561",
+      "name": "维琳娜",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1561.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "52",
+      "record_time": "1781710257",
+      "sort": "2154"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_CHARACTER_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.7",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1021",
+      "name": "猫又",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1021.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "1",
+      "record_time": "1774318458",
+      "sort": "2102"
+     },
+     {
+      "item_id": "1511",
+      "name": "南宫羽",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1511.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "44",
+      "record_time": "1774318458",
+      "sort": "2101"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_CHARACTER_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.6",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1491",
+      "name": "千夏",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1491.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "76",
+      "record_time": "1770699571",
+      "sort": "2057"
+     },
+     {
+      "item_id": "1491",
+      "name": "千夏",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1491.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "79",
+      "record_time": "1770350181",
+      "sort": "1981"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_CHARACTER_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.5",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1431",
+      "name": "叶瞬光",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1431.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "50",
+      "record_time": "1767073246",
+      "sort": "1902"
+     },
+     {
+      "item_id": "1431",
+      "name": "叶瞬光",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1431.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "76",
+      "record_time": "1767062026",
+      "sort": "1852"
+     },
+     {
+      "item_id": "1101",
+      "name": "珂蕾妲",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1101.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "80",
+      "record_time": "1767061954",
+      "sort": "1776"
+     },
+     {
+      "item_id": "1431",
+      "name": "叶瞬光",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1431.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "79",
+      "record_time": "1767061747",
+      "sort": "1696"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_CHARACTER_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.3",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1211",
+      "name": "丽娜",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1211.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "25",
+      "record_time": "1761148873",
+      "sort": "1617"
+     },
+     {
+      "item_id": "1451",
+      "name": "卢西娅",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1451.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "40",
+      "record_time": "1760497140",
+      "sort": "1592"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_CHARACTER_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.2",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1461",
+      "name": "「席德」",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1461.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "78",
+      "record_time": "1756953624",
+      "sort": "1552"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_CHARACTER_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.1",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1411",
+      "name": "柚叶",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1411.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "78",
+      "record_time": "1752633688",
+      "sort": "1474"
+     },
+     {
+      "item_id": "1091",
+      "name": "雅",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1091.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "78",
+      "record_time": "1752633567",
+      "sort": "1396"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_CHARACTER_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.0",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1391",
+      "name": "橘福福",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1391.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "80",
+      "record_time": "1750824337",
+      "sort": "1318"
+     },
+     {
+      "item_id": "1101",
+      "name": "珂蕾妲",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1101.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "15",
+      "record_time": "1750824220",
+      "sort": "1238"
+     },
+     {
+      "item_id": "1371",
+      "name": "仪玄",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1371.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "75",
+      "record_time": "1749252109",
+      "sort": "1223"
+     },
+     {
+      "item_id": "1041",
+      "name": "「11号」",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1041.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "78",
+      "record_time": "1749176565",
+      "sort": "1148"
+     },
+     {
+      "item_id": "1371",
+      "name": "仪玄",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1371.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "75",
+      "record_time": "1749176263",
+      "sort": "1070"
+     },
+     {
+      "item_id": "1041",
+      "name": "「11号」",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1041.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "29",
+      "record_time": "1749176188",
+      "sort": "995"
+     },
+     {
+      "item_id": "1371",
+      "name": "仪玄",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1371.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "42",
+      "record_time": "1749176039",
+      "sort": "966"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_CHARACTER_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.7",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1331",
+      "name": "薇薇安",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1331.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "76",
+      "record_time": "1745409225",
+      "sort": "924"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_CHARACTER_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.5",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1311",
+      "name": "耀嘉音",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1311.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "21",
+      "record_time": "1738398321",
+      "sort": "848"
+     },
+     {
+      "item_id": "1181",
+      "name": "格莉丝",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1181.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "80",
+      "record_time": "1738028226",
+      "sort": "827"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_CHARACTER_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.4",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1091",
+      "name": "雅",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1091.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "77",
+      "record_time": "1735862008",
+      "sort": "747"
+     },
+     {
+      "item_id": "1211",
+      "name": "丽娜",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1211.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "77",
+      "record_time": "1734828664",
+      "sort": "670"
+     },
+     {
+      "item_id": "1091",
+      "name": "雅",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1091.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "75",
+      "record_time": "1734497477",
+      "sort": "593"
+     },
+     {
+      "item_id": "1101",
+      "name": "珂蕾妲",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1101.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "77",
+      "record_time": "1734497384",
+      "sort": "518"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_CHARACTER_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.2",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1071",
+      "name": "凯撒",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1071.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "76",
+      "record_time": "1727883983",
+      "sort": "441"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_CHARACTER_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.1",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1261",
+      "name": "简",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1261.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "82",
+      "record_time": "1726271317",
+      "sort": "365"
+     },
+     {
+      "item_id": "1041",
+      "name": "「11号」",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1041.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "77",
+      "record_time": "1725532320",
+      "sort": "283"
+     },
+     {
+      "item_id": "1251",
+      "name": "青衣",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1251.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "35",
+      "record_time": "1723608485",
+      "sort": "206"
+     },
+     {
+      "item_id": "1021",
+      "name": "猫又",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1021.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "75",
+      "record_time": "1723608439",
+      "sort": "171"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_CHARACTER_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.0",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1241",
+      "name": "朱鸢",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1241.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "79",
+      "record_time": "1722746431",
+      "sort": "96"
+     },
+     {
+      "item_id": "1181",
+      "name": "格莉丝",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1181.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "17",
+      "record_time": "1720874699",
+      "sort": "17"
+     }
+    ]
+   }
+  ]
+ }
+}

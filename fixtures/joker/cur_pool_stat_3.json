@@ -1,0 +1,120 @@
+{
+ "retcode": 0,
+ "message": "OK",
+ "data": {
+  "cur_ver": "3.3",
+  "list": [
+   {
+    "gacha_type": "GACHA_TYPE_WEAPON_UP",
+    "gacha_state": "GACHA_STATE_IN_PROGRESS",
+    "start_ts": 1794369600,
+    "end_ts": 1796108399,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 920143,
+    "version": "3.3",
+    "cur_item_list": [
+     {
+      "item_id": "14163",
+      "name": "禁罪囚笼",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/5fb81fcd1a978cd674adec4ede12ab3b.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NEW",
+      "count": "0",
+      "record_time": "0",
+      "sort": "0"
+     },
+     {
+      "item_id": "14157",
+      "name": "首席跟班",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/a14f530d78c5d823211c6c96639b2206.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "0",
+      "record_time": "0",
+      "sort": "0"
+     }
+    ],
+    "cur_records": []
+   },
+   {
+    "gacha_type": "GACHA_TYPE_WEAPON_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 1792544400,
+    "end_ts": 1794369599,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "3.3",
+    "cur_item_list": [
+     {
+      "item_id": "14164",
+      "name": "涅槃初翎",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/144a82db949d37e40991ac2c52ffeb3b.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NEW",
+      "count": "0",
+      "record_time": "0",
+      "sort": "0"
+     },
+     {
+      "item_id": "14156",
+      "name": "琳琅鎏心",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/2015cb82cddc3fc8470ded17f8f4f61e.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "0",
+      "record_time": "0",
+      "sort": "0"
+     }
+    ],
+    "cur_records": []
+   },
+   {
+    "gacha_type": "GACHA_TYPE_WEAPON_UP",
+    "gacha_state": "GACHA_STATE_NOT_START",
+    "start_ts": 1796173200,
+    "end_ts": 1799737199,
+    "sup_lock_show": false,
+    "left_start_ts": 984944,
+    "left_end_ts": 0,
+    "version": "3.4",
+    "cur_item_list": [
+     {
+      "item_id": "14160",
+      "name": "",
+      "icon": "https://fastcdn.mihoyo.com/static-resource-v2/2026/11/16/a56c976a81aa03ccecfeae10ff7b9383_6463479581710704577.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NEW",
+      "count": "0",
+      "record_time": "0",
+      "sort": "0"
+     },
+     {
+      "item_id": "14166",
+      "name": "",
+      "icon": "https://fastcdn.mihoyo.com/static-resource-v2/2026/11/16/a8601a458ccf08d84025a20b0a12ec82_2003767477175502105.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NEW",
+      "count": "0",
+      "record_time": "0",
+      "sort": "0"
+     }
+    ],
+    "cur_records": []
+   }
+  ]
+ }
+}

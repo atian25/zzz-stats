@@ -1,0 +1,51 @@
+{
+  "schema": "zzz-stats/v1",
+  "server": "cn",
+  "uid": "10000001",
+  "region": "prod_gf_cn",
+  "nickname": "天猪",
+  "fetched_at": "2026-11-20T12:15:56.742Z",
+  "versions": "1.0 → 3.3",
+  "source": "https://act-api-takumi.mihoyo.com/event/nap_gacha_record/api/zzz",
+  "channels": {
+    "1": {
+      "label": "常驻频段",
+      "pulls": 650,
+      "sCount": 9,
+      "golds": 9
+    },
+    "2": {
+      "label": "独家频段",
+      "pulls": 2372,
+      "sCount": 41,
+      "golds": 41
+    },
+    "3": {
+      "label": "音擎频段",
+      "pulls": 590,
+      "sCount": 11,
+      "golds": 11
+    },
+    "5": {
+      "label": "邦布频段",
+      "pulls": 1661,
+      "sCount": 34,
+      "golds": 34
+    },
+    "102": {
+      "label": "独家重映",
+      "pulls": 90,
+      "sCount": 1,
+      "golds": 1
+    },
+    "103": {
+      "label": "音擎回响",
+      "pulls": 12,
+      "sCount": 0,
+      "golds": 0
+    }
+  },
+  "total_gacha_count": 3714,
+  "total_s_count": 62,
+  "total_counts_exclude_bangboo": true
+}

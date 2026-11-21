@@ -1,0 +1,208 @@
+{
+ "retcode": 0,
+ "message": "OK",
+ "data": {
+  "cur_ver": "3.3",
+  "list": [
+   {
+    "gacha_type": "GACHA_TYPE_WEAPON_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "3.1",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "14158",
+      "name": "空羽复归之诗",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/0a06c2b3af6562c0fd91198f20120a11.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "74",
+      "record_time": "1785292212",
+      "sort": "506"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_WEAPON_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.6",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "14118",
+      "name": "嵌合编译器",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/15a128be97f0d8a1a16d5ddbfe8d0bd2.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "22",
+      "record_time": "1770741865",
+      "sort": "432"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_WEAPON_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.5",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "14143",
+      "name": "云霓孤光",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/8ef0425e4e1efe2918ded32c54b53723.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "28",
+      "record_time": "1767061863",
+      "sort": "410"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_WEAPON_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.3",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "14145",
+      "name": "铸梦炉歌",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/177b3d2a547f3c95f68d82514198db95.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "66",
+      "record_time": "1762148080",
+      "sort": "382"
+     },
+     {
+      "item_id": "14114",
+      "name": "拘缚者",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/63fa95fc651002fde0a8edc535eb915a.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "65",
+      "record_time": "1760506953",
+      "sort": "316"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_WEAPON_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.2",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "14146",
+      "name": "机巧心种",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/6dc780446ee031410aab7548e8ad4059.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "47",
+      "record_time": "1757432696",
+      "sort": "251"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_WEAPON_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.0",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "14137",
+      "name": "青溟笼舍",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/1ae82c91e2309d3eb123ab52f66af32e.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "67",
+      "record_time": "1749176138",
+      "sort": "204"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_WEAPON_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.4",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "14109",
+      "name": "霰落星殿",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/26dbdb3bf90052f3d94138062eb86fc5.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "69",
+      "record_time": "1734537953",
+      "sort": "137"
+     },
+     {
+      "item_id": "14110",
+      "name": "燃狱齿轮",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/7e492e113ba6ae39725e6e9876bf55c4.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "68",
+      "record_time": "1734499752",
+      "sort": "68"
+     }
+    ]
+   }
+  ]
+ }
+}

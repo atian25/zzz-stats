@@ -1,0 +1,70 @@
+{
+ "retcode": 0,
+ "message": "OK",
+ "data": {
+  "cur_ver": "3.3",
+  "list": [
+   {
+    "gacha_type": "GACHA_TYPE_BANGBOO",
+    "gacha_state": "GACHA_STATE_IN_PROGRESS",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "3.3",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "54022",
+      "name": "超极杰克",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/3c6fc8d5b1b5dfd9f9c714604dce3389.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "69",
+      "record_time": "1792648081",
+      "sort": "1653"
+     },
+     {
+      "item_id": "54022",
+      "name": "超极杰克",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/3c6fc8d5b1b5dfd9f9c714604dce3389.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "69",
+      "record_time": "1792648003",
+      "sort": "1584"
+     },
+     {
+      "item_id": "54022",
+      "name": "超极杰克",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/3c6fc8d5b1b5dfd9f9c714604dce3389.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "53",
+      "record_time": "1792647938",
+      "sort": "1515"
+     },
+     {
+      "item_id": "54022",
+      "name": "超极杰克",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/3c6fc8d5b1b5dfd9f9c714604dce3389.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "35",
+      "record_time": "1792647903",
+      "sort": "1462"
+     }
+    ]
+   }
+  ]
+ }
+}

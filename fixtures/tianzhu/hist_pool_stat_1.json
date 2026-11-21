@@ -1,0 +1,221 @@
+{
+ "retcode": 0,
+ "message": "OK",
+ "data": {
+  "cur_ver": "3.3",
+  "list": [
+   {
+    "gacha_type": "GACHA_TYPE_PERMANENT",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "3.1",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "14121",
+      "name": "啜泣摇篮",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/344b06003c40f533430d260964f371cd.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "76",
+      "record_time": "1785304550",
+      "sort": "592"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_PERMANENT",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.6",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1141",
+      "name": "莱卡恩",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1141.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "80",
+      "record_time": "1770364264",
+      "sort": "516"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_PERMANENT",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.3",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1101",
+      "name": "珂蕾妲",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1101.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "79",
+      "record_time": "1760781476",
+      "sort": "436"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_PERMANENT",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.0",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "14121",
+      "name": "啜泣摇篮",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/344b06003c40f533430d260964f371cd.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "67",
+      "record_time": "1749219392",
+      "sort": "357"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_PERMANENT",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.6",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1101",
+      "name": "珂蕾妲",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1101.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "6",
+      "record_time": "1741883479",
+      "sort": "290"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_PERMANENT",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.5",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "1021",
+      "name": "猫又",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1021.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "78",
+      "record_time": "1738634209",
+      "sort": "284"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_PERMANENT",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.2",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "14118",
+      "name": "嵌合编译器",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/15a128be97f0d8a1a16d5ddbfe8d0bd2.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "77",
+      "record_time": "1727738301",
+      "sort": "206"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_PERMANENT",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.0",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "14118",
+      "name": "嵌合编译器",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/15a128be97f0d8a1a16d5ddbfe8d0bd2.png",
+      "item_type": "ItemType_Weapon",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "79",
+      "record_time": "1721667718",
+      "sort": "129"
+     },
+     {
+      "item_id": "1021",
+      "name": "猫又",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1021.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": false,
+      "up_tag": "UP_TAG_NONE",
+      "count": "50",
+      "record_time": "1720366883",
+      "sort": "50"
+     }
+    ]
+   }
+  ]
+ }
+}

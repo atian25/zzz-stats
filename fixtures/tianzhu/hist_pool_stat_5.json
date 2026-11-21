@@ -1,0 +1,551 @@
+{
+ "retcode": 0,
+ "message": "OK",
+ "data": {
+  "cur_ver": "3.3",
+  "list": [
+   {
+    "gacha_type": "GACHA_TYPE_BANGBOO",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "3.1",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "54023",
+      "name": "艾瑞儿",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/df9dc166ffffc8301ac3429016319f1f.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "5",
+      "record_time": "1785304763",
+      "sort": "1427"
+     },
+     {
+      "item_id": "54023",
+      "name": "艾瑞儿",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/df9dc166ffffc8301ac3429016319f1f.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "50",
+      "record_time": "1785304763",
+      "sort": "1422"
+     },
+     {
+      "item_id": "54023",
+      "name": "艾瑞儿",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/df9dc166ffffc8301ac3429016319f1f.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "67",
+      "record_time": "1785304710",
+      "sort": "1372"
+     },
+     {
+      "item_id": "54023",
+      "name": "艾瑞儿",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/df9dc166ffffc8301ac3429016319f1f.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "70",
+      "record_time": "1785304657",
+      "sort": "1305"
+     },
+     {
+      "item_id": "54023",
+      "name": "艾瑞儿",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/df9dc166ffffc8301ac3429016319f1f.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "66",
+      "record_time": "1785304612",
+      "sort": "1235"
+     },
+     {
+      "item_id": "54023",
+      "name": "艾瑞儿",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/df9dc166ffffc8301ac3429016319f1f.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "68",
+      "record_time": "1785292293",
+      "sort": "1169"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_BANGBOO",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "3.0",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "54022",
+      "name": "超极杰克",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/3c6fc8d5b1b5dfd9f9c714604dce3389.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "15",
+      "record_time": "1781741601",
+      "sort": "1101"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_BANGBOO",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.6",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "54010",
+      "name": "阿饭",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/38a922a1c07622963654f53da234e15f.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "71",
+      "record_time": "1771751862",
+      "sort": "1086"
+     },
+     {
+      "item_id": "54010",
+      "name": "阿饭",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/38a922a1c07622963654f53da234e15f.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "18",
+      "record_time": "1771751696",
+      "sort": "1015"
+     },
+     {
+      "item_id": "54010",
+      "name": "阿饭",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/38a922a1c07622963654f53da234e15f.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "8",
+      "record_time": "1771751677",
+      "sort": "997"
+     },
+     {
+      "item_id": "54010",
+      "name": "阿饭",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/38a922a1c07622963654f53da234e15f.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "38",
+      "record_time": "1771751662",
+      "sort": "989"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_BANGBOO",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.5",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "54015",
+      "name": "咔嚓仔",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/7eafb28d0f66f68fc7f2ae0b9fb0cb7a.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "54",
+      "record_time": "1767315996",
+      "sort": "951"
+     },
+     {
+      "item_id": "54015",
+      "name": "咔嚓仔",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/7eafb28d0f66f68fc7f2ae0b9fb0cb7a.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "66",
+      "record_time": "1767315902",
+      "sort": "897"
+     },
+     {
+      "item_id": "54015",
+      "name": "咔嚓仔",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/7eafb28d0f66f68fc7f2ae0b9fb0cb7a.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "14",
+      "record_time": "1767315858",
+      "sort": "831"
+     },
+     {
+      "item_id": "54021",
+      "name": "芽芽",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/b890b313dd95c0b2b8dade2a5cd39501.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "66",
+      "record_time": "1767062238",
+      "sort": "817"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_BANGBOO",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.4",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "54015",
+      "name": "咔嚓仔",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/7eafb28d0f66f68fc7f2ae0b9fb0cb7a.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "74",
+      "record_time": "1765014356",
+      "sort": "751"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_BANGBOO",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.3",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "54018",
+      "name": "艾丝弥小姐",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/378b0850adb26bd6e74a37c2f067eb66.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "72",
+      "record_time": "1762430250",
+      "sort": "677"
+     },
+     {
+      "item_id": "54018",
+      "name": "艾丝弥小姐",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/378b0850adb26bd6e74a37c2f067eb66.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "66",
+      "record_time": "1762430184",
+      "sort": "605"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_BANGBOO",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.1",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "54018",
+      "name": "艾丝弥小姐",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/378b0850adb26bd6e74a37c2f067eb66.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "70",
+      "record_time": "1752682968",
+      "sort": "539"
+     },
+     {
+      "item_id": "54018",
+      "name": "艾丝弥小姐",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/378b0850adb26bd6e74a37c2f067eb66.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "57",
+      "record_time": "1752682882",
+      "sort": "469"
+     },
+     {
+      "item_id": "54018",
+      "name": "艾丝弥小姐",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/378b0850adb26bd6e74a37c2f067eb66.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "71",
+      "record_time": "1752642151",
+      "sort": "412"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_BANGBOO",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "2.0",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "54017",
+      "name": "狮耶",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/17bdb82961a5cbbb027d7c79cc0be27f.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "69",
+      "record_time": "1750350086",
+      "sort": "341"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_BANGBOO",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.7",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "54016",
+      "name": "罗宾",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/37f8894e41c737f2d71a8a5508075ff0.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "11",
+      "record_time": "1745411883",
+      "sort": "272"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_BANGBOO",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.5",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "54006",
+      "name": "飚速布",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/ab79c6df356540ff6f2f2e3235e0cefd.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "20",
+      "record_time": "1740226390",
+      "sort": "261"
+     },
+     {
+      "item_id": "54015",
+      "name": "咔嚓仔",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/7eafb28d0f66f68fc7f2ae0b9fb0cb7a.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "66",
+      "record_time": "1739922123",
+      "sort": "241"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_BANGBOO",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.3",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "54008",
+      "name": "插头布",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/b451cc5a5973df9d13a8e8308ff2d07b.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "11",
+      "record_time": "1730912058",
+      "sort": "175"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_BANGBOO",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.2",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "54011",
+      "name": "赤红莫库斯",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/3b617965ea09808963cbc9b1e3a3624f.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "66",
+      "record_time": "1727884297",
+      "sort": "164"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_BANGBOO",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.1",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "54012",
+      "name": "阿崔巡查",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/ffb718668e4060b30ff94288acac2c5a.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "16",
+      "record_time": "1724541960",
+      "sort": "98"
+     }
+    ]
+   },
+   {
+    "gacha_type": "GACHA_TYPE_BANGBOO",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 0,
+    "end_ts": 0,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "1.0",
+    "cur_item_list": [],
+    "cur_records": [
+     {
+      "item_id": "54009",
+      "name": "共鸣布",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/97c05a66e281e5553baf0ff2bbf6c316.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "67",
+      "record_time": "1723163923",
+      "sort": "82"
+     },
+     {
+      "item_id": "54013",
+      "name": "左轮布",
+      "icon": "https://act-webstatic.mihoyo.com/darkmatter/nap/prod_gf_cn/item_icon_u2a7le/dd75b8b83c7636d13c8f283472db0041.png",
+      "item_type": "ItemType_Bangboo",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "15",
+      "record_time": "1720529208",
+      "sort": "15"
+     }
+    ]
+   }
+  ]
+ }
+}

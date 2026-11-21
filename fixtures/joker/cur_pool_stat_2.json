@@ -1,0 +1,120 @@
+{
+ "retcode": 0,
+ "message": "OK",
+ "data": {
+  "cur_ver": "3.3",
+  "list": [
+   {
+    "gacha_type": "GACHA_TYPE_CHARACTER_UP",
+    "gacha_state": "GACHA_STATE_IN_PROGRESS",
+    "start_ts": 1794369600,
+    "end_ts": 1796108399,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 920145,
+    "version": "3.3",
+    "cur_item_list": [
+     {
+      "item_id": "1631",
+      "name": "赛维里安",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1631.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NEW",
+      "count": "0",
+      "record_time": "0",
+      "sort": "0"
+     },
+     {
+      "item_id": "1571",
+      "name": "诺姆",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1571.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "0",
+      "record_time": "0",
+      "sort": "0"
+     }
+    ],
+    "cur_records": []
+   },
+   {
+    "gacha_type": "GACHA_TYPE_CHARACTER_UP",
+    "gacha_state": "GACHA_STATE_ENDED",
+    "start_ts": 1792544400,
+    "end_ts": 1794369599,
+    "sup_lock_show": false,
+    "left_start_ts": 0,
+    "left_end_ts": 0,
+    "version": "3.3",
+    "cur_item_list": [
+     {
+      "item_id": "1641",
+      "name": "菲欧妮",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1641.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NEW",
+      "count": "0",
+      "record_time": "0",
+      "sort": "0"
+     },
+     {
+      "item_id": "1561",
+      "name": "维琳娜",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1561.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NONE",
+      "count": "0",
+      "record_time": "0",
+      "sort": "0"
+     }
+    ],
+    "cur_records": []
+   },
+   {
+    "gacha_type": "GACHA_TYPE_CHARACTER_UP",
+    "gacha_state": "GACHA_STATE_NOT_START",
+    "start_ts": 1796173200,
+    "end_ts": 1799737199,
+    "sup_lock_show": false,
+    "left_start_ts": 984946,
+    "left_end_ts": 0,
+    "version": "3.4",
+    "cur_item_list": [
+     {
+      "item_id": "1601",
+      "name": "挽昼",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1601.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NEW",
+      "count": "0",
+      "record_time": "0",
+      "sort": "0"
+     },
+     {
+      "item_id": "1661",
+      "name": "知更鸟",
+      "icon": "https://act-webstatic.mihoyo.com/game_record/zzzv2/role_square_avatar/role_square_avatar_1661.png",
+      "item_type": "ItemType_Avatar",
+      "rarity": "S",
+      "is_up": true,
+      "up_tag": "UP_TAG_NEW",
+      "count": "0",
+      "record_time": "0",
+      "sort": "0"
+     }
+    ],
+    "cur_records": []
+   }
+  ]
+ }
+}
