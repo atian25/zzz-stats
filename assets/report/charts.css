@@ -75,6 +75,23 @@ html, body {
   white-space: nowrap;
 }
 /*
+ * 称号按 tone 上色。
+ *
+ * 踩过一次：这里只有一条写死 `color: var(--accent)` 的规则，**没有任何 [data-tone] 分支**，
+ * 而 charts.js 一直在往 `#h1` 上写 `data-tone`——写了没人读。
+ * 后果是「终极无敌至尊欧皇」和「终极无敌至尊非酋」渲染成同一个金色，
+ * 称号这行字自己说不出运气好坏，只能靠读名字判断（名字又全是叠词，扫一眼分不清）。
+ *
+ * 三档必须有肉眼可辨的色相差异，不是亮度微调：
+ *   lucky   金 —— 沿用原 accent，欧气、也是报表的主强调色
+ *   neutral 灰白 —— 「守恒」是分水岭，不该偏袒任何一边
+ *   unlucky 红 —— 复用非酋档的 bad 红，与柱体的「非」是同一套语义
+ * 颜色全部走 CSS 变量（改配置就生效的约定），不在这里另写死色值。
+ */
+.title-name[data-tone="lucky"] { color: var(--accent); }
+.title-name[data-tone="neutral"] { color: var(--ink); }
+.title-name[data-tone="unlucky"] { color: var(--bad); }
+/*
  * 标题可悬浮看档位。
  * 不用虚线下划线（像超链接、也显廉价），改用 hover 时的柔光 + 轻微上浮暗示可交互。
  */

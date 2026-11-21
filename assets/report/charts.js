@@ -250,6 +250,23 @@
   const COLORS = CFG.colors;
 
   /*
+   * 标签悬浮时压暗未命中柱子的蒙层。
+   *
+   * 色值走配置（`colors.barDim`，改配置就生效），透明度是行为参数、留在这里。
+   * 0.55 取值理由见 config 的 `_barDimComment` 与 tagHighlight 系列上的注释：
+   * 低于 0.4 命中/未命中亮度差不足，高于 0.75 未命中的柱几乎消失。
+   */
+  const DIM_ALPHA = 0.55;
+  const DIM_FILL = (() => {
+    const hex = CFG.colors.barDim;
+    if (!hex || typeof hex !== 'string') return `rgba(22,22,26,${DIM_ALPHA})`;
+    const h = hex.replace('#', '');
+    const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16);
+    if (!Number.isFinite(n)) return `rgba(22,22,26,${DIM_ALPHA})`;
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${DIM_ALPHA})`;
+  })();
+
+  /*
    * 理论每 UP 期望抽数：62.5 抽/金 × 1.5（50/50）= 93.75。
    *
    * 提到模块作用域（而不是放在 buildOption 里），因为图例也要用它：
@@ -374,6 +391,20 @@
       itemStyle: { color: COLORS[tiers[i]].off },
       label: { show: r.off >= CFG.numbers.segmentLabelMin, color: '#fff' },
     }));
+    /*
+     * 柱子高度就是真实抽数，**不做最小高度兜底**。
+     *
+     * 这里曾经加过一个 `barMinHeight` 兜底，动机是「1 抽的柱太矮看不见，抬高一点」。
+     * 但那个前提本身是错的：矮柱一直都被正常画出来。实测 joker 独家频道
+     * （左轴 180、绘图区 518px）用像素采样逐根核对过——
+     * 3 抽 8px、5 抽 14px、1 抽 4px，柱子颜色是完整的 #3F7BFF，一根不缺。
+     * 之前「看不见」是因为扫的是基线往上 77px 那一条横线，而 3 抽的柱只有 8px 高，
+     * 根本够不到那条线；扫错行，不是没渲染。
+     *
+     * 留着兜底反而有害：它把 1 抽改成 1.42 抽去画，
+     * 于是图上「1 抽」那根柱比真实的 1 抽高，而 tip 仍报 1 抽——两处对不上。
+     * 真实数据永远优先于「好看见」，矮就矮，它本来就是 1 抽。
+     */
     const upData = rounds.map((r, i) => {
       const side = r.side.reduce((s, x) => s + x.count, 0);
       return {
@@ -643,9 +674,14 @@
            * z 必须高于柱子。
            * 柱子没显式设 z（默认 2），折线早先也是 2 —— 同级时折线会被柱子压在下面，
            * 曲线一进到柱体里就消失，看起来像「数据从中间才开始」。
-           * 3：压过两根柱子，又低于头像（4）与多金点（5），不会骑到角色脸上。
+           *
+           * 3.6 而不是 3：标签悬浮时 `tagHighlight` 的蒙层 z 是 2.5，
+           * 实测写 3 时折线**仍被蒙层压暗**（白色段由 (244,244,244) 掉到 (122,122,124)）——
+           * 同属 custom 系列、z 只差 0.5 时，绘制顺序由系列注册顺序决定，
+           * 后注册的 tagHighlight 赢。抬到 3.6 拉开明确差值才稳定压过蒙层。
+           * 仍低于头像（4）与多金点（5），不会骑到角色脸上。
            */
-          z: 3,
+          z: 3.6,
           tooltip: { show: false },
           renderItem: (params, api) => {
             const i = params.dataIndex;
@@ -853,6 +889,81 @@
             return { type: 'group', children };
           },
         },
+        {
+          /*
+           * 标签悬浮时的**反差式**高亮：不点亮命中的柱子，而是把没命中的压暗。
+           *
+           * 为什么反过来（用户提的方案，实测确实更对）：
+           * 原来是给命中区间叠一层淡色带 `rgba(240,240,241,0.07)`。问题在于命中的柱子
+           * 可能只有 1~4px 高（实测「雅 1 抽」4px、「十连双金」里 2 抽 5px），
+           * 带子圈得再准，读者也只能看到「一小块区域亮了一点」，指不出是哪根柱。
+           * 反过来把无关区域压暗，命中的柱靠**亮度对比**跳出来，不依赖它有多高——
+           * 4px 的亮柱在一片压暗的柱子里照样一眼可见。
+           *
+           * **不能用 markArea**：这是这个文件里已经吃过两次亏的同一个坑（见上面 versionRange 的注释）。
+           * markArea 在类目轴上按整格铺，而柱子是按类目中心对齐的，两者会错开半格；
+           * 更麻烦的是它对 `xAxis: p - 0.5` 这类小数边界的解释与直觉不一致——
+           * 实测传入 [23.5, 26.5] 想要盖住柱位 24/25/26，实际渲染到了类目 24.65~27.49，
+           * 整体右移了约 1.15 格，于是「雅 1 抽」那根柱子被漏在带子外面。
+           *
+           * 改用 custom：`api.coord([p, 0])` 直接拿到该柱心的精确像素 x，
+           * 再各自向左右扩半个类目宽，画的就是像素矩形，不存在半格歧义。
+           *
+           * 平时 data 为空，hover 标签时 setOption 塞进「要压暗的区间」，mouseleave 清空。
+           */
+          name: 'tagHighlight',
+          type: 'custom',
+          silent: true,
+          tooltip: { show: false },
+          /*
+           * z 必须**高于柱子**（柱子没有显式 z，默认 2）：蒙层是盖在柱子上的。
+           * 同时必须**低于折线（z=3）、头像（z=4）、多金青点（z=5）**——
+           * 这是实测调出来的：一开始把 z 设成 3.5（压住折线），
+           * 结果折线被蒙层滤成灰绿（截图实测 RGB 由 #5FD98A 降到偏灰），看着像掉色；
+           * 而折线是**全局累计**曲线，和「这个标签命中了哪几根柱」不是同一件事，
+           * 没有理由跟着变暗。头像和青点同理：它们标的是「这一金是谁」，
+           * 压暗会让命中组自己也看不清，等于白高亮。
+           * 2.5 正好卡在柱子之上、折线之下，只压柱子。
+           */
+          z: 2.5,
+          data: [],
+          renderItem: (params, api) => {
+            const from = api.value(0);
+            const to = api.value(1);
+            const a = api.coord([from, 0]);
+            const b = api.coord([to, 0]);
+            /*
+             * 半格靠 coordSys 宽度 ÷ 类目数算，**不要**用 `api.coord([1,0]) - api.coord([0,0])`。
+             * 后者在类目轴上不可靠：它按数据值插值，而不是「下一个类目的中心」，
+             * 实测这样算出来的格宽偏小，导致 rect 起点比柱心右移约 20px。
+             */
+            const n = api.value(2); // 类目总数，由 data 第三位带进来
+            const catW = params.coordSys.width / n;
+            const half = catW / 2;
+            const x1 = Math.min(a[0], b[0]) - half;
+            const x2 = Math.max(a[0], b[0]) + half;
+            /*
+             * 纵向铺满绘图区（coordSys 是 grid 的像素矩形）。
+             * `api.coord` 返回的是画布绝对坐标，`versionRange` 也是这么画的。
+             */
+            const top = params.coordSys.y;
+            const h = params.coordSys.height;
+            return {
+              type: 'rect',
+              shape: { x: x1, y: top, width: x2 - x1, height: h },
+              /*
+               * 蒙层颜色用图表的深色底（`--bg` 同族），不是纯黑，也不是 tooltip 的黑。
+               * 纯黑会把柱子压成死黑一片，看着像图坏了；用底色并在 0.55 的透明度上，
+               * 柱子仍能看出轮廓和颜色倾向，只是明显退到背景层。
+               * 透明度取 0.55（`DIM_ALPHA`）：实测 0.4 时命中/未命中只有 1.56:1，
+               * 扫一眼分不出来；0.75 时未命中的柱几乎消失，读者会以为那些轮次没有记录。
+               * 0.55 落在 1.90:1，既能分辨又保住了未命中的轮廓。
+               * 色值走配置（`colors.barDim`），不在这里写死，见 DIM_FILL 的定义。
+               */
+              style: { fill: DIM_FILL },
+            };
+          },
+        },
       ],
     };
   }
@@ -979,25 +1090,53 @@
       if (!tag || (!tag.dataset.bars && !tag.dataset.goldSorts)) return;
       const indices = barsOfTag(tag);
       if (!indices.length) return;
+      /*
+       * 保留 dispatchAction 的 highlight：它给命中的柱子加一圈白描边，
+       * 在「未命中被压暗」的底子上再补一道明确边界，指认更硬。
+       * 反差蒙层负责「排除干扰」，白边负责「点名」，两件事不重复。
+       */
       chart.dispatchAction({ type: 'highlight', seriesIndex: [0, 1], dataIndex: indices });
-      chart.setOption({
-        series: [
-          {
-            markArea: {
-              silent: true,
-              itemStyle: { color: 'rgba(240,240,241,0.07)' },
-              data: indices.map((p) => [{ xAxis: p - 0.5 }, { xAxis: p + 0.5 }]),
-            },
-          },
-        ],
-      });
+      /*
+       * 按系列名定位，不用下标：series 数组里加一根柱子就会让下标整体错位，
+       * 那时高亮会悄悄画到别的系列上（不报错，只是不亮）。
+       */
+      const si = chart.getOption().series.findIndex((x) => x.name === 'tagHighlight');
+      if (si < 0) return;
+      // setOption 的 series 是按数组位置合并的，前面几个系列要占位（空对象＝保持不变）
+      const patch = Array.from({ length: si }, () => ({}));
+      // 第三个值带类目总数，renderItem 用它算格宽（见该系列注释）
+      const nCat = chart.getOption().xAxis[0].data.length;
+      /*
+       * **压暗的是补集**，不是命中区间本身。
+       *
+       * 不能只取 `[0, first-1]` 与 `[last+1, n-1]`：多金标签常常有**好几组**
+       * （joker 的「十连双金 ×5」在本频道命中 4 根，柱位 9/47/50/59），
+       * 只压首尾会把中间那些无关的柱位（10~46）也留在亮区，反差就失效了。
+       * 正确做法是按命中的柱位切成**多段**补集：相邻命中之间各自成段。
+       *
+       * 整条都命中（补集为空）时不画蒙层——那时压暗没有意义。
+       */
+      const hits = [...new Set(indices)].sort((x, y) => x - y);
+      const dimRuns = [];
+      let cursor = 0;
+      for (const h of hits) {
+        if (h > cursor) dimRuns.push([cursor, h - 1]);
+        cursor = h + 1;
+      }
+      if (cursor <= nCat - 1) dimRuns.push([cursor, nCat - 1]);
+      patch.push({ data: dimRuns.map(([a, b]) => [a, b, nCat]) });
+      chart.setOption({ series: patch });
     }, true);
 
     $('#tags').addEventListener('mouseleave', (e) => {
       const tag = e.target.closest('.tag');
       if (!tag || (!tag.dataset.bars && !tag.dataset.goldSorts)) return;
       chart.dispatchAction({ type: 'downplay', seriesIndex: [0, 1] });
-      chart.setOption({ series: [{ markArea: { data: [] } }, {}, { markLine: { data: [] } }] });
+      const si = chart.getOption().series.findIndex((x) => x.name === 'tagHighlight');
+      if (si < 0) return;
+      const patch = Array.from({ length: si }, () => ({}));
+      patch.push({ data: [] });
+      chart.setOption({ series: patch });
     }, true);
   }
 

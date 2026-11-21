@@ -13,6 +13,7 @@
  *   node scripts/screenshot.mjs --width 1440 --height 900
  *   node scripts/screenshot.mjs --out-dir /tmp/shots --html output/report.html
  *   node scripts/screenshot.mjs --privacy 2           # 截图前先点全打码（对外用）
+ *   node scripts/screenshot.mjs --preview             # README 预览图 → docs/preview.png（整页 2x，强制打码）
  *   node scripts/screenshot.mjs --chart 音擎 --filter 2
  *   node scripts/screenshot.mjs --detail 复刻角色     # 切底部详情面板的频段
  *
@@ -86,13 +87,33 @@ if (!chrome) {
   process.exit(1);
 }
 
+/*
+ * --preview         产出 README 用的整页预览图（默认 docs/preview.png）
+ * --out-file 路径   配合 --preview 指定输出文件
+ *
+ * 为什么单独一个模式：README 那张图要的是「整页长图 + 2x 高清」，
+ * 跟 §9.3 的两档视口验收图（1x、只看首屏装不装得下）是两个用途。
+ * 以前这张图是手工截的、随仓库带一份，于是代码一路改、图一直停在初始化那版——
+ * 折线还是黄的、图例还带「黄线＝累计不歪率」、右轴还是 60%。让它跟得上，只能由脚本出。
+ */
+const PREVIEW = args.includes('--preview');
+const OUT_FILE = abs(argOf('out-file', 'docs/preview.png'));
+/*
+ * 宽度 1440 与验收图一致（看到的排版就是用户看到的），DPR 2 让文字在高分屏不发虚。
+ * 高度由整页截图自己算，这里的 900 只保证首帧有视口。
+ */
+const PREVIEW_WIDTH = 1440;
+const PREVIEW_DPR = 2;
+
 /**
  * 两档尺寸来自 references/report-rules.md §9.3：
  * 1440×900 与 1280×800 都必须「首屏无滚动、图例单行」。
  */
-const TARGETS = SINGLE_W && SINGLE_H
-  ? [{ width: Number(SINGLE_W), height: Number(SINGLE_H) }]
-  : [{ width: 1440, height: 900 }, { width: 1280, height: 800 }];
+const TARGETS = PREVIEW
+  ? [{ width: PREVIEW_WIDTH, height: 900 }]
+  : SINGLE_W && SINGLE_H
+    ? [{ width: Number(SINGLE_W), height: Number(SINGLE_H) }]
+    : [{ width: 1440, height: 900 }, { width: 1280, height: 800 }];
 
 mkdirSync(OUT_DIR, { recursive: true });
 
@@ -166,7 +187,13 @@ function withState(srcHtml, { privacy, chartLabel, filters, detailLabel, collaps
 const tmpDir = join(tmpdir(), `zzz-shot-${randomBytes(4).toString('hex')}`);
 mkdirSync(tmpDir, { recursive: true });
 const pageFile = join(tmpDir, 'report.html');
-writeFileSync(pageFile, withState(readFileSync(HTML, 'utf8'), { privacy: PRIVACY, chartLabel: CHART, filters: FILTER, detailLabel: DETAIL, collapse: COLLAPSE }), 'utf8');
+/*
+ * 预览图**强制**打码到 2，不接受用 --privacy 覆盖。
+ * README 是对外公开的，这张图从默认的全显示状态直接截就等于把真名和 UID 贴到互联网上；
+ * report-rules.md §2 把这条定成硬约束，已经因为同一件事踩过两次。
+ */
+const EFFECTIVE_PRIVACY = PREVIEW ? 2 : PRIVACY;
+writeFileSync(pageFile, withState(readFileSync(HTML, 'utf8'), { privacy: EFFECTIVE_PRIVACY, chartLabel: CHART, filters: FILTER, detailLabel: DETAIL, collapse: COLLAPSE }), 'utf8');
 
 /*
  * 截图一律走 CDP 设备模拟，不再用 `--screenshot` + `--window-size`。
@@ -269,10 +296,11 @@ const chromeWs = { current: null };
 
 try {
   for (const { width, height } of TARGETS) {
-    const name = `report-${width}x${height}.png`;
-    const out = join(OUT_DIR, name);
+    const name = PREVIEW ? 'preview.png' : `report-${width}x${height}.png`;
+    const out = PREVIEW ? OUT_FILE : join(OUT_DIR, name);
     const profileDir = join(tmpDir, `profile-${width}`);
     mkdirSync(profileDir, { recursive: true });
+    if (PREVIEW) mkdirSync(dirname(out), { recursive: true });
 
     /* 每个尺寸一个独立浏览器实例：设备模拟是会话级的，复用会串状态。 */
     const port = basePort;
@@ -287,12 +315,13 @@ try {
       const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
 
       /*
-       * 真视口。deviceScaleFactor 固定 1（出 1x 图，尺寸与标称一致），
+       * 真视口。验收图用 deviceScaleFactor 1（出 1x 图，尺寸与标称一致）；
+       * 预览图用 2 —— README 在高分屏上显示，1x 字会发虚。
        * mobile: false —— 传 true 会让 Chrome 按移动端缩放，innerWidth 变成 ~658，
        * 又回到「假宽度」的老问题上。
        */
       await cdp.send('Emulation.setDeviceMetricsOverride', {
-        width, height, deviceScaleFactor: 1, mobile: false,
+        width, height, deviceScaleFactor: PREVIEW ? PREVIEW_DPR : 1, mobile: false,
       }, sessionId);
 
       await cdp.send('Page.enable', {}, sessionId);
@@ -309,14 +338,75 @@ try {
         returnByValue: true,
       }, sessionId).catch(() => null);
 
-      const shot = await cdp.send('Page.captureScreenshot', { format: 'png' }, sessionId);
+      /*
+       * 打码硬断言：对外发的图在截图**之前**确认真的盖住了。
+       *
+       * report-rules.md §2 把这条定成硬约束，理由是踩过两次——README 的预览图
+       * 连着两版把真名和 UID 截进了公开仓库，而打码版一旦推送就再也收不回来
+       * （`git show <旧commit>:docs/preview.png` 永远取得到）。
+       * 脚本原来只负责点击、不负责验证，等于把「点没点中」交给运气。
+       *
+       * 宁可不出图，也不出一张带真名的图：断言不过直接中止，不写文件。
+       */
+      if (PREVIEW) {
+        const guard = await cdp.send('Runtime.evaluate', {
+          expression: `JSON.stringify({
+            eye: document.getElementById('eye')?.dataset.state ?? null,
+            nick: document.getElementById('nick')?.textContent ?? '',
+            uid: document.getElementById('uid')?.textContent ?? '',
+          })`,
+          returnByValue: true,
+        }, sessionId).catch(() => null);
+        let g = null;
+        try { g = guard?.result?.value ? JSON.parse(guard.result.value) : null; } catch { /* ignore */ }
+        const nickOk = !!g && g.nick.includes('*');
+        const uidOk = !!g && /\*/.test(g.uid);
+        if (!g || g.eye !== '2' || !nickOk || !uidOk) {
+          failed += 1;
+          console.error(`  ✗ 打码断言没过（eye=${g?.eye} nick=${JSON.stringify(g?.nick)} uid=${JSON.stringify(g?.uid)}）`);
+          console.error('    对外图不允许带真名/真 UID，已中止，未写文件。');
+          continue;
+        }
+      }
+
+      /*
+       * 预览图要整页：README 展示的是「首屏主图 + 第二屏详情」的完整效果。
+       * captureBeyondViewport 让 Page.captureScreenshot 越过视口去截，
+       * 再用 clip 把高度收到 scrollHeight —— 不收的话会因为滚动容差多出空白带。
+       */
+      let clip;
+      if (PREVIEW) {
+        const dim = await cdp.send('Runtime.evaluate', {
+          expression: 'JSON.stringify({ w: document.documentElement.clientWidth, h: document.documentElement.scrollHeight })',
+          returnByValue: true,
+        }, sessionId).catch(() => null);
+        let d = null;
+        try { d = dim?.result?.value ? JSON.parse(dim.result.value) : null; } catch { /* ignore */ }
+        if (!d) {
+          failed += 1;
+          console.error('  ✗ 拿不到页面高度，整页截图会截不完整，中止');
+          continue;
+        }
+        clip = { x: 0, y: 0, width: d.w, height: d.h, scale: 1 };
+      }
+
+      const shot = await cdp.send('Page.captureScreenshot',
+        PREVIEW ? { format: 'png', captureBeyondViewport: true, clip } : { format: 'png' },
+        sessionId);
       writeFileSync(out, Buffer.from(shot.data, 'base64'));
 
       let vw = null;
       try { vw = vp?.result?.value ? JSON.parse(vp.result.value) : null; } catch { /* ignore */ }
 
       if (existsSync(out)) {
-        written.push({ path: out, width, height, innerWidth: vw?.w ?? null });
+        /*
+         * 预览图记 dpr=2、高度记 null：整页图的高度由页面内容决定，
+         * 拿标称 900 去比对必然「不符」，那是自检写错了，不是图错了。
+         */
+        written.push({
+          path: out, width, height, innerWidth: vw?.w ?? null,
+          dpr: PREVIEW ? PREVIEW_DPR : 1, fullPage: PREVIEW,
+        });
         console.log(`✓ ${name}${vw ? `（页面视口 ${vw.w}×${vw.h}）` : ''}`);
         /*
          * 视口与标称不符就是真 bug，直接判失败。
@@ -360,16 +450,22 @@ if (failed) console.error(`${failed} 档失败`);
  * 但图片尺寸和页面视口都必须等于标称值，否则截出来的是名不副实的图。
  * 后者才是真坑：headless 的 --window-size 有 500px 下限，
  * 早先「390 宽」的图其实是 500 视口裁出来的（见上方 CDP 注释）。
+ *
+ * 预览图是整页 2x 图，规则不同：宽 = 标称 × DPR、高由内容决定（只要 ≥ 视口就行）。
+ * 拿标称高度去比会永远「不符」，那是自检写错了。
  */
-console.log('\n自检（需要人眼确认「首屏无滚动、图例单行」）：');
+console.log(PREVIEW ? '\n自检：' : '\n自检（需要人眼确认「首屏无滚动、图例单行」）：');
 for (const f of written) {
   const buf = readFileSync(f.path);
   // PNG IHDR：宽高在第 16~24 字节，大端 32 位
   const w = buf.readUInt32BE(16);
   const h = buf.readUInt32BE(20);
-  const ok = w === f.width && h === f.height;
+  const dpr = f.dpr ?? 1;
+  const wantW = f.width * dpr;
+  const ok = f.fullPage ? w === wantW && h >= f.height : w === f.width && h === f.height;
   const vw = f.innerWidth == null ? '' : ` · 页面视口 ${f.innerWidth}`;
   const vwOk = f.innerWidth == null || f.innerWidth === f.width;
-  console.log(`  ${f.width}x${f.height} → 实际 ${w}x${h}${vw}${ok && vwOk ? '' : '  ⚠️ 不符'}`);
+  const label = f.fullPage ? `${f.width} @${dpr}x 整页` : `${f.width}x${f.height}`;
+  console.log(`  ${label} → 实际 ${w}x${h}${vw}${ok && vwOk ? '' : '  ⚠️ 不符'}`);
 }
 process.exit(failed ? 1 : 0);

@@ -276,6 +276,21 @@ function winRateShape(bits, opts = {}) {
   let ti = 0;
   for (let i = 1; i < pts.length; i += 1) if (pts[i] < pts[ti]) ti = i;
   const trough = pts[ti];
+  /*
+   * 最高点（峰值）。
+   *
+   * 「非酋翻身记」的 tip 原来只写「最低 X%，现在 Y%，涨了 Z 个百分点」——
+   * 但涨幅是个派生量，读者真正想知道的是**这条曲线的三个关键时刻**：
+   * 最低到过多少、最高到过多少、现在是多少。
+   * 少了峰值，「涨了 45 个百分点」到底是从 14% 涨到 59%，还是从 20% 涨到 65%，
+   * 读者还得自己拿最低值去反推，而此刻的值又可能不在峰值上。
+   *
+   * 和 trough 一样取 pts（跳过前 minSamples 轮噪音）里的极值，绝不拿全序列首个值冒充。
+   * 峰谷各自保留下标，供上层映射成版本号。
+   */
+  let pi = 0;
+  for (let i = 1; i < pts.length; i += 1) if (pts[i] > pts[pi]) pi = i;
+  const peak = pts[pi];
   const final = pts[pts.length - 1];
 
   /*
@@ -352,6 +367,9 @@ function winRateShape(bits, opts = {}) {
     trough,
     troughIdx: from + ti,
     troughVersion: null,
+    peak,
+    peakIdx: from + pi,
+    peakVersion: null,
     final,
     rise: Math.round((final - trough) * 10) / 10,
     flips,
@@ -545,6 +563,11 @@ const charBits = winBits(charRounds);
 const winShape = winRateShape(charBits, CFG.numbers.winRateShape ?? {});
 if (winShape) {
   winShape.troughVersion = charRounds[winShape.troughIdx]?.version ?? null;
+  winShape.peakVersion = charRounds[winShape.peakIdx]?.version ?? null;
+  /*
+   * 当下所在的版本（最后一轮的版本），给「最高/最低/当下」三点并列时用。
+   */
+  winShape.finalVersion = charRounds[charRounds.length - 1]?.version ?? null;
   /*
    * 横跳发生的位置 → 版本号。
    *
@@ -649,6 +672,14 @@ const metrics = {
   winRateTrough: winShape?.trough ?? null,
   winRateRise: winShape?.rise ?? null,
   winRateTroughVersion: winShape?.troughVersion ?? null,
+  /*
+   * 峰值：累计不歪率最高到过多少、在哪一版。
+   * 「非酋翻身记」的 tip 用「最低 / 最高 / 当下」三点描述轨迹，
+   * 涨幅是这三点的派生量，不再单独写出来（用户要求）。
+   */
+  winRatePeak: winShape?.peak ?? null,
+  winRatePeakVersion: winShape?.peakVersion ?? null,
+  winRateFinalVersion: winShape?.finalVersion ?? null,
   winRateFlips: winShape?.flips ?? 0,
   /*
    * 横跳发生的位置（历史事件，不是当前状态）。缺失给 null——
