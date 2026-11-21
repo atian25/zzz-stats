@@ -30,7 +30,7 @@
 - **口径可配**：称号分档、标签规则、配色、文案、保底抽数全在 `config/report.json`；颜色经 CSS 变量注入、标题文案在构建时替换模板，**改配置就真的生效**，不用碰代码。
 - **成本口径不吃垫抽**：每金 / 每 UP 均按「官方总抽 − 当前垫抽」算，和官方 `avr_up_count` 对得上（常驻 65.8 而不是 72.2）。
 - **图标离线且内嵌**：角色、音擎、邦布图标随仓库带一份 64px 缓存，构建时 base64 内嵌进 HTML；产物是**真正自包含的单文件**，单独发给别人也能正常显示。同一张图按内容哈希只嵌一次（产物 ~2 MB，不是 3.7 MB）。缺图用占位图兜底，不裂图、不引 CDN。
-- **图标自动同步**：接口每条记录都带图标 URL，`node scripts/sync-icons.mjs` 会自动补下新角色/音擎/邦布的图并刷新 64px 缓存，不用手动找图。
+- **图标自动同步**：接口每条记录都带图标 URL，`node skills/zzz-stats/scripts/sync-icons.mjs` 会自动补下新角色/音擎/邦布的图，下载即裁成 64px，不用手动找图。
 
 ## 支持哪些客户端
 
@@ -63,37 +63,47 @@ DeepSeek Harness、Codex、Trae、豆包工作，以及任意支持 Agent Skill 
 
 ```bash
 # 1) 采集：自动挑驱动（有 Playwright 用 Playwright，没有用零依赖 CDP），打印二维码路径
-node scripts/collect.mjs --data data/tianzhu
+node skills/zzz-stats/scripts/collect.mjs --data data/tianzhu
 
 # 2) 出图
-node scripts/build-report.mjs --data data/tianzhu   # → output/report-tianzhu.html
+node skills/zzz-stats/scripts/build-report.mjs --data data/tianzhu   # → output/report-tianzhu.html
 ```
 
 **数据集按账号分子目录。** `data/<name>/` 一份账号一套文件，采集与出图都用 `--data` 指过去；
 `data/` 下有多份且没写 `--data` 时构建会报错退出（不猜，猜错只会生成一份「数字属于别人」的报表）。
 
+**数据落在你的项目目录，不落在 skill 目录。** 脚本把两个根目录分开：`SKILL_DIR` 是 skill 本体
+（`config/`、`assets/`，只读），`WORK_DIR` 是数据落点（默认 `process.cwd()`，可用 `--cwd` 指定）。
+所以装到 `.agents/skills/zzz-stats/` 后，在自己项目里跑 `node <skill>/scripts/collect.mjs`，
+`data/` 和 `output/` 就长在自己项目下——不会被 skill 升级覆盖，也不会误提交进 skill 仓库。
+
+仓库自己开发期的测试数据在 `fixtures/`，所以克隆下来直接跑
+`node skills/zzz-stats/scripts/build-report.mjs --data fixtures/tianzhu` 就能出基线报表。
+
 改完代码要验收时，两档尺寸的截图一条命令出齐（复用本机 Chrome，不需要 Playwright）：
 
 ```bash
-node scripts/screenshot.mjs                                   # → docs/shots/ 1440x900 + 1280x800
-node scripts/screenshot.mjs --privacy 2                       # 对外发的图先点全打码
-node scripts/screenshot.mjs --chart 音擎                       # 截频段 tab 切过去之后
-node scripts/screenshot.mjs --filter 2                        # 截版本过滤生效之后
-node scripts/screenshot.mjs --html p.html --out-dir /tmp/x     # 指定产物与输出位置
-node scripts/screenshot.mjs --preview                         # → docs/preview.png（本页顶部那张头图，整页 2x）
+node skills/zzz-stats/scripts/screenshot.mjs                                   # → docs/shots/ 1440x900 + 1280x800
+node skills/zzz-stats/scripts/screenshot.mjs --privacy 2                       # 对外发的图先点全打码
+node skills/zzz-stats/scripts/screenshot.mjs --chart 音擎                       # 截频段 tab 切过去之后
+node skills/zzz-stats/scripts/screenshot.mjs --filter 2                        # 截版本过滤生效之后
+node skills/zzz-stats/scripts/screenshot.mjs --html p.html --out-dir /tmp/x     # 指定产物与输出位置
+node skills/zzz-stats/scripts/screenshot.mjs --preview --html output/report-tianzhu.html   # → docs/preview.png（顶部头图，整页 2x）
 ```
+
+`--html` 不传时会在 `output/` 下找唯一的 `report-*.html`；有多份会报错退出，不猜（截错账号的图比失败更糟）。
 
 两档图是**验收**用的（看首屏装不装得下、图例有没有折行）；`--preview` 出的是**对外展示**用的头图，
 1440 逻辑宽、DPR 2、整页，所以是 `2880×2838` 这样的长图（高度跟内容走，不固定）。这张图以前是手工截的，
 代码改了它不会跟着变，README 上就挂着一张和实际产物对不上的截图，现在统一由脚本出，别手截。
 
-数据集之间完全平级：`data/tianzhu/` 与 `data/joker/` 各是一套完整数据，
+数据集之间完全平级：`fixtures/tianzhu/` 与 `fixtures/joker/` 各是一套完整数据，
 出图时用 `--data` 切换，不需要重新登录采集也能验证生成环节。
 
 短信登录把手机号当参数传，验证码在短信到达后写入约定文件：
 
 ```bash
-node scripts/collect.mjs --data data/tianzhu --login=sms --phone=13xxxxxxxxx
+node skills/zzz-stats/scripts/collect.mjs --data data/tianzhu --login=sms --phone=13xxxxxxxxx
 # 收到短信后，另开一个终端（路径跟着 --data 走）：
 echo 123456 > data/tianzhu/_verify/sms-code.txt     # 读一次就删
 ```
@@ -105,13 +115,13 @@ echo 123456 > data/tianzhu/_verify/sms-code.txt     # 读一次就删
 ```bash
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --remote-debugging-port=9222 --user-data-dir="$HOME/.zzz-chrome" &
-node scripts/collect.mjs --data data/tianzhu --cdp http://127.0.0.1:9222
+node skills/zzz-stats/scripts/collect.mjs --data data/tianzhu --cdp http://127.0.0.1:9222
 ```
 
 在受限沙箱里 Chrome 自带的 sandbox 可能起不来，加一句环境变量即可：
 
 ```bash
-ZZZ_CHROME_ARGS='--no-sandbox --headless=new' node scripts/collect.mjs
+ZZZ_CHROME_ARGS='--no-sandbox --headless=new' node skills/zzz-stats/scripts/collect.mjs
 ```
 
 > `--driver cdp` 这条路只用 Node 内置模块（`node:fs` / `node:child_process` / 全局 `WebSocket` / 全局 `fetch`）直讲 CDP，
@@ -119,28 +129,28 @@ ZZZ_CHROME_ARGS='--no-sandbox --headless=new' node scripts/collect.mjs
 
 如果会话里已经有浏览器工具（任何能「在页面里执行 JS」的能力），
 连脚本都不用跑：把 [`scripts/fetch-in-page.js`](scripts/fetch-in-page.js) 的内容当表达式执行，
-再用 `node scripts/save-in-page-json.mjs` 落盘即可。取数逻辑本来就只是「1 次汇总 + 6 次当前池 + 若干次历史分片」。
+再用 `node skills/zzz-stats/scripts/save-in-page-json.mjs` 落盘即可。取数逻辑本来就只是「1 次汇总 + 6 次当前池 + 若干次历史分片」。
 
 ## 目录结构
 
 ```
-SKILL.md                    # 入口：浏览器能力契约、采集流程、失败处理
-config/report.json          # 口径与文案的唯一来源：称号、标签、配色、KPI、频道、保底抽数
-scripts/collect.mjs         # 采集：浏览器驱动 → 页内 fetch → data/<账号>/*.json + 完整性校验
-scripts/drivers.mjs         # 浏览器驱动适配层：playwright / cdp 两套实现，接口一致
-scripts/sync-icons.mjs      # 按接口里的 icon URL 自动补齐缺失图标，并刷新 64px 缓存（需 Pillow）
-scripts/make-icons.mjs      # 从 96px 原图生成 64px 压缩图标（报表内嵌用，需 Pillow）
-scripts/fetch-in-page.js    # 只借「页内执行 JS」一个能力的取数脚本（无 Node 环境也能用）
-scripts/save-in-page-json.mjs # 把上面那段脚本的结果落成 data/<账号>/
-scripts/build-report.mjs    # 出图：data/<账号> + config → output/report-<账号>.html
-scripts/screenshot.mjs      # 开发期验收：出 1440x900 / 1280x800 两档截图（复用本机 Chrome，无依赖）
-assets/report/              # 报表模板（template.html / charts.js / charts.css）
-assets/report/icons/        # 64px 压缩图标，构建时 base64 内嵌进 HTML
-assets/vendor/echarts.min.js# ECharts 5.6.0（随仓库分发，不用 CDN）
-assets/avatars/             # 角色圆头像缓存（96px PNG 原图）
-assets/items/               # 角色/音擎/邦布方图标缓存（96px PNG 原图）
-references/api.md           # 接口与字段说明（含十连多金判定、完整性等式）
-references/report-rules.md  # 报表口径与呈现约定（规范层，维护者读）
+skills/zzz-stats/SKILL.md          # 入口：浏览器能力契约、采集流程、失败处理
+skills/zzz-stats/config/report.json # 口径与文案的唯一来源：称号、标签、配色、KPI、频道、保底抽数
+skills/zzz-stats/scripts/collect.mjs       # 采集：浏览器驱动 → 页内 fetch → data/<账号>/*.json + 完整性校验
+skills/zzz-stats/scripts/drivers.mjs       # 浏览器驱动适配层：playwright / cdp 两套实现，接口一致
+skills/zzz-stats/scripts/sync-icons.mjs    # 按接口里的 icon URL 自动补齐缺失图标，下载即裁 64px（需 Pillow）
+skills/zzz-stats/scripts/fetch-in-page.js  # 只借「页内执行 JS」一个能力的取数脚本（无 Node 环境也能用）
+skills/zzz-stats/scripts/save-in-page-json.mjs # 把上面那段脚本的结果落成 data/<账号>/
+skills/zzz-stats/scripts/build-report.mjs  # 出图：data/<账号> + config → output/report-<账号>.html
+skills/zzz-stats/scripts/screenshot.mjs    # 开发期验收：出 1440x900 / 1280x800 两档截图（复用本机 Chrome，无依赖）
+skills/zzz-stats/assets/report/            # 报表模板（template.html / charts.js / charts.css）
+skills/zzz-stats/assets/report/icons/      # 图标唯一一套 64px（avatars/ 圆形 + items/ 方形），构建时 base64 内嵌
+skills/zzz-stats/assets/vendor/echarts.min.js # ECharts 5.6.0（随仓库分发，不用 CDN）
+skills/zzz-stats/references/api.md         # 接口与字段说明（含十连多金判定、完整性等式）
+skills/zzz-stats/references/report-rules.md # 报表口径与呈现约定（规范层，维护者读）
+fixtures/tianzhu/           # 开发期基线数据集（对外展示用这份，UID 已脱敏）
+fixtures/joker/             # 开发期测试数据集（双金 + 三金分档用，不对外截图）
+AGENTS.md                   # 开发期铁律：改哪类东西要同步什么、哪些口径不许动
 ```
 
 报表右上角带仓库链接（`config/report.json` 的 `copy.repo` 可改），方便拿到图的人反查生成方式。

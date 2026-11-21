@@ -1,12 +1,12 @@
 # AGENTS.md — 改这个仓库的 agent 读这里
 
-这是**开发期**约定：给要改 `scripts/` / `assets/` / `config/` 的 agent 看。
+这是**开发期**约定：给要改 `skills/zzz-stats/scripts/`、`assets/`、`config/` 的 agent 看。
 `SKILL.md` 是**运行期**说明书（给宿主 agent 采集抽卡数据用），两边各管一边，不要把开发规则写进 SKILL.md。
 
 ## 开发期验收
 
 - **被测 skill 必须在独立 session 或 sub agent 里跑**，不要在正在写它的那个会话里跑。
-  - **怎样才算独立**：改 `scripts/` / `assets/` / `config/` 的那个会话只负责改，验证另开一个会话
+  - **怎样才算独立**：改 `skills/zzz-stats/scripts/` / `assets/` / `config/` 的那个会话只负责改，验证另开一个会话
     或 sub agent 去跑。同一个会话里「我在写它」和「我在用它」两套语义会互相污染。
   - **为什么**（这次真实发生过的，不是假设）：写 skill 的会话在 06:38:05 才 `turn/end: aborted`，
     但它在 06:36:11 和 06:37:19 还在往仓库写 `scripts/build-report.mjs` 和 `config/report.json`，
@@ -15,10 +15,10 @@
     把「采集期找浏览器」和「开发期截本地图」混成了一个入口。
   - **验证完怎么交接**：验证会话把结论带回来（exit code、实际渲染结果、像素/对比度实测值），
     改的会话据此决定是否提交；**两边不要各留一半改动**。
-- 截图走 `node scripts/screenshot.mjs`（默认出 1440×900 与 1280×800 到 `docs/shots/`）。
+- 截图走 `node skills/zzz-stats/scripts/screenshot.mjs`（默认出 1440×900 与 1280×800 到 `docs/shots/`）。
   **不要**按 SKILL.md §0 的浏览器优先级去现拼 Chrome 命令行——那是采集期「找能扫码登录的浏览器」的语义，
   跟「截一张本地 HTML 的图」是两件事。`--user-data-dir` 脚本里已焊死，别再踩。
-- **README 预览图走 `node scripts/screenshot.mjs --preview`，不要手截。**
+- **README 预览图走 `node skills/zzz-stats/scripts/screenshot.mjs --preview`，不要手截。**
   出的是 `docs/preview.png`：1440 逻辑宽、DPR 2、整页（当前实测 `2880×2838`，高度跟内容走），并强制打码到 2、
   截图前断言 `eye=2` 且昵称/UID 含 `*`（不通过就中止、不写文件）。
   以前这张图是手工截好随仓库带的，代码一路改而图停在旧版——很长一段时间里 README 上那张
@@ -29,25 +29,48 @@
   那样传 `--width 390` 截出来的是 500px 视口**裁掉右边**的图，尺寸看着对、内容却是假的。
   这个坑真实发生过——「窄屏过滤条被裁」一度被当成 CSS bug，其实是假视口造成的。
 - **产物按数据集分开出，`output/report.html` 已废弃。**
-  现在不传 `--out` 时默认写 `output/report-<数据集名>.html`（`--data data/tianzhu` → `output/report-tianzhu.html`），
-  所以直接 `node scripts/build-report.mjs --data data/<账号>` 就是对的，不用再手写 `--out`。
+  现在不传 `--out` 时默认写 `output/report-<数据集名>.html`（`--data fixtures/tianzhu` → `output/report-tianzhu.html`），
+  所以直接 `node skills/zzz-stats/scripts/build-report.mjs --data fixtures/tianzhu` 就是对的，不用再手写 `--out`。
   两份账号混用同一个文件名时，后一次构建会盖掉前一次，而两份报表只差数字、发错人不会有人发现——所以那个名字不再保留。
 - 不要为了截图去 `session_search` 追截图里的外部链接或部署环境，与本次改动无关。
 
-## 数据集
+## 数据集（开发期就是 fixtures/）
 
-- `data/<账号>/` 一份数据集一个目录，`data/tianzhu/` 与 `data/joker/` 平级。
-- 出图与采集都用 `--data` 指定；`data/` 下有多份且没写 `--data` 时构建**报错退出**，不猜。
-- `data/` 整个目录在 `.gitignore` 里，含真实 UID，**永不入库**。
+`data/` 和 `output/` 是**用户运行期**的落点，落在用户自己的工作目录；仓库自己开发期的
+测试数据在 `fixtures/`，跟 skill 本体分开。用户原话：「开发期，对我们来说就是一个 fixtures 目录的测试」。
+
+- `fixtures/<数据集名>/` 一份数据集一个目录，`fixtures/tianzhu/` 与 `fixtures/joker/` 平级，
+  **这两个目录入库**（它们是开发基线，不是运行期产物）。
+- 出图与采集都用 `--data` 指定：`--data fixtures/tianzhu`。`--data` 的兜底会依次看
+  `data/` → `fixtures/`，所以仓库里直接跑 `node skills/zzz-stats/scripts/build-report.mjs`
+  也能找到数据集；有多份且没写 `--data` 时构建**报错退出**，不猜。
+- **fixtures 里的数据必须脱敏后再入库。** 这是公开仓库：`meta.json` 的 `uid` 是假值
+  （`10000001` / `10000002`），昵称沿用「天猪 / joker」。真实 UID 永不入库——
+  采集脚本写出的原始 `data/` 带真 UID，那整份目录在 `.gitignore` 里。
 - **天猪是对外展示基线，joker 是测试数据。** README 头图（`docs/preview.png`）、发布说明、
-  任何人看得到的图一律用 `data/tianzhu` 出；`data/joker` 只用来验证多金分档（双金 + 三金，
+  任何人看得到的图一律用 `fixtures/tianzhu` 出；`fixtures/joker` 只用来验证多金分档（双金 + 三金，
   见 `report-rules.md` §8.1），**不拿来截图对外**。它的数字不好看是正常的，不代表报表有问题。
+
+## 目录分层：skill 与用户工作目录
+
+**这条改错过一次，改之前先看懂。** 脚本里有两个根目录，不要合并：
+
+| 常量 | 指向 | 干什么 |
+|---|---|---|
+| `SKILL_DIR` | 脚本上一级，即 `skills/zzz-stats/` | **只读**。读 `config/report.json`、`assets/**`（模板/charts/图标/echarts）。图标缓存 `assets/report/icons/` 也写这里（它随 skill 发布） |
+| `WORK_DIR` | `--cwd` 优先，否则 `process.cwd()` | **读写**。`data/`、`output/`、`docs/`、`.chrome-profile/` 全相对它算 |
+
+早期全用 `const ROOT = resolve(HERE, '..')`，把两者当同一个。skill 装到 `.agents/skills/zzz-stats`
+之后跑构建，数据与产物会写进 skill 自己的目录——既被 skill 升级覆盖，`.gitignore` 的根锚定
+规则也管不到，**含 UID 的抽卡记录会变成可提交状态**。改脚本时别再退回单根目录。
+
+`--cwd` 必须同时支持 `--cwd value` 与 `--cwd=value` 两种写法，跟其他参数一样。
 
 ## 改动的分工
 
-- 改口径 / 阈值 / 称号 / 文案 / 配色 → 只改 `config/report.json`。
-- 改算法 → `scripts/build-report.mjs`，并同步 `references/report-rules.md`。
-- 改视觉 → `assets/report/charts.{js,css}` / `assets/report/template.html`，
+- 改口径 / 阈值 / 称号 / 文案 / 配色 → 只改 `skills/zzz-stats/config/report.json`。
+- 改算法 → `skills/zzz-stats/scripts/build-report.mjs`，并同步 `references/report-rules.md`。
+- 改视觉 → `skills/zzz-stats/assets/report/charts.{js,css}` / `assets/report/template.html`，
   并同步 `references/report-rules.md` §2–§6 **和 `SKILL.md` 的「产物里有哪些交互」表**
   （那是宿主 agent 读的唯一入口，漏了等于用户看不到新行为）。
 - **「改配置就生效」是硬约定**：不要在 CSS / JS 里另写一份硬编码色值。
