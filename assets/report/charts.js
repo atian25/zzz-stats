@@ -940,13 +940,26 @@
       const all = c.rounds;
 
       if (tag.dataset.goldSorts) {
-        /* 多金：sort → 原柱位 → 可见列。当前频道里没有的那些自动跳过。 */
-        const bySort = (sort) => all.findIndex(
-          (r) => r.sort === sort || r.side.some((s) => s.sort === sort),
-        );
-        return tag.dataset.goldSorts.split(';').filter(Boolean)
-          .map((s) => posOf.get(bySort(Number(s))))
-          .filter((p) => p != null);
+        /*
+         * 多金：sort → 原柱位 → 可见列。当前频道里没有的那些自动跳过。
+         *
+         * 数据是「按组展开的一维 sort 列表」，组之间用空段（`;;`）分隔。
+         * 为什么要分组：一次十连三金的三根柱子属于同一组，hover 时要一起亮；
+         * 而两组三金可能分属不同频道，不能用「整串一起亮」蒙混。
+         *
+         * 早先只传每组最后一金的 sort，三金只亮一根柱子，看起来像只出了 1 金。
+         */
+        const seen = new Set();
+        return tag.dataset.goldSorts.split(';').map((s) => {
+          if (!s) return null;                       // 组分隔，不是数据
+          const orig = all.findIndex(
+            (r) => r.sort === Number(s) || r.side.some((x) => x.sort === Number(s)),
+          );
+          const pos = posOf.get(orig);
+          if (pos == null || seen.has(pos)) return null;   // 不在本频道 / 已点过
+          seen.add(pos);
+          return pos;
+        }).filter((p) => p != null);
       }
 
       const ranges = (tag.dataset.bars ?? '').split(';').filter(Boolean)

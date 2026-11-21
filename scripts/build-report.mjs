@@ -792,7 +792,12 @@ function evaluateTags() {
           tip,
           bars: [],
           /*
-           * 悬浮高亮用：每组最后一金的 `sort`。
+           * 悬浮高亮用：**整组里每一金的** `sort`，按组内顺序展开成一维数组。
+           *
+           * 早先只存 `g[g.length - 1].sort`（每组最后一金），一次十连三金只亮最后一根柱子，
+           * 另外两根不亮——标签写着「十连 3 金」，图上却只高亮 1 根，读起来像只出了 1 金。
+           * 现在把整组的 sort 全带上，前端按当前频道逐根点亮；
+           * 组与组之间用 `null` 分隔（见下面的 flatten），前端据此知道哪几根属于同一组。
            *
            * 为什么不在这里就算成柱子下标：`multiGold` 是**角色池 + 音擎合并**的
            * （见 multiGoldGoldsByChannel），而主图一次只画一个频道，
@@ -802,7 +807,10 @@ function evaluateTags() {
            * 所以只把稳定标识（频道内的 sort 序号）带给前端，
            * 由前端按「当前频道」自己映射成柱位，映射逻辑与多金青点完全共用一份。
            */
-          multiGoldSorts: groups.map((g) => g[g.length - 1].sort),
+          multiGoldSorts: groups.flatMap((g, gi) => [
+            ...(gi ? [null] : []),
+            ...g.map((x) => x.sort),
+          ]),
         });
       }
       continue;
