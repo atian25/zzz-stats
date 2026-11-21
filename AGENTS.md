@@ -142,7 +142,35 @@
 `?t=<毫秒>-<序号>` 破缓存。`?t=` 要带单调序号，只有毫秒时间戳时同一毫秒内连取两次会拿到相同 URL
 （实测过），那等于没破缓存。
 
+**换图的入口有两条，必须并行生效，不许写成二选一。** 终端按键 `r` 与信号文件
+`output/qr-refresh` 是**互相独立的通道**，任一命中就刷新。这里出过一个只在特定环境组合下
+才显形的 bug：早先 `collect.mjs` 写成
+
+```js
+if (stdin.isTTY) { stdin.on('data', onKey) }          // 只有 TTY 听按键
+if (!stdinRaw && existsSync(REFRESH_SIGNAL)) {...}    // ← 有 TTY 就永远不查信号文件
+```
+
+而 agent 代跑的典型场景正好落在缝隙里：**进程挂在终端里（有 TTY），但 agent 没法往那个 TTY 发按键**，
+它只能写文件 —— 写下去没有任何人读，日志还在打「仍在等待…」，白等几十秒才被人工发现。
+所以 TTY 与否**只允许影响提示文案**，不能参与判断；判断逻辑现在集中在
+`scripts/qr-wait.mjs` 的 `takeRefreshRequest()`，它的签名里根本没有 `stdinRaw`（这是刻意的：
+这个参数一旦回去，两条通道就会重新退化成二选一）。回归用例：
+`node skills/zzz-stats/scripts/test-qr-wait.mjs`（75 项，含「TTY 场景下信号文件必须生效」，
+并**真实执行** `waitForLogin()` 循环本体——零件测与真跑缺一不可）。
+
+TTY 下 `setRawMode(true)` 会关掉终端行编辑，**每个**按键都会进 `data` 事件。所以 `isRefreshKey()`
+只认单个 `r`/`R`（严格相等，不是「包含 r」）：方向键的 `\x1b[A`、粘贴进来的 `rr`、回车都不能触发刷新，
+否则用户随便敲个键就把二维码换掉了。
+
+**等待循环本体必须能被真实执行地测，所以它整个搬进了 `qr-wait.mjs` 的 `waitForLogin()`**，
+`collect.mjs` 只做接线（stdin、驱动、日志、保存函数都靠参数注入）。这不是为了「架构好看」：
+抽这段时手滑删掉了 `let wantRefresh` 的声明，**`node --check` 一声不响**（赋值未声明变量是运行时
+ReferenceError，语法合法），而我当时手写的仿真 harness 又只模拟了循环的一部分——
+「语法检查过了」差点被当成「改对了」。用例 #12–#16 现在直接调 `waitForLogin()` 本体。
+
 清理逻辑在 `skills/zzz-stats/scripts/verify-cleanup.mjs`，图片服务在 `.../image-server.mjs`，
+扫码等待期的刷新通道与二维码计时在 `.../qr-wait.mjs`，
 **单独成文件是为了能在不启动浏览器的情况下测**。扫码采集需要人扫、CI 跑不了，
 但「删干净 / 幂等 / 不误删账号目录」「白名单只服务一个文件 / `?t=` 每次不同」这些可以对着假文件验证。
 改这两段逻辑时先跑用例再改：
@@ -150,6 +178,7 @@
 ```bash
 node skills/zzz-stats/scripts/test-verify-cleanup.mjs   # 27 项，不需要浏览器、不联网
 node skills/zzz-stats/scripts/test-image-server.mjs      # 25 项，只起一个 127.0.0.1 临时端口
+node skills/zzz-stats/scripts/test-qr-wait.mjs           # 75 项，刷新通道 + 真实等待循环
 ```
 
 用例文件在 `skills/zzz-stats/scripts/`，**新增清理范围或改了白名单就照它们的形状补一条**，不要只靠肉眼。

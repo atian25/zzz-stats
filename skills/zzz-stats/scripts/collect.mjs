@@ -29,6 +29,7 @@ import { stdin, stdout } from 'node:process';
 import { openDriver } from './drivers.mjs';
 import { wantsHelp, printHelp, WORK_DIR_NOTE } from './cli-help.mjs';
 import { purgeAndLog } from './verify-cleanup.mjs';
+import { createRefreshInput, createQrClock, waitForLogin, refreshChannelHint, REFRESH_SIGNAL_FILE } from './qr-wait.mjs';
 import { startImageServer, stopImageServer, qrUrl, IMAGE_SERVER_FILE } from './image-server.mjs';
 import { outputRoot, resolveAccountName, accountDataDir } from './datasets.mjs';
 
@@ -591,8 +592,13 @@ async function loginFlow(drv, opts = {}) {
   };
 
   const QR_TTL_MS = 120_000;   // 官方二维码约 2 分钟失效
-  let qr = await grabQr();
-  let issuedAt = Date.now();
+  const qr = await grabQr();   // 首次那张，用于打印路径/URL；换图后的保存由 waitForLogin 内部做
+  /*
+   * 计时器抽成对象（见 qr-wait.mjs）：`reissue()` 负责「换新码重置起点」。
+   * 早先这里是裸的 `let issuedAt`，刷新后忘了重置 —— 新码一出来就被判过期。
+   */
+  const clock = createQrClock({ ttlMs: QR_TTL_MS });
+  let issuedAt = clock.issuedAt;
 
   if (qr?.src) {
     const { png: file, url } = saveQr(qr);
@@ -619,9 +625,8 @@ async function loginFlow(drv, opts = {}) {
    */
   const MAX_QR_REFRESH = 3;
   const REFRESH_MIN_GAP_MS = 5000;
-  const REFRESH_SIGNAL = join(OUTPUT_DIR, 'qr-refresh');
-  let refreshCount = 0;
-  let lastRefreshAt = 0;
+  const REFRESH_SIGNAL = join(OUTPUT_DIR, REFRESH_SIGNAL_FILE);
+  // 次数上限与最短间隔由 waitForLogin() 执行，这里只负责把参数传下去
 
   /*
    * 扫码阶段必须「自动轮询登录态 + 非阻塞监听键盘」。
@@ -629,7 +634,7 @@ async function loginFlow(drv, opts = {}) {
    * 之前这里是 `await ask(...)` 先阻塞等人按回车，按完才去轮询登录——
    * 用户扫完码什么都不发生，得自己回来敲回车，体验是坏的。
    * 现在改成：主循环每 3 秒查一次登录态，命中立刻继续；
-   * stdin 用 raw 模式旁听，按 r 才刷新二维码（同样受 3 次上限约束）。
+   * 刷新由两条独立通道触发（按 r / 信号文件），同样受 3 次上限与 5 秒间隔约束。
    */
   /*
    * 扫码等待策略，按「当前会话能不能挂着等」分两档：
@@ -649,10 +654,11 @@ async function loginFlow(drv, opts = {}) {
   const waitMode = (argOf('wait', '') || process.env.ZZZ_WAIT_MODE || 'a').toLowerCase() === 'b' ? 'b' : 'a';
 
   /*
-   * 有没有终端，决定「换二维码」的信号从哪来：
-   *   - 有 TTY：按 r
-   *   - 无 TTY：agent 写信号文件
-   * 必须在下面的日志之前算出来 —— 早先声明在使用之后，直接 TDZ 崩了。
+   * 有没有终端只影响**提示文案**，不影响刷新通道的判断。
+   *
+   * 早先它同时决定了「听不听按键」和「查不查信号文件」，于是两条通道变成二选一，
+   * agent 代跑时（进程有 TTY、但 agent 没法发按键）写信号文件完全没人读。
+   * 现在两条通道并行生效，判断逻辑在 waitForLogin() 里，且**不接受 stdinRaw**。
    */
   const stdinRaw = Boolean(stdin.isTTY);
 
@@ -665,11 +671,7 @@ async function loginFlow(drv, opts = {}) {
   } else {
     log('扫码后会自动继续，不需要任何操作。');
   }
-  if (stdinRaw) {
-    log('（本终端里按 r 可以换一张二维码）');
-  } else {
-    log(`（二维码过期时，agent 写入 ${REFRESH_SIGNAL} 即可换一张）`);
-  }
+  log(refreshChannelHint({ signalFile: REFRESH_SIGNAL, stdinRaw }));
 
   // 心跳里附带的页面快照：出问题时能直接看出「扫码前后页面到底有没有变化」
   const snapshot = `(() => {
@@ -677,127 +679,62 @@ async function loginFlow(drv, opts = {}) {
     return { len: t.length, head: t.replace(/\\s+/g, ' ').slice(0, 60) };
   })()`;
 
-  let ok = null;
-  let tick = 0;
-  let warnedExpired = false;
   /*
-   * 等待扫码。
-   * 两条时间线要分开看：
-   *   - 二维码有效期 QR_TTL_MS（120s）：过了就明确报「已过期」，提示怎么换
-   *   - 整体等待上限 MAX_WAIT_MS（10min）：用户去忙别的事时不要几分钟就放弃，
-   *     但也不能无限等，否则脚本永远挂着
+   * 刷新通道的接线：只在这里碰 stdin。
+   * 判断（哪条通道命中、要不要刷新、刷新限流、计时重置）全在 qr-wait.mjs 的
+   * waitForLogin() 里 —— 那段必须能被用例**真实执行**地测，不能再靠肉眼。
    */
-  const MAX_WAIT_MS = 10 * 60 * 1000;
-  const deadline = Date.now() + MAX_WAIT_MS;
-
-  /*
-   * 刷新信号的两种来法，同一套上限约束：
-   *   - 有 TTY：按 r（用户本机手动跑）
-   *   - 无 TTY：agent 写一个信号文件（用户说「过期了/换一张」时）
-   * 两条路都只影响「换图」，绝不影响轮询登录态那部分。
-   */
-  let wantRefresh = false;
-  const onKey = (buf) => {
-    if (buf.toString().toLowerCase() === 'r') wantRefresh = true;
-  };
-  // stdinRaw 已在上面声明（日志要用），这里只用不重复声明
+  const input = createRefreshInput();
+  const onData = (buf) => input.press(buf);
   if (stdinRaw) {
+    // raw 模式关掉了终端行编辑，每个按键都会进 data；isRefreshKey 只认单个 r/R
     stdin.setRawMode?.(true);
     stdin.resume();
-    stdin.on('data', onKey);
+    stdin.on('data', onData);
   }
 
+  let result;
   try {
-    while (Date.now() < deadline) {
-      ok = await drv.evaluate(LOGGED_IN);
-      if (ok === 'logged-in') break;
-
-      // 无终端时：靠信号文件触发换图
-      if (!stdinRaw && existsSync(REFRESH_SIGNAL)) {
-        try { rmSync(REFRESH_SIGNAL); } catch {}
-        wantRefresh = true;
-      }
-
-      // 二维码本身的有效期，与整体等待上限无关
-      const qrAge = Date.now() - issuedAt;
-      if (!warnedExpired && qrAge >= QR_TTL_MS) {
-        warnedExpired = true;
-        log('');
-        log('⚠️  二维码已过期（截取于 ' +
-          new Date(issuedAt).toLocaleTimeString('zh-CN', { hour12: false }) +
-          `，已过 ${Math.round(qrAge / 1000)} 秒）`);
-        log('    需要换一张才能继续：在运行脚本的终端里按一下 r，' +
-          '或由 agent 写入 ' + REFRESH_SIGNAL + '。');
-        log('    （不会自动刷新——避免没人看着时反复请求登录接口）');
-        log('');
-      }
-
-      // 每 15 秒报一次心跳：让用户看得出脚本还活着、还在等
-      tick += 1;
-      if (tick % 5 === 0) {
-        const leftMin = Math.ceil((deadline - Date.now()) / 60000);
-        /*
-         * 心跳只是「我还活着」的信号，不能因为一次取快照失败就报警或中断。
-         *
-         * 两个坑都在这儿踩过：
-         *   1) drv.evaluate 出错返回的是 {__error}，它**是 truthy**，
-         *      直接读 snap.len 会得到 undefined，日志变成「页面 undefined 字」
-         *   2) 页面导航瞬间执行上下文会被销毁，属于瞬时错误，重试一次就好
-         */
+    result = await waitForLogin({
+      isLoggedIn: () => drv.evaluate(LOGGED_IN),
+      /*
+       * 心跳只是「我还活着」的信号，不能因为一次取快照失败就报警或中断。
+       * 两个坑都在这儿踩过：
+       *   1) drv.evaluate 出错返回的是 {__error}，它**是 truthy**，
+       *      直接读 snap.len 会得到 undefined，日志变成「页面 undefined 字」
+       *   2) 页面导航瞬间执行上下文会被销毁，属于瞬时错误，重试一次就好
+       */
+      probe: async () => {
         let snap = await drv.evaluate(snapshot);
         if (!snap || snap.__error) {
           await sleep(600);
           snap = await drv.evaluate(snapshot);
         }
-        const info = !snap || snap.__error || typeof snap.len !== 'number'
+        return !snap || snap.__error || typeof snap.len !== 'number'
           ? `页面快照读不到（${snap?.__error ?? '空返回'}）`
           : `页面 ${snap.len} 字：「${snap.head}」`;
-        log(warnedExpired
-          ? `仍在等待…（二维码已过期，需换一张；最多再等 ${leftMin} 分钟）｜${info}`
-          : `仍在等待扫码…（二维码还剩约 ${Math.max(0, Math.round((QR_TTL_MS - qrAge) / 1000))} 秒有效）｜${info}`);
-      }
-
-      if (wantRefresh) {
-        wantRefresh = false;
-        if (refreshCount >= MAX_QR_REFRESH) {
-          log(`已重取 ${refreshCount} 次，达到上限，不再自动换图。`);
-        } else if (lastRefreshAt && Date.now() - lastRefreshAt < REFRESH_MIN_GAP_MS) {
-          log(`刷新太快了，请等 ${Math.ceil((REFRESH_MIN_GAP_MS - (Date.now() - lastRefreshAt)) / 1000)} 秒后再试。`);
-        } else {
-          lastRefreshAt = Date.now();
-          refreshCount += 1;
-          const hit = await refreshQr();
-          qr = await grabQr();
-          const left = MAX_QR_REFRESH - refreshCount;
-          if (qr?.src) {
-            const { png: file, url } = saveQr(qr);
-            /*
-             * 换到新码就必须重置计时起点。
-             * 早先漏了这一步：新码已经拿到，但过期判断还拿旧 issuedAt 在算，
-             * 于是新码一出来就被标成「已过期」——用户拿到的永远是一张判定过期的图。
-             */
-            issuedAt = Date.now();
-            warnedExpired = false;
-            log(hit === 'no-expired-node'
-              ? `二维码尚未过期，仍是同一张（${file}）。剩余 ${left} 次。`
-              : `已换新二维码（${hit}）：${file}。剩余 ${left} 次。`);
-            if (url) log(`二维码图片地址：${url}`);
-          } else {
-            log(`刷新后没读到二维码（${hit}）。剩余 ${left} 次。`);
-          }
-        }
-      }
-      await sleep(3000);
-    }
+      },
+      refreshQr,
+      grabQr,
+      saveQr,
+      input,
+      clock,
+      log,
+      signalFile: REFRESH_SIGNAL,
+      stdinRaw,
+      maxRefresh: MAX_QR_REFRESH,
+      minGapMs: REFRESH_MIN_GAP_MS,
+    });
   } finally {
     if (stdinRaw) {
-      stdin.off('data', onKey);
+      // 必须 off：不摘监听器的话，后面采集阶段敲的每个键都还在往这个回调里送
+      stdin.off('data', onData);
       stdin.setRawMode?.(false);
       stdin.pause();
     }
   }
 
-  if (!ok) {
+  if (!result.ok) {
     log('');
     log('二维码已失效或等待超时。');
     log('→ 直接重跑一次采集脚本即可生成新二维码（旧进程不会占用登录态）。');
