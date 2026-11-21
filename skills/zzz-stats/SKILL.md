@@ -7,10 +7,10 @@ description: 采集《绝区零》调频（抽卡）数据并生成 HTML 报表�
 
 采集用户账号的调频数据 → 存成本地 JSON → 一条命令出 HTML 报表。
 
-![报表预览](https://raw.githubusercontent.com/atian25/zzz-stats/master/docs/preview.png)
-
 - **能拿到**：每个频道的总抽数、S 数、UP 数、UP 平均抽数、当前垫抽；每张卡池里**每一金**的物品 ID、名称、稀有度、是否 UP、消耗抽数、时间戳、频道内序号；覆盖版本范围。
 - **拿不到**：4 星记录、逐抽记录、记录 ID。这些必须走游戏内 `getGachaLog` + authkey，不在本 skill 范围。
+
+![报表预览](https://raw.githubusercontent.com/atian25/zzz-stats/master/docs/preview.png)
 
 ## 边界（必须遵守）
 
