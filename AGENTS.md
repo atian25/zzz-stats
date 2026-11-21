@@ -23,6 +23,11 @@
   截图前断言 `eye=2` 且昵称/UID 含 `*`（不通过就中止、不写文件）。
   以前这张图是手工截好随仓库带的，代码一路改而图停在旧版——很长一段时间里 README 上那张
   还是黄色折线、带「黄线＝累计不歪率」尾注、右轴 60% 的旧版本，没有任何东西会提醒你它过期了。
+- **`SKILL.md` 里引用这张预览图必须用绝对 URL，不能用 `docs/preview.png` 这种相对路径。**
+  skills.sh 的 skill 页是把 `SKILL.md` 的正文直接渲染出来的，相对路径在那里解析不到仓库文件，
+  图会显示成坏链。所以写的是
+  `https://raw.githubusercontent.com/atian25/zzz-stats/master/docs/preview.png`。
+  默认分支是 `master` 而不是 `main`，写错分支同样 404。改图之后不需要动这行 URL，同名覆盖即可。
 - **headless 的 `--window-size` 有 500px 最小宽度，窄屏验收必须靠 CDP 设备模拟。**
   脚本已改成 `Emulation.setDeviceMetricsOverride`，并在收尾自检里比对「页面自报 `innerWidth`」与标称宽度，
   不等就报 `⚠️ 不符` 并退 1。别退回 `--screenshot` + `--window-size` 的老写法：
