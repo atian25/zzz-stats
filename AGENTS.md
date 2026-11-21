@@ -5,11 +5,24 @@
 
 ## 开发期验收
 
-- **在独立 session 或 sub agent 里跑被测 skill**，不要在正在写它的那个会话里跑。
-  同一个会话里混着「我在写它」和「我在用它」两套语义，会自己把自己带偏。
+- **被测 skill 必须在独立 session 或 sub agent 里跑**，不要在正在写它的那个会话里跑。
+  - **怎样才算独立**：改 `scripts/` / `assets/` / `config/` 的那个会话只负责改，验证另开一个会话
+    或 sub agent 去跑。同一个会话里「我在写它」和「我在用它」两套语义会互相污染。
+  - **为什么**（这次真实发生过的，不是假设）：写 skill 的会话在 06:38:05 才 `turn/end: aborted`，
+    但它在 06:36:11 和 06:37:19 还在往仓库写 `scripts/build-report.mjs` 和 `config/report.json`，
+    留下一个跑不起来的半成品——`evaluateTags()` 引用了从未定义的 `groupBars()`，直接 ReferenceError。
+    而且那几轮它自己的判断已经被两套语义带偏，绕了很大一圈才定位到根因是 SKILL.md §0
+    把「采集期找浏览器」和「开发期截本地图」混成了一个入口。
+  - **验证完怎么交接**：验证会话把结论带回来（exit code、实际渲染结果、像素/对比度实测值），
+    改的会话据此决定是否提交；**两边不要各留一半改动**。
 - 截图走 `node scripts/screenshot.mjs`（默认出 1440×900 与 1280×800 到 `docs/shots/`）。
   **不要**按 SKILL.md §0 的浏览器优先级去现拼 Chrome 命令行——那是采集期「找能扫码登录的浏览器」的语义，
   跟「截一张本地 HTML 的图」是两件事。`--user-data-dir` 脚本里已焊死，别再踩。
+- **README 预览图走 `node scripts/screenshot.mjs --preview`，不要手截。**
+  出的是 `docs/preview.png`：1440 逻辑宽、DPR 2、整页（当前实测 `2880×2838`，高度跟内容走），并强制打码到 2、
+  截图前断言 `eye=2` 且昵称/UID 含 `*`（不通过就中止、不写文件）。
+  以前这张图是手工截好随仓库带的，代码一路改而图停在旧版——很长一段时间里 README 上那张
+  还是黄色折线、带「黄线＝累计不歪率」尾注、右轴 60% 的旧版本，没有任何东西会提醒你它过期了。
 - **headless 的 `--window-size` 有 500px 最小宽度，窄屏验收必须靠 CDP 设备模拟。**
   脚本已改成 `Emulation.setDeviceMetricsOverride`，并在收尾自检里比对「页面自报 `innerWidth`」与标称宽度，
   不等就报 `⚠️ 不符` 并退 1。别退回 `--screenshot` + `--window-size` 的老写法：
@@ -26,6 +39,9 @@
 - `data/<账号>/` 一份数据集一个目录，`data/tianzhu/` 与 `data/joker/` 平级。
 - 出图与采集都用 `--data` 指定；`data/` 下有多份且没写 `--data` 时构建**报错退出**，不猜。
 - `data/` 整个目录在 `.gitignore` 里，含真实 UID，**永不入库**。
+- **天猪是对外展示基线，joker 是测试数据。** README 头图（`docs/preview.png`）、发布说明、
+  任何人看得到的图一律用 `data/tianzhu` 出；`data/joker` 只用来验证多金分档（双金 + 三金，
+  见 `report-rules.md` §8.1），**不拿来截图对外**。它的数字不好看是正常的，不代表报表有问题。
 
 ## 改动的分工
 

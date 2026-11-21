@@ -664,6 +664,11 @@ ECharts 5.6.0（Apache-2.0）已入库，报表只引用它，不联网。
 
 ## 8. 回归基线（示例账号，用于自检）
 
+**`data/tianzhu` 是对外展示基线，`data/joker` 只用于验证多金分档，不拿来做对外截图。**
+README 头图（`docs/preview.png`）、发布说明、任何人看得到的图，一律用天猪。
+joker 的存在意义是它同时有双金和三金（见 §8.1），能把 §5 的分档逻辑跑全；
+它是一份**测试数据**，数字不好看也不代表报表有问题，别拿它当门面。
+
 改动口径或模板后跑一次 `node scripts/build-report.mjs`，控制台应输出：
 
 - 27 个 UP / 2372 抽 / 每 UP **87.9** / 不歪率 **48.1%**（13/27）/ 称号 `欧气满满大欧皇`
@@ -694,6 +699,9 @@ ECharts 5.6.0（Apache-2.0）已入库，报表只引用它，不联网。
 
 构建命令：`node scripts/build-report.mjs --data data/joker --out output/report-joker.html`。
 `data/joker/` 是**另一份同级数据集**（只用于跑生成报表环节，不走登录采集），与 `data/` 平级，都在 git 忽略内。
+
+**但它是测试数据，不是展示数据。** 对外截图、README 头图、发布说明里出现的图只能用 `data/tianzhu`（见 §8）；
+joker 只在本地验证多金分档（双金 + 三金）时用，别拿它做门面。
 
 ## 9. 实现要点（ECharts 与踩坑记录）
 
@@ -806,7 +814,20 @@ node scripts/screenshot.mjs --privacy 2            # 对外用的图：先点全
 node scripts/screenshot.mjs --chart 音擎            # 截频段 tab 切过去之后的状态
 node scripts/screenshot.mjs --filter 2             # 截版本过滤生效后的状态（多个写 --filter 1,2）
 node scripts/screenshot.mjs --html p.html --out-dir /tmp/x   # 指定产物与输出位置
+node scripts/screenshot.mjs --preview              # README 预览图 → docs/preview.png（整页 2x）
 ```
+
+**`--preview` 和两档验收图是两个用途，不要混用。** 两档图（`1440x900` / `1280x800`，1x）
+是**验收**用的：确认首屏装不装得下、图例有没有折行，看的是「这个尺寸下会不会破版」。
+`--preview` 出的是**对外展示**用的 README 头图：1440 逻辑宽、DPR 2、整页（不止首屏），
+所以它是 `2880×2838` 这样的长图（高度跟内容走，不固定），别拿它跟 900 比高度。
+
+**为什么必须由脚本出**：这张图以前是**手工截好随仓库带**的。结果是代码一路改（折线从黄变红绿蓝、
+图例删了尾注、右轴从 60% 固定到 100%、加了版本过滤 chip），图一直停在初始化那一版，
+README 上挂着一张和实际产物对不上的截图，而且没有任何东西会提醒你它过期了。
+
+`--preview` 同时**强制打码到 2 并做截图前断言**（`eye=2` 且昵称/UID 都含 `*`，不通过就中止、不写文件）。
+README 头图是对外公开的，这条断言比两档验收图更不能省——`--privacy` 参数传了不等于点中了。
 
 - 脚本默认出 `1440x900` 与 `1280x800` 两张，核对**首屏无滚动、图例单行**。它复用 `drivers.mjs` 的 `findChrome()`，
   `--user-data-dir` 已焊死（不带的 Chrome headless 会去抢默认 profile 直接失败），**不需要 Playwright，也不联网**。

@@ -78,7 +78,12 @@ node scripts/screenshot.mjs --privacy 2                       # 对外发的图�
 node scripts/screenshot.mjs --chart 音擎                       # 截频段 tab 切过去之后
 node scripts/screenshot.mjs --filter 2                        # 截版本过滤生效之后
 node scripts/screenshot.mjs --html p.html --out-dir /tmp/x     # 指定产物与输出位置
+node scripts/screenshot.mjs --preview                         # → docs/preview.png（本页顶部那张头图，整页 2x）
 ```
+
+两档图是**验收**用的（看首屏装不装得下、图例有没有折行）；`--preview` 出的是**对外展示**用的头图，
+1440 逻辑宽、DPR 2、整页，所以是 `2880×2838` 这样的长图（高度跟内容走，不固定）。这张图以前是手工截的，
+代码改了它不会跟着变，README 上就挂着一张和实际产物对不上的截图，现在统一由脚本出，别手截。
 
 数据集之间完全平级：`data/tianzhu/` 与 `data/joker/` 各是一套完整数据，
 出图时用 `--data` 切换，不需要重新登录采集也能验证生成环节。
