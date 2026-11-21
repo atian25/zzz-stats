@@ -63,22 +63,32 @@ DeepSeek Harness、Codex、Trae、豆包工作，以及任意支持 Agent Skill 
 
 ```bash
 # 1) 采集：自动挑驱动（有 Playwright 用 Playwright，没有用零依赖 CDP），打印二维码路径
-node skills/zzz-stats/scripts/collect.mjs --data data/tianzhu
+node skills/zzz-stats/scripts/collect.mjs
 
 # 2) 出图
-node skills/zzz-stats/scripts/build-report.mjs --data data/tianzhu   # → output/report-tianzhu.html
+node skills/zzz-stats/scripts/build-report.mjs --data output/天猪/data   # → output/天猪/report.html
 ```
 
-**数据集按账号分子目录。** `data/<name>/` 一份账号一套文件，采集与出图都用 `--data` 指过去；
-`data/` 下有多份且没写 `--data` 时构建会报错退出（不猜，猜错只会生成一份「数字属于别人」的报表）。
+**一个账号一个目录，数据与报表在同一个目录里。** 采集完成后产物长这样：
+
+```
+output/天猪/
+├── data/            # meta.json / index.json / *_pool_stat_*.json
+└── report.html      # 自包含单文件报表
+```
+
+目录名取**昵称**（登录后从页面读；读不到就退回 UID），做文件系统安全化后使用。
+同账号重跑 = 覆盖同一个目录。**用户拿走 `output/天猪/` 这一个目录就能直接部署**，不用自己配对。
+`output/` 下有多份且没写 `--data` 时构建会报错退出（不猜，猜错只会生成一份「数字属于别人」的报表）。
 
 **数据落在你的项目目录，不落在 skill 目录。** 脚本把两个根目录分开：`SKILL_DIR` 是 skill 本体
 （`config/`、`assets/`，只读），`WORK_DIR` 是数据落点（默认 `process.cwd()`，可用 `--cwd` 指定）。
 所以装到 `.agents/skills/zzz-stats/` 后，在自己项目里跑 `node <skill>/scripts/collect.mjs`，
-`data/` 和 `output/` 就长在自己项目下——不会被 skill 升级覆盖，也不会误提交进 skill 仓库。
+`output/` 就长在自己项目下——不会被 skill 升级覆盖，也不会误提交进 skill 仓库。
 
 仓库自己开发期的测试数据在 `fixtures/`，所以克隆下来直接跑
-`node skills/zzz-stats/scripts/build-report.mjs --data fixtures/tianzhu` 就能出基线报表。
+`node skills/zzz-stats/scripts/build-report.mjs --data fixtures/tianzhu` 就能出基线报表
+（产物仍落 `output/天猪/report.html`，不会往 `fixtures/` 里写）。
 
 改完代码要验收时，两档尺寸的截图一条命令出齐（复用本机 Chrome，不需要 Playwright）：
 
@@ -88,10 +98,10 @@ node skills/zzz-stats/scripts/screenshot.mjs --privacy 2                       #
 node skills/zzz-stats/scripts/screenshot.mjs --chart 音擎                       # 截频段 tab 切过去之后
 node skills/zzz-stats/scripts/screenshot.mjs --filter 2                        # 截版本过滤生效之后
 node skills/zzz-stats/scripts/screenshot.mjs --html p.html --out-dir /tmp/x     # 指定产物与输出位置
-node skills/zzz-stats/scripts/screenshot.mjs --preview --html output/report-tianzhu.html   # → docs/preview.png（顶部头图，整页 2x）
+node skills/zzz-stats/scripts/screenshot.mjs --preview --html output/天猪/report.html   # → docs/preview.png（顶部头图，整页 2x）
 ```
 
-`--html` 不传时会在 `output/` 下找唯一的 `report-*.html`；有多份会报错退出，不猜（截错账号的图比失败更糟）。
+`--html` 不传时会在 `output/*/report.html` 里找唯一的那个；有多份会报错退出，不猜（截错账号的图比失败更糟）。
 
 两档图是**验收**用的（看首屏装不装得下、图例有没有折行）；`--preview` 出的是**对外展示**用的头图，
 1440 逻辑宽、DPR 2、整页，所以是 `2880×2838` 这样的长图（高度跟内容走，不固定）。这张图以前是手工截的，
@@ -103,9 +113,9 @@ node skills/zzz-stats/scripts/screenshot.mjs --preview --html output/report-tian
 短信登录把手机号当参数传，验证码在短信到达后写入约定文件：
 
 ```bash
-node skills/zzz-stats/scripts/collect.mjs --data data/tianzhu --login=sms --phone=13xxxxxxxxx
-# 收到短信后，另开一个终端（路径跟着 --data 走）：
-echo 123456 > data/tianzhu/_verify/sms-code.txt     # 读一次就删
+node skills/zzz-stats/scripts/collect.mjs --login=sms --phone=13xxxxxxxxx
+# 收到短信后，另开一个终端（路径固定在 output/ 根，与账号无关）：
+echo 123456 > output/sms-code.txt                   # 读一次就删，登录成功即清
 ```
 
 想让浏览器显示出来、自己看着扫，加 `--headed`；想锁定零依赖方案，加 `--driver cdp`。
@@ -115,7 +125,7 @@ echo 123456 > data/tianzhu/_verify/sms-code.txt     # 读一次就删
 ```bash
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --remote-debugging-port=9222 --user-data-dir="$HOME/.zzz-chrome" &
-node skills/zzz-stats/scripts/collect.mjs --data data/tianzhu --cdp http://127.0.0.1:9222
+node skills/zzz-stats/scripts/collect.mjs --cdp http://127.0.0.1:9222
 ```
 
 在受限沙箱里 Chrome 自带的 sandbox 可能起不来，加一句环境变量即可：
@@ -136,12 +146,15 @@ ZZZ_CHROME_ARGS='--no-sandbox --headless=new' node skills/zzz-stats/scripts/coll
 ```
 skills/zzz-stats/SKILL.md          # 入口：浏览器能力契约、采集流程、失败处理
 skills/zzz-stats/config/report.json # 口径与文案的唯一来源：称号、标签、配色、KPI、频道、保底抽数
-skills/zzz-stats/scripts/collect.mjs       # 采集：浏览器驱动 → 页内 fetch → data/<账号>/*.json + 完整性校验
+skills/zzz-stats/scripts/collect.mjs       # 采集：浏览器驱动 → 页内 fetch → output/<账号名>/data/*.json + 完整性校验
 skills/zzz-stats/scripts/drivers.mjs       # 浏览器驱动适配层：playwright / cdp 两套实现，接口一致
 skills/zzz-stats/scripts/sync-icons.mjs    # 按接口里的 icon URL 自动补齐缺失图标，下载即裁 64px（需 Pillow）
 skills/zzz-stats/scripts/fetch-in-page.js  # 只借「页内执行 JS」一个能力的取数脚本（无 Node 环境也能用）
-skills/zzz-stats/scripts/save-in-page-json.mjs # 把上面那段脚本的结果落成 data/<账号>/
-skills/zzz-stats/scripts/build-report.mjs  # 出图：data/<账号> + config → output/report-<账号>.html
+skills/zzz-stats/scripts/save-in-page-json.mjs # 把上面那段脚本的结果落成 output/<账号名>/data/
+skills/zzz-stats/scripts/build-report.mjs  # 出图：output/<账号名>/data + config → output/<账号名>/report.html
+skills/zzz-stats/scripts/datasets.mjs      # 账号目录名与 output/ 结构的共用实现（五个脚本共用一份）
+skills/zzz-stats/scripts/image-server.mjs  # 二维码只读图片服务（白名单只服务 login-qr.png）
+skills/zzz-stats/scripts/verify-cleanup.mjs # 凭据临时文件清理（登录成功即删）
 skills/zzz-stats/scripts/screenshot.mjs    # 开发期验收：出 1440x900 / 1280x800 两档截图（复用本机 Chrome，无依赖）
 skills/zzz-stats/assets/report/            # 报表模板（template.html / charts.js / charts.css）
 skills/zzz-stats/assets/report/icons/      # 图标唯一一套 64px（avatars/ 圆形 + items/ 方形），构建时 base64 内嵌
@@ -155,8 +168,8 @@ AGENTS.md                   # 开发期铁律：改哪类东西要同步什么�
 
 报表右上角带仓库链接（`config/report.json` 的 `copy.repo` 可改），方便拿到图的人反查生成方式。
 
-> 产物按数据集命名（`output/report-<账号>.html`），**自包含单文件**：数据、ECharts、用到的图标全部内嵌，
-> 可以单独发给别人直接打开，不依赖 `assets/` 目录。
+> 产物是 `output/<账号名>/report.html`，**自包含单文件**：数据、ECharts、用到的图标全部内嵌，
+> 可以单独发给别人直接打开，不依赖 `assets/` 目录；跟同目录的 `data/` 一起拷走就是一个完整账号包。
 
 ## 报表口径
 
@@ -205,7 +218,7 @@ AGENTS.md                   # 开发期铁律：改哪类东西要同步什么�
 
 - 只取官方页面的三个响应体：`index`、`cur_pool_stat`、`hist_pool_stat`；接口见 [references/api.md](references/api.md)。
 - **不索取账号密码、验证码、cookie、token**，登录由用户自己扫码完成；脚本不读 cookie、不存请求头。
-- 数据只落本地 `data/`（已 gitignore），不上传；仓库里不含任何账号数据。
+- 数据只落本地 `output/<账号名>/`（`output/` 已 gitignore），不上传；仓库里不含任何账号数据。
 - 报表头部自带隐私开关：点 UID 旁的眼睛，在「全显示 → 仅打码 UID → 昵称与 UID 全打码」三态间循环；**对外截图请先切到全打码**。
 - 页面：`https://act.mihoyo.com/zzz/event/gacha-record/index.html`
 - 接口基址：`https://act-api-takumi.mihoyo.com/event/nap_gacha_record`

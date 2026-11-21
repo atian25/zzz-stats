@@ -8,16 +8,17 @@
  *   data/hist_pool_stat_<t>.json
  *   data/meta.json（可选，补昵称/采集时间）
  * 配置：config/report.json
- * 输出：report.html（单文件，内联数据和 ECharts，图片走相对路径）
+ * 输出：output/<账号名>/report.html（单文件，内联数据和 ECharts，图片 base64 内嵌）
  *
  * 这份脚本是「口径的唯一实现」。文档只描述结果，不再重复算法。
- * 用法：node scripts/build-report.mjs [--data data] [--out report.html]
+ * 用法：node skills/zzz-stats/scripts/build-report.mjs [--data output/<账号>/data] [--out report.html]
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, dirname, resolve, relative, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { wantsHelp, printHelp, WORK_DIR_NOTE } from './cli-help.mjs';
+import { outputRoot, listOutputDatasets, sanitizeSegment } from './datasets.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /*
@@ -38,14 +39,15 @@ if (wantsHelp()) {
   printHelp('build-report', {
     summary: '把采集到的数据集构建成单文件 HTML 报表',
     options: [
-      { flag: '--data <dir>', desc: '数据集目录。不传时只看 data/ 下唯一的一份；有多份会报错退出' },
-      { flag: '--out <file>', desc: '产物路径，默认 output/report-<数据集名>.html' },
-      { flag: '--cwd <dir>', desc: '用户工作目录，默认当前目录；data/ 与 output/ 相对它算' },
+      { flag: '--data <dir>', desc: '数据集目录。不传时只看 output/<账号名>/data/，恰好一份就用；多份会报错退出' },
+      { flag: '--out <file>', desc: '产物路径，默认 output/<账号名>/report.html（账号名取自数据集路径或 meta 的昵称）' },
+      { flag: '--cwd <dir>', desc: '用户工作目录，默认当前目录；output/ 相对它算' },
       { flag: '--help, -h', desc: '打印本帮助后退出，不读数据、不写文件' },
     ],
     notes: [
       WORK_DIR_NOTE,
-      '--data 认任意相对/绝对路径：开发本仓库时用 --data fixtures/tianzhu（fixtures/ 不进运行期兜底）。',
+      '--data 认任意相对/绝对路径：开发本仓库时用 --data fixtures/tianzhu（fixtures/ 不进运行期兜底），',
+      '这时产物仍落到 output/<昵称>/report.html，不会往 fixtures 目录里写。',
     ],
   });
 }
@@ -73,60 +75,76 @@ const WORK_DIR = resolve(argOf('cwd', process.cwd()));
 /*
  * 数据集目录。
  *
- * 一个账号一个子目录：`data/<name>/`。出图时用 `--data data/<name>` 选。
- * 不写成根目录平铺：多份数据集混在一起时，`index.json` 只会剩下最后一个账号的，
- * 而 `cur_pool_stat_*.json` 却是另一个账号的——两者拼起来算出的报表是错的，还不会报错。
+ * 运行期结构是 `output/<账号名>/data/`，一个账号一个目录，用户拿走
+ * `output/<账号名>/` 这一个目录就能部署（data/ + report.html 在一起）。
  *
- * 没传 `--data` 时的兜底：**只看 `data/`**。恰好只有一份数据集就直接用它；
- * 有多份**报错退出**，不猜。猜错不会报错——报表照样生成，只是数字属于另一个账号，
- * 这种「看起来成功了但内容是错的」比直接失败难发现得多。
+ * 没传 `--data` 时的兜底：**只看 `output/<账号名>/data/index.json`**。
+ * 恰好只有一份就直接用；有多份**报错退出，不猜**。猜错不会报错——报表照样生成，
+ * 只是数字属于另一个账号，这种「看起来成功了但内容是错的」比直接失败难发现得多。
  *
- * **不要把这个兜底扩大到 `fixtures/`。** `fixtures/` 是本仓库开发期的概念，
- * 用户项目里 `fixtures/` 是很常见的目录名（前端项目尤其）。一旦兜底把 `fixtures/` 算进来，
- * 用户在自己项目里跑构建就会读到那里的数据、生成一份「数字看着正常但来自别的数据集」的报表。
- * 本仓库开发时用 `--data fixtures/tianzhu` 显式指定，那条路不受影响。
+ * **不要把这个兜底扩大到 `data/`（旧结构）或 `fixtures/`（开发期概念）。**
+ * 每扩大一处就多一种「读到别人数据、却生成一份看着正常的报表」的可能：
+ * 用户项目里 `data/` 和 `fixtures/` 都极常见。本仓库开发时用 `--data fixtures/tianzhu`
+ * 显式指定，那条路不受兜底影响。
  */
-const DATA_PARENT = 'data';
 function pickDataDir() {
   const explicit = argOf('data', null);
   if (explicit) return resolve(WORK_DIR, explicit);
-  const base = resolve(WORK_DIR, DATA_PARENT);
-  if (!existsSync(base)) {
-    console.error(`找不到数据集：${base} 不存在。`);
-    console.error('  → 先跑采集，或用 --data 指定数据集目录（开发本仓库时用 --data fixtures/tianzhu）。');
-    process.exit(1);
-  }
-  const found = readdirSync(base, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => join(base, d.name))
-    .filter((p) => existsSync(join(p, 'index.json')));
+  const found = listOutputDatasets(WORK_DIR);
   if (found.length === 1) return found[0];
   if (found.length > 1) {
-    console.error(`data/ 下有 ${found.length} 份数据集，用 --data 指定要哪一份：`);
+    console.error(`output/ 下有 ${found.length} 份数据集，用 --data 指定要哪一份：`);
     for (const p of found) console.error(`  node skills/zzz-stats/scripts/build-report.mjs --data ${relative(WORK_DIR, p)}`);
     process.exit(1);
   }
-  console.error(`data/ 下没有数据集（需要有 index.json 的子目录）。`);
-  console.error('  → 先跑采集，或用 --data 指定数据集目录（开发本仓库时用 --data fixtures/tianzhu）。');
+  console.error(`找不到数据集：${outputRoot(WORK_DIR)}/<账号名>/data/index.json 一个都没有。`);
+  console.error('  → 先跑采集（数据会落到 output/<账号名>/data/），或用 --data 指定数据集目录');
+  console.error('    （开发本仓库时用 --data fixtures/tianzhu）。');
   process.exit(1);
 }
 const DATA_DIR = pickDataDir();
 /*
- * 输出到 `output/report-<数据集名>.html`，**不再有 `output/report.html`**。
+ * 产物路径：默认 `<数据集目录的上一级>/report.html`。
  *
- * 为什么废弃那个固定名字：这个项目同时维护多份数据集（天猪、joker），
- * 都往 `output/report.html` 写的话，后一次构建会把前一次的产物盖掉——
- * 两份报表长得几乎一样，只是数字不同，发错人不会有人发现。这是最容易酿成事故的一处。
+ * 对运行期结构 `output/<账号名>/data/` 来说，这就是 `output/<账号名>/report.html`
+ * —— 数据和报表在同一个账号目录里，用户拷走一个目录就完整了。
  *
- * 默认值按数据集目录名自动拼，所以 `--data fixtures/tianzhu` 不传 `--out` 就是
- * `output/report-tianzhu.html`；要别的名字用 `--out` 显式指定。
- * 仍然放在 `output/`（已被 .gitignore 忽略）而不是项目根，
- * 免得和「已提交的产物」混淆、打开一份旧的还以为是新的。
+ * **为什么不再用 `output/report-<数据集名>.html`：** 那个结构下数据和报表分家，
+ * 用户要「部署」就得自己判断哪些文件配哪份报表。现在名字跟着账号目录走，天然配对。
+ *
+ * 显式 `--data fixtures/tianzhu` 时，上一级是 `fixtures/`，**不能往那儿写**
+ * （开发期数据目录里出现产物，会被 .gitignore 之外的眼睛当成入库内容）。
+ * 所以这种情况改用该数据集 `meta.json` 的昵称，落到 `output/<昵称>/report.html`；
+ * 昵称拿不到就退到数据集目录名。
+ *
+ * `--out` 显式指定永远覆盖上面的一切。
  */
-const OUT_FILE = resolve(
-  WORK_DIR,
-  argOf('out', `output/report-${basename(DATA_DIR)}.html`),
-);
+function reportDatasetName() {
+  // 已经在 output/<账号>/data/ 结构里 → 直接沿用账号目录名，不需要猜
+  if (basename(dirname(DATA_DIR)) !== 'data') return null;
+  const accountDir = dirname(DATA_DIR);
+  if (dirname(accountDir) !== outputRoot(WORK_DIR)) return null;
+  return basename(accountDir);
+}
+function deriveOutFile() {
+  const explicitOut = argOf('out', null);
+  if (explicitOut) return resolve(WORK_DIR, explicitOut);
+  const inOutput = reportDatasetName();
+  if (inOutput) return join(outputRoot(WORK_DIR), inOutput, 'report.html');
+  /*
+   * 外部数据集（`--data fixtures/xxx` 或任意路径）：产物仍落 `output/<name>/report.html`。
+   * name 取该数据集 meta.json 的昵称（安全化后），拿不到就用目录名——两者都可能为空，
+   * 那就退到 `dataset`，绝不允许删成 `output//report.html` 或写到 `output/` 外面。
+   */
+  const rawMeta = join(DATA_DIR, 'meta.json');
+  let nickname = null;
+  try {
+    if (existsSync(rawMeta)) nickname = JSON.parse(readFileSync(rawMeta, 'utf8'))?.nickname ?? null;
+  } catch { /* meta 坏了不该影响出图，退回目录名 */ }
+  const name = sanitizeSegment(nickname) || sanitizeSegment(basename(DATA_DIR)) || 'dataset';
+  return join(outputRoot(WORK_DIR), name, 'report.html');
+}
+const OUT_FILE = deriveOutFile();
 
 const CFG = JSON.parse(readFileSync(join(SKILL_DIR, 'config/report.json'), 'utf8'));
 
@@ -159,7 +177,7 @@ function readJson(file) {
 
 const index = readJson(join(DATA_DIR, 'index.json'));
 if (!index) {
-  console.error(`找不到 ${join(DATA_DIR, 'index.json')}。先跑采集步骤，或把已有 data/ 放到该目录。`);
+  console.error(`找不到 ${join(DATA_DIR, 'index.json')}。先跑采集步骤（数据落到 output/<账号名>/data/），或用 --data 指定数据集目录。`);
   process.exit(1);
 }
 const meta = readJson(join(DATA_DIR, 'meta.json')) || {};

@@ -1,7 +1,10 @@
 # ---------------------------------------------------------------- 用户运行期数据
-# 采集产物：官方接口原始 JSON、meta、浏览器 profile 与验证截图（含账号 UID），禁止入库。
+# 采集产物：官方接口原始 JSON、meta、浏览器 profile 与凭据临时文件（含账号 UID），禁止入库。
 # 这些路径都相对**用户工作目录**（脚本的 WORK_DIR = --cwd 或 process.cwd()）算，
 # skill 本体在 skills/zzz-stats/ 下、只读，数据不会写进去。
+#
+# 运行期结构：output/<账号名>/{data/,report.html}，外加 output/ 根下的三个凭据临时文件
+# （login-qr.png / sms-code.txt / qr-refresh，登录成功即删）。/output/ 一条就全盖住了。
 /data/
 /output/
 /report.html
@@ -16,8 +19,6 @@ fixtures/*/output/
 fixtures/*/.chrome-profile/
 fixtures/*/_verify/
 fixtures/*/report.html
-# 构建产物统一落 output/（WORK_DIR 下），选中某个 fixture 时也不会在 fixture 目录里生成
-/output/report-*.html
 
 # ---------------------------------------------------------------- 随仓库分发的静态资产
 # 补齐后应提交，不要加入忽略：

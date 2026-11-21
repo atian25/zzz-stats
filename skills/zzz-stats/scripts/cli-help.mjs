@@ -57,4 +57,4 @@ export function printHelp(name, { summary, options = [], notes = [] }) {
  * 每个脚本的 note 里都会重复这一条，因为它是最容易被误解的一处。
  */
 export const WORK_DIR_NOTE =
-  '数据落点是「用户工作目录」：--cwd 优先，否则当前目录。skill 目录只读，不会写进去。';
+  '数据落点是「用户工作目录」：--cwd 优先，否则当前目录，产物在 output/<账号名>/ 下。skill 目录只读，不会写进去。';

@@ -16,19 +16,21 @@
  *   node scripts/collect.mjs --cdp http://127.0.0.1:9222   # 连已有 Chrome（登录态可复用）
  *   node scripts/collect.mjs --headed        # 显示浏览器窗口，方便自己扫码
  *
- * 扫码阶段会把二维码存成 <data>/_verify/login-qr.png 并打印路径；扫完按回车继续。
- * <data> 默认是 data/current，用 --data data/<账号> 指定（一个账号一个子目录）。
+ * 扫码阶段的临时凭据文件固定落在 <WORK_DIR>/output/ 下（login-qr.png / sms-code.txt / qr-refresh），
+ * 登录成功那一刻就删除。采集完成的数据落在 <WORK_DIR>/output/<账号名>/data/。
+ * 账号目录名取页面上的昵称（拿不到就退回 UID），一个账号一个目录，重跑覆盖。
  * 不读取 cookie、不保存请求头，只取三个接口的响应体。
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { createServer } from 'node:http';
 import { openDriver } from './drivers.mjs';
 import { wantsHelp, printHelp, WORK_DIR_NOTE } from './cli-help.mjs';
 import { purgeAndLog } from './verify-cleanup.mjs';
+import { startImageServer, stopImageServer, qrUrl, IMAGE_SERVER_FILE } from './image-server.mjs';
+import { outputRoot, resolveAccountName, accountDataDir } from './datasets.mjs';
 
 /*
  * --help 必须在**解析参数之后、任何副作用之前**处理。
@@ -37,10 +39,10 @@ import { purgeAndLog } from './verify-cleanup.mjs';
  */
 if (wantsHelp()) {
   printHelp('collect', {
-    summary: '采集《绝区零》调频数据，落成 data/<账号>/*.json',
+    summary: '采集《绝区零》调频数据，落成 output/<账号名>/data/*.json',
     options: [
-      { flag: '--data <dir>', desc: '数据集目录，默认 data/current（一个账号一个子目录）' },
-      { flag: '--cwd <dir>', desc: '用户工作目录，默认当前目录；data/ 与 .chrome-profile/ 相对它算' },
+      { flag: '--data <dir>', desc: '数据集目录，默认按昵称自动落到 output/<账号名>/data（拿不到昵称则用 UID）' },
+      { flag: '--cwd <dir>', desc: '用户工作目录，默认当前目录；output/ 与 .chrome-profile/ 相对它算' },
       { flag: '--driver <name>', desc: 'playwright / cdp，默认自动挑（有 Playwright 用它，否则零依赖 CDP）' },
       { flag: '--cdp <url>', desc: '连一个已经开着的 Chrome，例如 http://127.0.0.1:9222（登录态可复用）' },
       { flag: '--port <n>', desc: 'CDP 端口，默认 9222' },
@@ -51,7 +53,7 @@ if (wantsHelp()) {
       { flag: '--phone-file <f>', desc: '从文件读手机号' },
       { flag: '--code <n>', desc: '短信验证码（也可用 ZZZ_SMS_CODE）' },
       { flag: '--code-file <f>', desc: '从文件读验证码，读完即删' },
-      { flag: '--keep-verify', desc: '排障用：保留 _verify/ 下的二维码与验证码文件，默认登录成功后立即删除' },
+      { flag: '--keep-verify', desc: '排障用：保留 output/ 下的二维码与验证码文件，默认登录成功后立即删除' },
       { flag: '--wait <mode>', desc: '等待方式 a / b，默认 a（也可用 ZZZ_WAIT_MODE）' },
       { flag: '--region <r>', desc: '区服，默认 prod_gf_cn；国际服走 prod_gf_jp/us/eu/sg 等' },
       { flag: '--api <url>', desc: '硬覆盖接口基址（官方换域名时用）' },
@@ -70,10 +72,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * 两个根目录，跟 build-report.mjs 一致：
  *   SKILL_DIR：skill 本体，只读（`config/report.json` 从这里读）
  *   WORK_DIR：用户工作目录，`--cwd` 优先，否则 `process.cwd()`
- * `data/`、`.chrome-profile/` 都落到 WORK_DIR，不写进 skill 目录。
+ * `output/`、`.chrome-profile/` 都落到 WORK_DIR，不写进 skill 目录。
  */
 const SKILL_DIR = resolve(HERE, '..');
-
 const args = process.argv.slice(2);
 const has = (f) => args.includes(`--${f}`);
 /*
@@ -92,7 +93,7 @@ const argOf = (f, d) => {
 
 /*
  * 用户工作目录：`--cwd` 优先，否则当前目录。
- * 采集落盘位置（`data/`）和隔离 Chrome profile（`.chrome-profile/`）都相对它算，
+ * 采集落盘位置（`output/`）和隔离 Chrome profile（`.chrome-profile/`）都相对它算，
  * **不是**相对 skill 目录 —— 否则 skill 升级会覆盖用户数据，
  * 而且 `.gitignore` 的根锚定规则也管不到塞进 skill 目录里的那份。
  */
@@ -124,18 +125,28 @@ const EP = IS_CN ? ENDPOINTS.cn : ENDPOINTS.os;
 const PAGE = argOf('page', EP.page);
 const API = argOf('api', EP.api);
 /*
- * 数据集目录：一个账号一个子目录。
+ * 产物目录：`output/<账号名>/data/`，一个账号一个目录，用户拿走 `output/<账号名>/`
+ * 这一个目录就能直接部署（数据 + report.html 在一起）。
  *
- * 采集默认写 `data/<账号目录>`，用 `--data data/joker` 这类写法指定。
- * 不默认写进 `data/` 根目录：多份数据集平铺时 `index.json` 和 `cur_pool_stat_*.json`
- * 可能来自不同账号，拼起来的报表是错的却不报错。
+ * **账号名要等采集完才知道**（昵称只能从页面文本读，接口不返回），而二维码在登录前就得落盘。
+ * 所以这里不在启动时定 DATA_DIR，而是：
+ *   1. 扫码/登录阶段只用 `output/` 根下的固定名凭据文件（跟账号无关）
+ *   2. 采集结果**先放内存**，拿到昵称后才建目录、一次写盘
  *
- * 采集是「覆盖写」——同一个 --data 目录跑第二次会用新数据覆盖旧文件。
+ * 为什么不用「先写临时目录、拿到昵称再整体 mv」：
+ *   中途失败时临时目录要额外清理，而 mv 失败或跨设备复制还会留下半个目录。
+ *   内存里攒着写，最坏情况是「进程挂了、一个文件都没写」——这比半个目录好收拾得多。
+ *
+ * `--data` 显式指定时照旧直写那个目录（开发本仓库时用 --data fixtures/tianzhu 之外的场景）。
+ * 采集是「覆盖写」——同一个目录跑第二次会用新数据覆盖旧文件。
  */
-const DATA_DIR = resolve(WORK_DIR, argOf('data', 'data/current'));
-const VERIFY_DIR = join(DATA_DIR, '_verify');
+const EXPLICIT_DATA = argOf('data', null);
+/** `--data` 给了就按它算；没给就等昵称出来再定。 */
+const EXPLICIT_DATA_DIR = EXPLICIT_DATA ? resolve(WORK_DIR, EXPLICIT_DATA) : null;
+/** `output/` 根：凭据临时文件放这里，账号目录也在这一层。 */
+const OUTPUT_DIR = outputRoot(WORK_DIR);
 /*
- * 默认清理 `_verify/` 下的临时凭据文件（二维码截图 / 验证码中转 / 换图信号）。
+ * 默认清理 `output/` 下的临时凭据文件（二维码 / 验证码中转 / 换图信号，三个固定名）。
  * 登录成功即清一次，main 的 finally 再兜一次——见 scripts/verify-cleanup.mjs 里的说明。
  * `--keep-verify` 只给排障用：确认「二维码到底存成什么样」时需要留下证据。
  */
@@ -240,80 +251,10 @@ const pageState = `(() => {
 // ------------------------------------------------------------ 二维码图片服务
 
 /*
- * 二维码怎么给用户看，本质是个**成本问题**。
- *
- * 实测三条路（一张 260×260 的真二维码）：
- *   - SVG 内联进回答：7361 字符 ≈ 2100 tokens/张。刷新 3 次就是 6300 tokens。
- *     而且它在流式输出里要等文本传完才渲染，用户看到的是先一个灰块。
- *   - base64 塞 <image src>：多数富组件直接丢弃（不支持 data: 协议）。
- *   - 图片 URL：~10 tokens。
- *
- * 差 200 倍。图形的字节不该走对话文本 —— 所以由脚本自己起一个**只读**的
- * 本地 http 服务，把二维码目录挂出去，回答里只放一行 URL。
- *
- * 三条安全约束，缺一不可：
- *   1. 只监听 127.0.0.1（不对外网暴露）
- *   2. 只服务 .png 且路径必须落在二维码目录内（防目录穿越）
- *   3. 用完即关 —— 由 main 的 finally 调用 stopImageServer()
- *
- * 端口从 0 开始让系统分配，避免固定的 8899 撞车。
+ * 服务本体在 image-server.mjs —— 单独成文件是为了能在不启动浏览器的情况下测
+ * 「白名单只服务 login-qr.png」「`?t=` 破缓存」这两条硬要求。
+ * 这里只负责「起、停」两个时机，见 main 的开头与 finally。
  */
-let imageServer = null;
-
-function startImageServer(dir, log) {
-  return new Promise((resolvePromise, reject) => {
-    const rootDir = resolve(dir);
-    const server = createServer((req, res) => {
-      try {
-        const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
-        const name = urlPath.replace(/^\/+/, '');
-        // 只允许当前目录下的普通文件名，挡掉 ../ 和绝对路径
-        if (!name || name.includes('/') || name.includes('\\') || name.includes('..')) {
-          res.writeHead(404).end('not found');
-          return;
-        }
-        if (!/\.png$/i.test(name)) {
-          res.writeHead(404).end('not found');
-          return;
-        }
-        const file = join(rootDir, name);
-        if (!file.startsWith(rootDir)) {
-          res.writeHead(404).end('not found');
-          return;
-        }
-        if (!existsSync(file)) {
-          res.writeHead(404).end('not found');
-          return;
-        }
-        const body = readFileSync(file);
-        res.writeHead(200, {
-          'Content-Type': 'image/png',
-          'Content-Length': body.length,
-          // 二维码是动态文件，别让浏览器缓存旧图
-          'Cache-Control': 'no-store, must-revalidate',
-        });
-        res.end(body);
-      } catch {
-        try { res.writeHead(500).end('error'); } catch {}
-      }
-    });
-
-    server.on('error', reject);
-    // 端口 0 = 让系统挑一个空闲端口
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      imageServer = { server, port, dir: rootDir };
-      log(`二维码图片服务：http://127.0.0.1:${port}/（仅本机、只读、取完即关）`);
-      resolvePromise(imageServer);
-    });
-  });
-}
-
-function stopImageServer() {
-  if (!imageServer) return;
-  try { imageServer.server.close(); } catch {}
-  imageServer = null;
-}
 
 /**
  * @param {import('./drivers.mjs').CdpDriver | any} drv 驱动实例（接口见 drivers.mjs）
@@ -428,10 +369,12 @@ async function smsLogin(drv, frame, { ask, log, sleep, LOGGED_IN }) {
    *   2. --code-file=<路径>（默认就是它：短信到了才知道码，agent 写文件最顺手）
    *   3. 终端提问（用户本机手动跑）
    *
-   * 默认文件路径固定成 <data>/_verify/sms-code.txt，
+   * 默认文件路径固定成 output/sms-code.txt，
    * 这样 agent 不用额外协商路径，按约定写就行。
+   * 放 output/ 根而不是账号目录：账号名此刻还不知道（昵称要等采集完），
+   * 而验证码在登录过程中就要用。登录成功即删，见 verify-cleanup.mjs。
    */
-  const codeFile = resolve(WORK_DIR, argOf('code-file', join(VERIFY_DIR, 'sms-code.txt')));
+  const codeFile = resolve(WORK_DIR, argOf('code-file', join(OUTPUT_DIR, 'sms-code.txt')));
   let code = argOf('code', null) || argOf('code', process.env.ZZZ_SMS_CODE);
   if (!code) {
     if (stdin.isTTY) {
@@ -464,7 +407,7 @@ async function smsLogin(drv, frame, { ask, log, sleep, LOGGED_IN }) {
     if (await drv.evaluate(LOGGED_IN) === 'logged-in') {
       log('登录成功 ✓');
       // 短信路线没有二维码，但 sms-code.txt 里是明文验证码，同样不能留在盘上
-      purgeAndLog({ dir: VERIFY_DIR, keep: KEEP_VERIFY, log, when: '登录成功' });
+      purgeAndLog({ dir: OUTPUT_DIR, keep: KEEP_VERIFY, log, when: '登录成功' });
       return;
     }
     await sleep(1500);
@@ -623,32 +566,28 @@ async function loginFlow(drv, opts = {}) {
   };
 
   /*
-   * 存二维码。
+   * 存二维码：**固定文件名** `output/login-qr.png`，覆盖写。
    *
-   * 每次换图都写**新文件名**（带时间戳后缀），而不是覆盖 login-qr.png：
-   *   - 覆盖同名文件时，任何按 URL 缓存的地方（浏览器、图片组件、CDN 中间层）
-   *     都可能继续显示旧图，用户扫到的是一张已经作废的码
-   *   - 新文件名 = 新 URL，缓存自然失效，不需要靠 header 去赌
-   * 同时保留一份 login-qr.png 指向最新，方便人肉查看和脚本引用。
+   * 早先用「带时间戳的唯一文件名」来躲缓存——覆盖同名文件时，浏览器、图片组件、
+   * CDN 中间层都可能继续显示旧图，用户扫到的是一张已经作废的码（SKILL.md 记过这个坑）。
+   * 现在改成**盘上固定名、URL 带 `?t=<毫秒>`**：新时间戳 = 新 URL，缓存自然失效，
+   * 而清理时只需要认一个文件名，不用扫一堆历史截图。
+   *
+   * 返回值里的 `url` 每次都带新的 `?t=`，调用方必须用**最新那行**地址。
    */
-  let qrSeq = 0;
   const saveQr = (q) => {
-    mkdirSync(VERIFY_DIR, { recursive: true });
-    qrSeq += 1;
-    const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+    mkdirSync(OUTPUT_DIR, { recursive: true });
+    const file = join(OUTPUT_DIR, IMAGE_SERVER_FILE);
     const bytes = Buffer.from(q.src.split(',')[1], 'base64');
-    const base = `login-qr-${stamp}-${qrSeq}`;
-    const unique = join(VERIFY_DIR, `${base}.png`);
-    writeFileSync(unique, bytes);
-    try { writeFileSync(join(VERIFY_DIR, 'login-qr.png'), bytes); } catch {}
+    writeFileSync(file, bytes);
 
     /*
      * 图片 URL：给对方一个能直接放进 <image src> 的地址。
      * 服务没起来（比如用户本机手动跑、只要文件路径）就退回 null，
      * 调用方据此降级到「给路径」。
      */
-    const url = imageServer ? `http://127.0.0.1:${imageServer.port}/${base}.png` : null;
-    return { png: unique, url };
+    const url = qrUrl(IMAGE_SERVER_FILE);
+    return { png: file, url };
   };
 
   const QR_TTL_MS = 120_000;   // 官方二维码约 2 分钟失效
@@ -680,7 +619,7 @@ async function loginFlow(drv, opts = {}) {
    */
   const MAX_QR_REFRESH = 3;
   const REFRESH_MIN_GAP_MS = 5000;
-  const REFRESH_SIGNAL = join(VERIFY_DIR, 'qr-refresh');
+  const REFRESH_SIGNAL = join(OUTPUT_DIR, 'qr-refresh');
   let refreshCount = 0;
   let lastRefreshAt = 0;
 
@@ -872,7 +811,7 @@ async function loginFlow(drv, opts = {}) {
    * 而后面还要跑 6 个频道的采集，没必要让废弃的登录码在盘上多躺几十秒。
    * 失败路径由 main 的 finally 兜底，这里删过也无所谓（幂等）。
    */
-  purgeAndLog({ dir: VERIFY_DIR, keep: KEEP_VERIFY, log, when: '登录成功' });
+  purgeAndLog({ dir: OUTPUT_DIR, keep: KEEP_VERIFY, log, when: '登录成功' });
 }
 
 // ------------------------------------------------------------------ 取数
@@ -914,12 +853,22 @@ function chunk(list, n) {
   return out;
 }
 
+/*
+ * 取数：全部**先放内存**，不写盘。
+ *
+ * 为什么：账号目录名是昵称，而昵称要等采集完才从页面读得到。
+ * 先写盘就得先猜一个目录名（uid？临时名？），拿到了再改名或搬目录——
+ * 中途失败留下半个目录，后面还得区分「这份半成品是谁的」。内存里攒着最省事：
+ * 最坏情况是进程挂了、一个文件都没写，用户重跑一次就行。
+ *
+ * 返回的 `files` 是「文件名 → 内容」，落盘由 writeCollected 统一做。
+ */
 async function collectAll(drv) {
   const index = await fetchJson(drv, '/index');
   const byEnum = new Map((index.data.type_stats ?? []).map((t) => [t.gacha_type, t]));
 
-  mkdirSync(DATA_DIR, { recursive: true });
-  writeFileSync(join(DATA_DIR, 'index.json'), JSON.stringify(index, null, 1));
+  const files = new Map();
+  files.set('index.json', index);
   const summary = {};
 
   for (const ch of CHANNELS) {
@@ -933,7 +882,7 @@ async function collectAll(drv) {
       log(`⚠️  ${ch.label} cur_pool_stat 失败：${e.message}`);
       cur = { retcode: 0, data: { list: [] } };
     }
-    writeFileSync(join(DATA_DIR, `cur_pool_stat_${ch.id}.json`), JSON.stringify(cur, null, 1));
+    files.set(`cur_pool_stat_${ch.id}.json`, cur);
 
     // 历史卡池：必须用本频道自己的 has_data_vers，且单次最多 10 个
     const vers = sortVersionsDesc(stat?.has_data_vers ?? []);
@@ -955,10 +904,11 @@ async function collectAll(drv) {
       seen.add(key);
       return true;
     });
-    writeFileSync(
-      join(DATA_DIR, `hist_pool_stat_${ch.id}.json`),
-      JSON.stringify({ retcode: 0, message: 'OK', data: { cur_ver: index.data.cur_ver, list: merged } }, null, 1),
-    );
+    files.set(`hist_pool_stat_${ch.id}.json`, {
+      retcode: 0,
+      message: 'OK',
+      data: { cur_ver: index.data.cur_ver, list: merged },
+    });
 
     const countGold = (list) => list.reduce((s, p) => s + (p.cur_records?.length ?? 0), 0);
     const golds = countGold(merged) + countGold(cur.data?.list ?? []);
@@ -966,7 +916,7 @@ async function collectAll(drv) {
     log(`${ch.label}: ${summary[ch.id].pulls} 抽 / 官方 S ${summary[ch.id].sCount} / 取到金 ${golds} / 版本 ${vers.length}`);
   }
 
-  return { index, summary };
+  return { index, summary, files };
 }
 
 // ------------------------------------------------------------------ 主流程
@@ -992,7 +942,7 @@ async function main() {
      * 失败不影响主流程 —— saveQr 会退回「只给文件路径」。
      */
     try {
-      await startImageServer(VERIFY_DIR, log);
+      await startImageServer(OUTPUT_DIR, log);
     } catch (e) {
       log(`⚠️  图片服务没起来（${e.message.split('\n')[0]}），二维码只给文件路径。`);
     }
@@ -1004,7 +954,7 @@ async function main() {
     globalThis.__uid = uid;
     log('UID', uid, 'region', REGION, '接口', API);
 
-    const { index, summary } = await collectAll(drv);
+    const { index, summary, files } = await collectAll(drv);
 
     // 昵称：接口不返回，只能从页面文本里找
     const nickname = await drv.evaluate(`(() => {
@@ -1016,6 +966,7 @@ async function main() {
       }
       return null;
     })()`);
+    const safeNickname = typeof nickname === 'string' && nickname.length && !nickname.includes('\n') ? nickname : null;
 
     const versions = (index.data.type_stats ?? []).flatMap((t) => t.has_data_vers ?? []);
     const uniq = sortVersionsDesc([...new Set(versions)]);
@@ -1024,7 +975,7 @@ async function main() {
       server: IS_CN ? 'cn' : 'os',
       uid,
       region: REGION,
-      nickname: typeof nickname === 'string' && nickname.length && !nickname.includes('\n') ? nickname : null,
+      nickname: safeNickname,
       fetched_at: new Date().toISOString(),
       versions: uniq.length ? `${uniq[uniq.length - 1]} → ${uniq[0]}` : null,
       source: API,
@@ -1033,7 +984,34 @@ async function main() {
       total_s_count: Number(index.data.total_s_count ?? 0),
       total_counts_exclude_bangboo: true,
     };
-    writeFileSync(join(DATA_DIR, 'meta.json'), JSON.stringify(meta, null, 2));
+
+    /*
+     * 目录名与落盘。
+     *
+     * 默认：`output/<昵称>/data/`，昵称拿不到就退回 UID（安全化规则见 datasets.mjs）。
+     * `--data` 显式给了就直写那个目录——那条路是给「我想自己指定位置」的场景，
+     * 名字由用户负责，不再套账号名。
+     *
+     * 同账号重跑就是覆盖写同一个目录：不报错，也不生成 `xxx-2`。
+     * 目录里的旧文件不预先清空——采集每次都会写齐 6 个频道的全部文件，
+     * 而多删一次就多一次「删错用户文件」的机会。
+     */
+    let dataDir = EXPLICIT_DATA_DIR;
+    let accountName = null;
+    if (!dataDir) {
+      const resolved = resolveAccountName(safeNickname, uid);
+      accountName = resolved.name;
+      dataDir = accountDataDir(WORK_DIR, accountName);
+      if (resolved.source !== 'nickname') {
+        log(`⚠️  昵称拿不到${safeNickname ? '或不能用作目录名' : ''}，目录名退回 ${resolved.source === 'uid' ? 'UID' : '固定名'}`);
+      }
+      log(`账号目录：${accountName}（取自${resolved.source === 'nickname' ? '昵称' : ' UID'}）`);
+    }
+    mkdirSync(dataDir, { recursive: true });
+    for (const [name, value] of files) {
+      writeFileSync(join(dataDir, name), JSON.stringify(value, null, 1));
+    }
+    writeFileSync(join(dataDir, 'meta.json'), JSON.stringify(meta, null, 2));
 
     // 完整性：金抽数 + 垫抽 == 官方总抽（6/6 频道实测成立）
     let bad = 0;
@@ -1041,7 +1019,7 @@ async function main() {
       const stat = (index.data.type_stats ?? []).find((t) => t.gacha_type === ch.enum);
       if (!stat) continue;
       const read = (f) => {
-        const p = join(DATA_DIR, f);
+        const p = join(dataDir, f);
         return existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : { data: { list: [] } };
       };
       const all = [...(read(`hist_pool_stat_${ch.id}.json`).data.list ?? []), ...(read(`cur_pool_stat_${ch.id}.json`).data.list ?? [])];
@@ -1063,8 +1041,11 @@ async function main() {
     log('');
     log('──────────────── 完成 ────────────────');
     log(`UID ${uid} · 6 个频道 · 合计 ${totPulls} 抽（不含邦布）`);
-    log(`数据已落盘：${DATA_DIR}`);
-    log('下一步：node skills/zzz-stats/scripts/build-report.mjs --data ' + DATA_DIR + '   → 生成报表');
+    log(`数据已落盘：${dataDir}`);
+    if (accountName) {
+      log(`账号目录：${relative(WORK_DIR, dirname(dataDir))}/（拿走这一个目录即可部署：data/ + report.html）`);
+    }
+    log('下一步：node skills/zzz-stats/scripts/build-report.mjs --data ' + (accountName ? `output/${accountName}/data` : relative(WORK_DIR, dataDir)) + '   → 生成报表');
     log('✅ 采集结束，进程即将退出。');
   } finally {
     await drv.close?.();
@@ -1078,7 +1059,7 @@ async function main() {
      * 必须排在 stopImageServer 之后 —— 先把出口关掉再删文件，顺序反了中间会有一段
      * 「服务还开着、文件已经被删」的空窗。
      */
-    purgeAndLog({ dir: VERIFY_DIR, keep: KEEP_VERIFY, log, when: '收尾' });
+    purgeAndLog({ dir: OUTPUT_DIR, keep: KEEP_VERIFY, log, when: '收尾' });
   }
 }
 
@@ -1097,7 +1078,7 @@ for (const [sig, code] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]]) 
   process.on(sig, () => {
     try {
       stopImageServer();
-      purgeAndLog({ dir: VERIFY_DIR, keep: KEEP_VERIFY, log, when: `收到 ${sig}` });
+      purgeAndLog({ dir: OUTPUT_DIR, keep: KEEP_VERIFY, log, when: `收到 ${sig}` });
     } catch { /* 退出路径上不要再抛 */ }
     process.exit(code);
   });

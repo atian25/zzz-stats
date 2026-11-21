@@ -3,24 +3,24 @@
  * 报表截图 —— 开发期验收专用。
  *
  * 为什么单独成脚本：
- *   开发期要看的是「本地 output/report.html 在 1440×900 和 1280×800 下装不装得下」，
+ *   开发期要看的是「本地 output/<账号名>/report.html 在 1440×900 和 1280×800 下装不装得下」，
  *   和采集期「找一个能扫码登录的浏览器」是两件完全不同的事。
  *   以前没有这个脚本，每个 agent 都要现拼 Chrome 命令行，
  *   并且一定会踩 --user-data-dir 的坑（不带就起不来），白绕几分钟。
  *
  * 用法：
- *   node scripts/screenshot.mjs                       # 两档尺寸，输出到 docs/shots/
- *   node scripts/screenshot.mjs --width 1440 --height 900
- *   node scripts/screenshot.mjs --out-dir /tmp/shots --html output/report.html
- *   node scripts/screenshot.mjs --privacy 2           # 截图前先点全打码（对外用）
- *   node scripts/screenshot.mjs --preview             # README 预览图 → docs/preview.png（整页 2x，强制打码）
- *   node scripts/screenshot.mjs --chart 音擎 --filter 2
- *   node scripts/screenshot.mjs --detail 独家重映     # 切底部详情面板的频段
+ *   node skills/zzz-stats/scripts/screenshot.mjs                       # 两档尺寸，输出到 docs/shots/
+ *   node skills/zzz-stats/scripts/screenshot.mjs --width 1440 --height 900
+ *   node skills/zzz-stats/scripts/screenshot.mjs --out-dir /tmp/shots --html output/tianzhu/report.html
+ *   node skills/zzz-stats/scripts/screenshot.mjs --privacy 2           # 截图前先点全打码（对外用）
+ *   node skills/zzz-stats/scripts/screenshot.mjs --preview             # README 预览图 → docs/preview.png（整页 2x，强制打码）
+ *   node skills/zzz-stats/scripts/screenshot.mjs --chart 音擎 --filter 2
+ *   node skills/zzz-stats/scripts/screenshot.mjs --detail 独家重映     # 切底部详情面板的频段
  *
  * 只依赖本机 Chrome，不需要 Playwright，不联网。
  * 浏览器查找复用 drivers.mjs 的 findChrome()，与采集期同一份候选列表。
  */
-import { existsSync, mkdirSync, rmSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join, dirname, resolve, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +29,7 @@ import { randomBytes } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { findChrome, chromeArgs } from './drivers.mjs';
 import { wantsHelp, printHelp, WORK_DIR_NOTE } from './cli-help.mjs';
+import { listOutputReports } from './datasets.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /*
@@ -41,7 +42,7 @@ if (wantsHelp()) {
   printHelp('screenshot', {
     summary: '给本地报表截图（验收用两档尺寸 / 对外用的 README 头图）',
     options: [
-      { flag: '--html <file>', desc: '要截的报表。不传时在 output/ 下找唯一的 report-*.html；有多份会报错' },
+      { flag: '--html <file>', desc: '要截的报表。不传时找 output/<账号名>/report.html，只有一份就用；有多份会报错' },
       { flag: '--out-dir <dir>', desc: '截图落点，默认 docs/shots' },
       { flag: '--width <n> --height <n>', desc: '只截一个尺寸（两个都要给）' },
       { flag: '--privacy <0|1|2>', desc: '先把眼睛按钮点到 N：0 全显示 / 1 打码 UID / 2 全打码' },
@@ -79,11 +80,10 @@ const abs = (p) => (isAbsolute(p) ? p : resolve(WORK_DIR, p));
 /*
  * 默认截哪份产物。
  *
- * 产物按数据集分名（`output/report-<数据集名>.html`），`output/report.html` 已废弃，
- * 所以这里不能再写死那个文件名——写死的话 `--preview` 一跑就是「找不到 output/report.html」。
- * 现在按顺序找：
+ * 产物结构是 `output/<账号名>/report.html`，一个账号一个目录。
+ * 找法：
  *   1) `--html` 显式指定，优先；
- *   2) `output/` 下恰好一份 `report-*.html` → 用它（单数据集项目不用写参数）；
+ *   2) `output/<账号名>/report.html` 恰好一份 → 用它（单账号项目不用写参数）；
  *   3) 有多份 → 报错退出，不猜（截错账号的图比失败更糟，README 头图是对外公开的）。
  *
  * **找报表的目录固定是 WORK_DIR/output，不受 `--out-dir` 影响。**
@@ -95,17 +95,17 @@ const HTML_SEARCH_DIR = abs('output');
 function pickHtml() {
   const explicit = argOf('html', null);
   if (explicit) return abs(explicit);
-  const outDir = HTML_SEARCH_DIR;
-  const candidates = existsSync(outDir)
-    ? readdirSync(outDir).filter((f) => /^report-.*\.html$/.test(f)).map((f) => join(outDir, f))
-    : [];
+  const candidates = listOutputReports(WORK_DIR);
   if (candidates.length === 1) return candidates[0];
   if (candidates.length > 1) {
-    console.error(`${relative(WORK_DIR, outDir)}/ 下有 ${candidates.length} 份报表，用 --html 指定要截哪一份：`);
+    console.error(`${relative(WORK_DIR, HTML_SEARCH_DIR)}/ 下有 ${candidates.length} 份报表，用 --html 指定要截哪一份：`);
     for (const p of candidates) console.error(`  node skills/zzz-stats/scripts/screenshot.mjs --html ${relative(WORK_DIR, p)}`);
     process.exit(1);
   }
-  return abs('output/report.html');
+  // 一份都没有：报一句「先构建」，不要猜一个不存在的路径
+  console.error(`找不到报表：${relative(WORK_DIR, HTML_SEARCH_DIR)}/<账号名>/report.html 一个都没有。`);
+  console.error('  → 先跑 node skills/zzz-stats/scripts/build-report.mjs，或用 --html 指定文件。');
+  process.exit(1);
 }
 const HTML = pickHtml();
 /** 截图落点。跟「从哪读报表」无关，读报表固定看 WORK_DIR/output。 */

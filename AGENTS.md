@@ -28,10 +28,14 @@
   不等就报 `⚠️ 不符` 并退 1。别退回 `--screenshot` + `--window-size` 的老写法：
   那样传 `--width 390` 截出来的是 500px 视口**裁掉右边**的图，尺寸看着对、内容却是假的。
   这个坑真实发生过——「窄屏过滤条被裁」一度被当成 CSS bug，其实是假视口造成的。
-- **产物按数据集分开出，`output/report.html` 已废弃。**
-  现在不传 `--out` 时默认写 `output/report-<数据集名>.html`（`--data fixtures/tianzhu` → `output/report-tianzhu.html`），
-  所以直接 `node skills/zzz-stats/scripts/build-report.mjs --data fixtures/tianzhu` 就是对的，不用再手写 `--out`。
-  两份账号混用同一个文件名时，后一次构建会盖掉前一次，而两份报表只差数字、发错人不会有人发现——所以那个名字不再保留。
+- **产物是「一个账号一个目录」：`output/<账号名>/{data/,report.html}`。**
+  不传 `--out` 时产物落在**数据集目录的上一级**、名字固定 `report.html`。
+  运行期数据集目录是 `output/<账号名>/data/`，所以 `--data output/天猪/data` → `output/天猪/report.html`。
+  用户拿走 `output/<账号名>/` 这一个目录就能直接部署（数据 + 报表在一起），不用自己判断哪些文件配哪份报表。
+  名字**不再带数据集后缀**（`report-<数据集名>.html` 已废弃），因为账号目录已经区分开了。
+- **`--data fixtures/tianzhu` 时也不能往 `fixtures/` 里写产物。** 那种数据集不在 `output/` 结构里，
+  改取该数据集 `meta.json` 的昵称，落到 `output/<昵称>/report.html`（昵称拿不到就用目录名）。
+  过时的写法（`output/report.html`、`output/report-<数据集名>.html`）都不要再回来。
 - 不要为了截图去 `session_search` 追截图里的外部链接或部署环境，与本次改动无关。
 
 ## 数据集（开发期就是 fixtures/）
@@ -42,11 +46,16 @@
 - `fixtures/<数据集名>/` 一份数据集一个目录，`fixtures/tianzhu/` 与 `fixtures/joker/` 平级，
   **这两个目录入库**（它们是开发基线，不是运行期产物）。
 - 出图与采集都用 `--data` 显式指定：`--data fixtures/tianzhu`。
-- **运行期兜底只认 `data/`，绝不认 `fixtures/`。** 不传 `--data` 时脚本只看用户工作目录下的
-  `data/`：恰好一份就用它，多份报错退出，没有就报「找不到数据集」。
+- **运行期兜底只认 `output/<账号名>/data/`，绝不认旧 `data/`，也绝不认 `fixtures/`。**
+  不传 `--data` 时脚本只扫 `output/*/data/index.json`：恰好一份就用它，多份报错退出，
+  没有就报「找不到数据集」。
   这条踩过：兜底一度写成依次看 `data/` → `fixtures/`，结果用户项目里只要有 `fixtures/` 目录
   （前端项目极常见）就会被读走，生成一份「数字看着正常但来自别的数据集」的报表。
+  每扩大一处兜底就多一种这类事故，**别再往回加**。
   本仓库开发时靠 `--data fixtures/xxx` 显式指定，那条路不受兜底规则影响。
+- **账号名安全化只有一份实现**：`skills/zzz-stats/scripts/datasets.mjs`。
+  collect / save-in-page-json 用它决定**往哪写**，build-report / sync-icons / screenshot 用它决定**去哪读**。
+  五处各写一遍必然漂移，而漂移的后果不是报错，是「写得进去、读不出来」。
 - **fixtures 里的数据必须脱敏后再入库。** 这是公开仓库：`meta.json` 的 `uid` 是假值
   （`10000001` / `10000002`），昵称沿用「天猪 / joker」。真实 UID 永不入库——
   采集脚本写出的原始 `data/` 带真 UID，那整份目录在 `.gitignore` 里。
@@ -61,7 +70,7 @@
 | 常量 | 指向 | 干什么 |
 |---|---|---|
 | `SKILL_DIR` | 脚本上一级，即 `skills/zzz-stats/` | **只读**。读 `config/report.json`、`assets/**`（模板/charts/图标/echarts）。图标缓存 `assets/report/icons/` 也写这里（它随 skill 发布） |
-| `WORK_DIR` | `--cwd` 优先，否则 `process.cwd()` | **读写**。`data/`、`output/`、`docs/`、`.chrome-profile/` 全相对它算 |
+| `WORK_DIR` | `--cwd` 优先，否则 `process.cwd()` | **读写**。`output/`（账号目录 + 凭据临时文件）、`docs/`、`.chrome-profile/` 全相对它算 |
 
 早期全用 `const ROOT = resolve(HERE, '..')`，把两者当同一个。skill 装到 `.agents/skills/zzz-stats`
 之后跑构建，数据与产物会写进 skill 自己的目录——既被 skill 升级覆盖，`.gitignore` 的根锚定
@@ -81,7 +90,8 @@
 
 ## 改完必须回填文档与模板
 
-**产物不入库，只改产物等于没改。** `output/*.html` 在 `.gitignore` 里，它只是本次构建的
+**产物不入库，只改产物等于没改。** `output/` 整个在 `.gitignore` 里（账号目录、`report.html`、
+凭据临时文件全在它下面），它只是本次构建的
 临时结果；真正沉淀下来、下一个人接着用的是仓库里的这四类文件：
 
 | 文件 | 管什么 |
@@ -106,14 +116,17 @@
 
 ## 凭据性临时文件：用完即删
 
-`data/_verify/` 下全是**凭据性临时文件**，登录成功那一刻必须清掉：
+`output/` 根下有三个**凭据性临时文件**（固定名，登录成功那一刻必须清掉）：
 
 | 文件 | 是什么 |
 |---|---|
-| `login-qr-<时间戳>-<序号>.png` | 二维码截图，**还能被扫**（扫了只提示失效，但图本身是登录码） |
-| `login-qr.png` | 最新一张的副本，给人看和脚本引用 |
+| `login-qr.png` | 二维码截图，**还能被扫**（扫了只提示失效，但图本身是登录码） |
 | `sms-code.txt` | 短信验证码中转，明文 |
 | `qr-refresh` | 换图信号 |
+
+**为什么在 `output/` 根，而不是账号目录里**：账号名要等登录成功、甚至采集完才知道（昵称只能从页面读），
+而二维码在**登录之前**就得落盘。挂在账号目录下就没有确定路径可写。
+它们的生命周期也确实是「登录前」，跟账号数据不是一回事。
 
 三条铁律：
 
@@ -121,17 +134,25 @@
 2. **失败路径也删**。`finally` 兜住「登录失败/采集抛错」；**Ctrl-C / kill 必须靠显式信号处理**——
    async `main()` 的 `finally` 在 SIGINT 下**根本不执行**（实测过），指望它就会留下二维码。
    信号回调里只用同步 API，不要 await。
-3. 清理完 `_verify/` 空了就把目录本身删掉。`--keep-verify` 只给排障用，默认关。
+3. **只删这三个固定文件名，永不删目录、不递归。** `output/` 里同时装着账号目录
+   （`output/<账号名>/data/` 含 UID 与每金记录），删目录就是删用户数据。
+   `--keep-verify` 只给排障用，默认关。
 
-清理逻辑在 `skills/zzz-stats/scripts/verify-cleanup.mjs`，**单独成文件是为了能在不启动浏览器的情况下测**：
-扫码采集需要人扫、CI 跑不了，但「删干净 / 幂等 / 空目录移除」这三件事可以对着假文件验证。
-改这段逻辑时先跑用例再改：
+**固定文件名 + `?t=` 破缓存**：盘上是固定名（覆盖写），靠图片服务 URL 里的
+`?t=<毫秒>-<序号>` 破缓存。`?t=` 要带单调序号，只有毫秒时间戳时同一毫秒内连取两次会拿到相同 URL
+（实测过），那等于没破缓存。
+
+清理逻辑在 `skills/zzz-stats/scripts/verify-cleanup.mjs`，图片服务在 `.../image-server.mjs`，
+**单独成文件是为了能在不启动浏览器的情况下测**。扫码采集需要人扫、CI 跑不了，
+但「删干净 / 幂等 / 不误删账号目录」「白名单只服务一个文件 / `?t=` 每次不同」这些可以对着假文件验证。
+改这两段逻辑时先跑用例再改：
 
 ```bash
-node skills/zzz-stats/scripts/test-verify-cleanup.mjs   # 20 项，不需要浏览器、不联网
+node skills/zzz-stats/scripts/test-verify-cleanup.mjs   # 27 项，不需要浏览器、不联网
+node skills/zzz-stats/scripts/test-image-server.mjs      # 25 项，只起一个 127.0.0.1 临时端口
 ```
 
-用例在 `skills/zzz-stats/scripts/test-verify-cleanup.mjs`，**新增清理范围就照它的形状补一条**，不要只靠肉眼。
+用例文件在 `skills/zzz-stats/scripts/`，**新增清理范围或改了白名单就照它们的形状补一条**，不要只靠肉眼。
 
 ## 不许改的口径（改之前先问用户）
 

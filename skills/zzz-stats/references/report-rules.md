@@ -25,10 +25,13 @@
 ## 0. 怎么出报表
 
 ```bash
-node skills/zzz-stats/scripts/build-report.mjs          # data/ → output/report.html
+node skills/zzz-stats/scripts/build-report.mjs          # output/<账号名>/data/ → output/<账号名>/report.html
 ```
 
-产物：单文件 `output/report.html`，内联数据、ECharts 与用到的图标（base64），可单独发送。
+产物：单文件 `output/<账号名>/report.html`，内联数据、ECharts 与用到的图标（base64），可单独发送。
+产物路径规则是「数据集目录的上一级 + 固定名 `report.html`」，所以报表和数据同处一个账号目录，
+拿走那一个目录就能部署。显式 `--data fixtures/xxx` 时不会往 `fixtures/` 里写，
+改取该数据集 `meta.json` 的昵称落到 `output/<昵称>/report.html`。
 ECharts 5.6.0 已 vendored 在 `assets/vendor/echarts.min.js`（校验见 §7），报表不联网、不用 CDN。
 
 ## 1. 口径
@@ -696,7 +699,7 @@ joker 的存在意义是它同时有双金和三金（见 §8.1），能把 §5 
 - 版本：`1.0～2.6`，版本过滤只给 `1.x` / `2.x` 两档（该号没有 3.x）。
 - 横轴去重后：角色池 14 个版本号、音擎 14 个。
 
-构建命令：`node skills/zzz-stats/scripts/build-report.mjs --data fixtures/joker`（产物是 `output/report-joker.html`）。
+构建命令：`node skills/zzz-stats/scripts/build-report.mjs --data fixtures/joker`（产物是 `output/joker/report.html`，名字取自它的 `meta.json` 昵称）。
 `fixtures/joker/` 是**另一份同级数据集**（只用于跑生成报表环节，不走登录采集），与 `fixtures/tianzhu/` 平级，**都入库**。
 仓库自己开发期的测试数据放 `fixtures/`；用户运行期采集出来的 `data/` 是另一回事，那个整目录在 git 忽略内、
 且带真实 UID，永不入库。`fixtures/` 里的 `meta.json` 已把 `uid` 换成假值。
@@ -897,7 +900,7 @@ node skills/zzz-stats/scripts/screenshot.mjs --privacy 2            # 对外用�
 node skills/zzz-stats/scripts/screenshot.mjs --chart 音擎            # 截频段 tab 切过去之后的状态
 node skills/zzz-stats/scripts/screenshot.mjs --filter 2             # 截版本过滤生效后的状态（多个写 --filter 1,2）
 node skills/zzz-stats/scripts/screenshot.mjs --html p.html --out-dir /tmp/x   # 指定产物与输出位置
-node skills/zzz-stats/scripts/screenshot.mjs --preview --html output/report-tianzhu.html   # README 预览图 → docs/preview.png（整页 2x）
+node skills/zzz-stats/scripts/screenshot.mjs --preview --html output/天猪/report.html   # README 预览图 → docs/preview.png（整页 2x）
 ```
 
 **`--preview` 和两档验收图是两个用途，不要混用。** 两档图（`1440x900` / `1280x800`，1x）

@@ -15,7 +15,7 @@ description: 采集《绝区零》调频（抽卡）数据并生成 HTML 报表�
 1. **绝不索取账号密码、验证码、cookie、token**。登录由用户自己完成（扫码）。
 2. 不读取、不保存、不打印 cookie 与请求头。只取三个接口的**响应体**。
 3. 除了「点一下登录按钮」和「点一下扫码图标」，不做任何自动化点击；不模拟抽卡、不改账号设置。
-4. 数据只落本地 `data/`，不上传。
+4. 数据只落本地 `output/<账号名>/`，不上传。
 
 ---
 
@@ -224,7 +224,7 @@ node skills/zzz-stats/scripts/collect.mjs --wait=b   # 或 ZZZ_WAIT_MODE=b
 | 值 | 怎么给进程 | 说明 |
 |---|---|---|
 | 手机号 | `--phone=13xxxxxxxxx` | agent 在对话里问，拿到后直接传参 |
-| 验证码 | 写入 `<data>/_verify/sms-code.txt` | 短信到了才知道码，文件是最顺的通道；登录成功即删 |
+| 验证码 | 写入 `output/sms-code.txt` | 短信到了才知道码，文件是最顺的通道；登录成功即删 |
 
 `--phone-file=<路径>` 和 `--code=<码>` 也支持，看哪种方便。
 验证码文件**读一次就删**，不在磁盘留底；格式不对只提示、不退出，等下一个。
@@ -271,8 +271,8 @@ node skills/zzz-stats/scripts/collect.mjs --wait=b   # 或 ZZZ_WAIT_MODE=b
 非交互环境下没给值会立刻报错说明，不会挂住。
 
 扫码阶段的「换一张二维码」同理：终端里按 `r` 只对本地手动跑有效，
-agent 代跑时写 `<data>/_verify/qr-refresh` 这个信号文件触发。
-（`_verify/` 整个目录在登录成功后会被清掉，所以信号只在**登录前**还有意义。）
+agent 代跑时写 `output/qr-refresh` 这个信号文件触发。
+（这个文件在登录成功后会被删掉，所以信号只在**登录前**还有意义。）
 
 登录框是**跨域 iframe**（`user.mihoyo.com/login-platform`），外层 DOM 读不到，必须用 C3。
 
@@ -357,22 +357,30 @@ agent 代跑时写 `<data>/_verify/qr-refresh` 这个信号文件触发。
    `collect.mjs` 内置了一个**只读图片服务**，采集时自动起、结束自动关：
 
    ```
-   [zzz] 二维码图片服务：http://127.0.0.1:64262/（仅本机、只读、取完即关）
-   [zzz] 二维码图片地址：http://127.0.0.1:64262/login-qr-20261120100855-1.png
+   [zzz] 二维码图片服务：http://127.0.0.1:64262/（仅本机、只读、只服务 login-qr.png、取完即关）
+   [zzz] 二维码图片地址：http://127.0.0.1:64262/login-qr.png?t=1795237780817-2
    ```
 
-   把日志里那行 **`二维码图片地址`** 原样放进图片组件的 `src`。服务的三条约束：
+   把日志里那行 **`二维码图片地址`** 原样放进图片组件的 `src`。服务的**四条**约束：
 
    - 只监听 `127.0.0.1`，外网访问不到
-   - 只服务 `.png`，且路径锁死在二维码目录内（挡目录穿越）
+   - **白名单：整个服务只服务 `login-qr.png` 这一个文件名**，其他路径一律 404。
+     服务根目录是 `output/`，那下面就是账号数据目录（含 UID 与每金记录）——
+     所以 `output/<账号名>/data/meta.json`、`output/<账号名>/report.html` 都取不到。
+     先前的写法是「服务 .png 且锁在目录内」，换成 `output/` 当根之后那等于把整个账号目录挂出去。
+   - 不认子目录、不认 `..`（白名单已经挡掉，这两条是第二道闸）
    - 端口由系统分配（`listen(0)`），不会撞车；采集结束由 `finally` 关闭
+
+   **`?t=` 每次都不一样，只认最新那行。** 盘上文件名是固定的 `login-qr.png`（换图就是覆盖写），
+   靠 URL 里的 `?t=<毫秒>-<序号>` 破缓存——所以**必须用最新打印的那条地址**，
+   拿旧的 `?t=` 去渲染，缓存层可能还吐上一张已经作废的码。
 
    如果日志里**没有** `二维码图片地址`（服务没起来，例如环境受限），按下面降级：
 
    | 顺序 | 做法 |
    |---|---|
-   | 1 | 宿主自己的文件路由（注意别把含 UID 的 `data/` 整体暴露） |
-   | 2 | 给 PNG 文件路径，让用户自己打开 |
+   | 1 | 宿主自己的文件路由（注意别把含 UID 的 `output/<账号名>/` 整体暴露） |
+   | 2 | 给 PNG 文件路径（`output/login-qr.png`），让用户自己打开 |
 
    ⚠️ **`data:` / base64 塞进 `<image src>` 基本都不 work。** 多数富组件渲染器会丢弃
    `data:` 和 `file:` 协议（DSH GenUI 的 `image` 组件就明确不支持）。
@@ -394,13 +402,13 @@ agent 代跑时写 `<data>/_verify/qr-refresh` 这个信号文件触发。
 
    **三档共同要求：**
 
-   - **只认当次拿到的图。** `data/_verify/` 下的历史截图一律禁止复用。
+   - **只认当次拿到的图。** `output/login-qr.png` 是固定文件名，盘上永远只有最新那张；
+     历史截图一律禁止复用。
    - **把图交给用户、登录成功之后就不要再引用它。** 采集脚本会在登录成功那一刻删掉
-     `_verify/` 下所有二维码与验证码文件；你手里那条路径/URL 从此失效，
+     `output/` 下的二维码与验证码文件；你手里那条路径/URL 从此失效，
      不要再拿它渲染卡片、也不要让用户「回头再看一眼」——需要看就重新跑一次采集。
-   - **换图必须换文件名。** 覆盖同名 PNG 时，浏览器/图片组件/CDN 都可能继续显示旧图，
-     用户扫到的是一张已经作废的码。用 `login-qr-<时间戳>.png` 这种唯一名，
-     不要靠 header 去赌缓存。
+   - **换图要换 URL，不是换文件名。** 盘上固定 `output/login-qr.png`（覆盖写），
+     靠 `?t=` 破缓存。拿旧 `?t=` 的地址去渲染，浏览器/图片组件/CDN 可能还显示上一张作废的码。
    - **刷新后必须重置计时起点。** 换到新码却还拿旧 `issuedAt` 算过期，新码一生成就被判失效——
      这个 bug 会让用户永远扫不到有效码，且只在「过期→刷新→继续等」路径下才显形。
    - **绝对不要做自动循环刷新。** 用户可能正好去忙别的事、没看对话流，
@@ -503,21 +511,27 @@ node skills/zzz-stats/scripts/save-in-page-json.mjs --in result.json   # 或 ech
 
 ## 7. 落盘
 
-**数据写到「用户工作目录」的 `data/`，不要写进 skill 自己的目录**（skill 升级会覆盖，也容易误提交）。
+**数据写到「用户工作目录」的 `output/<账号名>/data/`，不要写进 skill 自己的目录**
+（skill 升级会覆盖，也容易误提交）。
 
 > 实现依据：脚本把两个根目录分开——`SKILL_DIR` 是 skill 本体（`config/`、`assets/`，只读），
-> `WORK_DIR` 是数据落点（`data/`、`output/`、`.chrome-profile/`，可读写）。
+> `WORK_DIR` 是数据落点（`output/`、`.chrome-profile/`，可读写）。
 > `WORK_DIR` 取 `--cwd` 参数，没传就取 `process.cwd()`。
 > 所以装到 `.agents/skills/zzz-stats/`（甚至全局 `~/.agents/skills/`）之后，
 > 在**自己项目目录**里跑 `node <skill>/scripts/collect.mjs`，数据就落在自己项目下；
 > 要指定别处就加 `--cwd /path/to/project`。
 
 ```
-data/meta.json
-data/index.json
-data/cur_pool_stat_<t>.json
-data/hist_pool_stat_<t>.json
+output/<账号名>/data/meta.json
+output/<账号名>/data/index.json
+output/<账号名>/data/cur_pool_stat_<t>.json
+output/<账号名>/data/hist_pool_stat_<t>.json
 ```
+
+**`<账号名>` 是昵称**：登录后从页面文本读，读不到（`null` / 空 / 全是非法字符）就退回 UID。
+昵称做文件系统安全化后使用——去掉 `/` `\`、控制字符、Windows 非法字符，去掉首尾空格与点，
+拒绝 `..`；emoji、空格、`·` 允许。**同账号重跑 = 覆盖同一个目录**，不报错、不生成 `xxx-2`。
+安全化规则在 `scripts/datasets.mjs`，五个脚本共用同一份实现。
 
 - 写之前校验 `retcode === 0`；`-100` 说明登录失效，回第 3 步。
 - `meta.json` 至少含：`schema`（`zzz-stats/v1`）、`server`、`uid`、`region`、`fetched_at`、`versions`、`source`，以及 **`nickname`**。
@@ -540,12 +554,12 @@ sum(cur_records[].count) + type_stats[].next_s_cur_times == type_stats[].total_c
 ## 9. 出报表：直接用模板，不要重新发明
 
 ```bash
-# 不传 --data 时只看 data/，只有一份数据集就直接用；有多份或没有都会报错退出，不猜
+# 不传 --data 时只看 output/<账号名>/data/，只有一份就直接用；有多份或没有都会报错退出，不猜
 node skills/zzz-stats/scripts/build-report.mjs
-# 多份时明确指定；产物默认 output/report-<数据集名>.html
-node skills/zzz-stats/scripts/build-report.mjs --data data/tianzhu
+# 多份时明确指定；产物默认 output/<账号名>/report.html
+node skills/zzz-stats/scripts/build-report.mjs --data output/天猪/data
 # 指定落点（相对 WORK_DIR，或写绝对路径）
-node skills/zzz-stats/scripts/build-report.mjs --data data/tianzhu --out output/my.html
+node skills/zzz-stats/scripts/build-report.mjs --data output/天猪/data --out output/my.html
 ```
 
 > **参数两种写法都支持**：`--out output/x.html`（空格）和 `--out=output/x.html`（等号）。
@@ -553,9 +567,15 @@ node skills/zzz-stats/scripts/build-report.mjs --data data/tianzhu --out output/
 > 不报错、不提示，你以为写到了 A，实际写在 B。`collect.mjs` 的 `--login=sms` 和
 > `build-report.mjs` 的 `--out=` 都栽过。改参数解析时，两种形式都要覆盖。
 
-输出 `output/report-<数据集名>.html`（已被 `.gitignore` 忽略；换用 `--out` 可改）。
-**没有 `output/report.html` 这个固定名字了**——多份数据集都往同一个名字写，后一次会盖掉前一次，
-两份报表只差数字、发错人不会有人发现。
+输出 **`output/<账号名>/report.html`**（已被 `.gitignore` 忽略；换用 `--out` 可改）。
+
+**一条规则：产物永远落在数据集目录的上一级，名字固定叫 `report.html`。**
+运行期结构下数据集目录是 `output/<账号名>/data/`，上一级就是 `output/<账号名>/`——
+数据和报表在**同一个账号目录里**，用户拿走 `output/<账号名>/` 这一个目录就能直接部署，不用自己判断
+哪些文件配哪份报表。名字不再带数据集后缀（`report-<数据集名>.html` 已废弃），因为账号目录已经区分开了。
+
+显式 `--data fixtures/tianzhu`（开发期）时，数据集不在 `output/` 结构里，这时**不会**往 `fixtures/`
+里写产物——改取该数据集 `meta.json` 的昵称，落到 `output/<昵称>/report.html`，昵称拿不到就用目录名。
 **真正的单文件**——数据、ECharts、以及用到的图标全部内嵌，
 可以直接发给别人、单独打开，不需要附带 `assets/` 目录。
 控制台会打印关键指标与校验告警——**把这些告警当失败处理，不要带着告警交付**。
@@ -660,7 +680,7 @@ DPR2 需要 52px，64px 够用；DPR3 下详情图标会略虚，这是确认接
 | 页面改版、接口路径变了 | 看 `index_*.js` 里的 `/api/zzz/*` 路径，更新本文件与 `references/api.md` |
 | 误报「已在扫码模式」，用户扫了没反应 | 用 `location.hash` 判断，别用图片尺寸 —— 短信页有张 232×80 的横幅会骗过尺寸判断 |
 | 换图后新码立刻显示「已过期」 | 刷新时忘了重置计时起点（`issuedAt`），新码还在用旧时间算 |
-| 用户扫的还是上一张废码 | 二维码覆盖了同名文件，浏览器/组件缓存了旧图；改成带时间戳的新文件名 |
+| 用户扫的还是上一张废码 | 二维码覆盖了同名文件，浏览器/组件缓存了旧图；用**最新打印的那条 `?t=` 地址**（盘上固定名，靠查询串破缓存） |
 | 用户说「扫了但没反应」，其实早跑完了 | 进程结束时没有可见反馈；见 §2.1「两种档位都要给用户可见的回应」 |
 | 等了半天才有回应 | 用 `sleep N` 等扫码了；应让等待跟着进程走（`job_output` + `wait`），不要定时轮询 |
 | 短信表单「找不到」 | 表单异步渲染，要轮询等 DOM 出现；别查一次就判失败 |
@@ -672,29 +692,36 @@ DPR2 需要 52px，64px 够用；DPR3 下详情图标会略虚，这是确认接
 ## 数据产物
 
 ```
-data/
-├── meta.json                 # 区服、UID、昵称、拉取时间、覆盖版本
-├── index.json                # 6 个频道的汇总统计
-├── cur_pool_stat_2.json      # 当前卡池（按频道，6 个）
-├── hist_pool_stat_2.json     # 历史卡池 + 每金记录（按频道，6 个）
-└── _verify/                          # 临时凭据目录，**登录成功后自动整体删除**
-    ├── login-qr-<时间戳>-<序号>.png   # 当次二维码（每次换图都是新文件名，防缓存）
-    ├── login-qr.png                  # 最新一张的副本，方便人肉查看/脚本引用
-    ├── qr-refresh                    # 写入即触发的「换一张」信号（无终端时用）
-    └── sms-code.txt                  # 短信验证码中转，读一次就删
+output/
+├── <账号名>/                          # 一个账号一个目录，**拿走这一个目录就能部署**
+│   ├── data/                         # 数据（含 UID 与每金记录，不要外传）
+│   │   ├── meta.json                 # 区服、UID、昵称、拉取时间、覆盖版本
+│   │   ├── index.json                # 6 个频道的汇总统计
+│   │   ├── cur_pool_stat_2.json      # 当前卡池（按频道，6 个）
+│   │   └── hist_pool_stat_2.json     # 历史卡池 + 每金记录（按频道，6 个）
+│   └── report.html                   # 自包含单文件报表
+├── login-qr.png                      # 当次二维码，**登录成功即删**
+├── sms-code.txt                      # 短信验证码中转，读一次就删
+└── qr-refresh                        # 写入即触发的「换一张」信号（无终端时用）
 ```
 
-`_verify/` 里全是**凭据性临时文件**（二维码能被扫、验证码是明文），所以：
+**凭据文件故意在 `output/` 根，不在账号目录里。** 账号名要等登录成功、甚至采集完才知道
+（昵称只能从页面读），而二维码在**登录之前**就得落盘——挂在账号目录下就没有确定路径可写。
+它们的生命周期也确实是「登录前」，跟账号数据不是一回事。
+
+那两个二维码 / 验证码 / 信号文件全是**凭据性临时文件**（二维码能被扫、验证码是明文），所以：
 
 - **登录成功那一刻就清掉**，不等整个采集跑完——后面还要跑 6 个频道的采集，
   没理由让已经作废的登录码在盘上多躺几十秒。
 - **失败路径也清**：登录失败、采集中途抛错由 `finally` 兜底；Ctrl-C / kill 由信号处理兜底
   （async `main` 的 `finally` 在 SIGINT 下不会执行，这是实测过的）。
-- 清理完如果 `_verify/` 空了，目录本身一并删掉。
+- 删的就是上面这**三个固定文件名**，不递归、不碰任何子目录，**永不删目录**
+  （`output/` 里还装着账号目录，删目录就是删用户数据）。
 - 想保留证据排障就传 `--keep-verify`，默认关。日志会打一行
   `已清理二维码等临时文件（N 个）`，没清理也会明确提示。
+- 所以部署 `output/<账号名>/` 时不会带上它们：它们在 `output/` 根，而且登录成功就删了。
 
-`data/` 整体被 `.gitignore` 忽略。
+`output/` 整体被 `.gitignore` 忽略（含账号目录与那三个凭据文件）。
 
 字段说明见 `references/api.md`，口径与呈现见 `references/report-rules.md`。
 
@@ -703,16 +730,19 @@ data/
 - 该页面只认登录 cookie，URL 里没有 authkey；因此本方案不会产生任何可被复用的抽卡凭证链接。
 - **不要尝试「导出 cookie 再 curl」**。`document.cookie` 只能看到 `ltuid_v2` / `account_id_v2` 这类标识，真正的鉴权凭证 `ltoken_v2` / `cookie_token_v2` 是 HttpOnly；CDP 的 `Storage.getCookies` 虽然读得到，但那等于把**完整账号凭证**落盘，风险比 authkey 高一个量级。用浏览器代发请求就够了。
 - 「登录一次、后续免登录」靠的是用户自己 Chrome 里的会话；`retcode:-100` 才是真的过期。
-- **`data/` 必须被 `.gitignore` 忽略**，里面有 UID 和每一金的记录。
+- **`output/` 必须被 `.gitignore` 忽略**，里面有 UID 和每一金的记录（账号目录和凭据临时文件都在它下面）。
 - **手机号 / 验证码不进代码、不进文档、不入库。** 它们只由用户在对话里提供，agent 转交时
   走命令行参数或一次性文件；验证码文件读完即删。写测试、写示例一律用占位符。
-- **二维码图片服务是临时的。** 只绑 `127.0.0.1`、只服务 `.png`、路径锁死在二维码目录，
-  采集结束由 `finally` 关闭。**不要**改成 `0.0.0.0`、**不要**把整个 `data/` 挂出去
-  （里面有 UID 和每金记录）、**不要**让它常驻。
-- **二维码与验证码文件都是临时的，登录成功即删。** `_verify/` 下的
-  `login-qr-*.png` / `login-qr.png` / `sms-code.txt` / `qr-refresh` 在登录成功那一刻清掉，
+- **二维码图片服务是临时的，而且只认一个文件名。** 只绑 `127.0.0.1`，
+  服务根目录是 `output/`，但**白名单只放行 `login-qr.png`**——`output/<账号名>/data/meta.json`、
+  `output/<账号名>/report.html` 一律 404。服务根目录换成 `output/` 之后，「按目录放开」等于把
+  整个账号目录挂出去，所以这条白名单是硬约束。采集结束由 `finally` 关闭。
+  **不要**改成 `0.0.0.0`、**不要**放开成「目录内任意 .png」、**不要**让它常驻。
+  白名单与 `?t=` 破缓存都有回归用例：`node skills/zzz-stats/scripts/test-image-server.mjs`。
+- **二维码与验证码文件都是临时的，登录成功即删。** `output/` 根下的
+  `login-qr.png` / `sms-code.txt` / `qr-refresh` 在登录成功那一刻清掉，
   失败与中断路径由 `finally` + 信号处理兜底（详见「数据产物」）。
   理由是这些文件**还有使用价值**：作废的二维码仍然能被扫（只是会提示失效），
-  验证码是明文——用户之后打包 `data/`、误提交、或部署时带上，就是泄漏面。
+  验证码是明文——用户之后打包 `output/<账号名>/`、误提交、或部署时带上，就是泄漏面。
   排障要留证据用 `--keep-verify`，用完记得自己删。
 - **不要在对话里回显完整手机号**，需要提示时打码（`134****0891`）。
