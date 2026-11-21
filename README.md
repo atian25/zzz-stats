@@ -61,18 +61,34 @@ DeepSeek Harness、Codex、Trae、豆包工作，以及任意支持 Agent Skill 
 
 ```bash
 # 1) 采集：自动挑驱动（有 Playwright 用 Playwright，没有用零依赖 CDP），打印二维码路径
-node scripts/collect.mjs
+node scripts/collect.mjs --data data/tianzhu
 
 # 2) 出图
-node scripts/build-report.mjs      # → output/report.html
+node scripts/build-report.mjs --data data/tianzhu   # → output/report-tianzhu.html
 ```
+
+**数据集按账号分子目录。** `data/<name>/` 一份账号一套文件，采集与出图都用 `--data` 指过去；
+`data/` 下有多份且没写 `--data` 时构建会报错退出（不猜，猜错只会生成一份「数字属于别人」的报表）。
+
+改完代码要验收时，两档尺寸的截图一条命令出齐（复用本机 Chrome，不需要 Playwright）：
+
+```bash
+node scripts/screenshot.mjs                                   # → docs/shots/ 1440x900 + 1280x800
+node scripts/screenshot.mjs --privacy 2                       # 对外发的图先点全打码
+node scripts/screenshot.mjs --chart 音擎                       # 截频段 tab 切过去之后
+node scripts/screenshot.mjs --filter 2                        # 截版本过滤生效之后
+node scripts/screenshot.mjs --html p.html --out-dir /tmp/x     # 指定产物与输出位置
+```
+
+数据集之间完全平级：`data/tianzhu/` 与 `data/joker/` 各是一套完整数据，
+出图时用 `--data` 切换，不需要重新登录采集也能验证生成环节。
 
 短信登录把手机号当参数传，验证码在短信到达后写入约定文件：
 
 ```bash
-node scripts/collect.mjs --login=sms --phone=13xxxxxxxxx
-# 收到短信后，另开一个终端：
-echo 123456 > data/_verify/sms-code.txt     # 读一次就删
+node scripts/collect.mjs --data data/tianzhu --login=sms --phone=13xxxxxxxxx
+# 收到短信后，另开一个终端（路径跟着 --data 走）：
+echo 123456 > data/tianzhu/_verify/sms-code.txt     # 读一次就删
 ```
 
 想让浏览器显示出来、自己看着扫，加 `--headed`；想锁定零依赖方案，加 `--driver cdp`。
@@ -82,7 +98,7 @@ echo 123456 > data/_verify/sms-code.txt     # 读一次就删
 ```bash
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --remote-debugging-port=9222 --user-data-dir="$HOME/.zzz-chrome" &
-node scripts/collect.mjs --cdp http://127.0.0.1:9222
+node scripts/collect.mjs --data data/tianzhu --cdp http://127.0.0.1:9222
 ```
 
 在受限沙箱里 Chrome 自带的 sandbox 可能起不来，加一句环境变量即可：
@@ -103,13 +119,14 @@ ZZZ_CHROME_ARGS='--no-sandbox --headless=new' node scripts/collect.mjs
 ```
 SKILL.md                    # 入口：浏览器能力契约、采集流程、失败处理
 config/report.json          # 口径与文案的唯一来源：称号、标签、配色、KPI、频道、保底抽数
-scripts/collect.mjs         # 采集：浏览器驱动 → 页内 fetch → data/*.json + 完整性校验
+scripts/collect.mjs         # 采集：浏览器驱动 → 页内 fetch → data/<账号>/*.json + 完整性校验
 scripts/drivers.mjs         # 浏览器驱动适配层：playwright / cdp 两套实现，接口一致
 scripts/sync-icons.mjs      # 按接口里的 icon URL 自动补齐缺失图标，并刷新 64px 缓存（需 Pillow）
 scripts/make-icons.mjs      # 从 96px 原图生成 64px 压缩图标（报表内嵌用，需 Pillow）
 scripts/fetch-in-page.js    # 只借「页内执行 JS」一个能力的取数脚本（无 Node 环境也能用）
-scripts/save-in-page-json.mjs # 把上面那段脚本的结果落成 data/
-scripts/build-report.mjs    # 出图：data/ + config → output/report.html
+scripts/save-in-page-json.mjs # 把上面那段脚本的结果落成 data/<账号>/
+scripts/build-report.mjs    # 出图：data/<账号> + config → output/report-<账号>.html
+scripts/screenshot.mjs      # 开发期验收：出 1440x900 / 1280x800 两档截图（复用本机 Chrome，无依赖）
 assets/report/              # 报表模板（template.html / charts.js / charts.css）
 assets/report/icons/        # 64px 压缩图标，构建时 base64 内嵌进 HTML
 assets/vendor/echarts.min.js# ECharts 5.6.0（随仓库分发，不用 CDN）
@@ -121,7 +138,7 @@ references/report-rules.md  # 报表口径与呈现约定（规范层，维护�
 
 报表右上角带仓库链接（`config/report.json` 的 `copy.repo` 可改），方便拿到图的人反查生成方式。
 
-> `output/report.html` 是**自包含单文件**：数据、ECharts、用到的图标全部内嵌，
+> 产物按数据集命名（`output/report-<账号>.html`），**自包含单文件**：数据、ECharts、用到的图标全部内嵌，
 > 可以单独发给别人直接打开，不依赖 `assets/` 目录。
 
 ## 报表口径

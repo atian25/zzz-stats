@@ -16,7 +16,8 @@
  *   node scripts/collect.mjs --cdp http://127.0.0.1:9222   # 连已有 Chrome（登录态可复用）
  *   node scripts/collect.mjs --headed        # 显示浏览器窗口，方便自己扫码
  *
- * 扫码阶段会把二维码存成 data/_verify/login-qr.png 并打印路径；扫完按回车继续。
+ * 扫码阶段会把二维码存成 <data>/_verify/login-qr.png 并打印路径；扫完按回车继续。
+ * <data> 默认是 data/current，用 --data data/<账号> 指定（一个账号一个子目录）。
  * 不读取 cookie、不保存请求头，只取三个接口的响应体。
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
@@ -71,7 +72,16 @@ const IS_CN = /^prod_gf_cn$/i.test(REGION);
 const EP = IS_CN ? ENDPOINTS.cn : ENDPOINTS.os;
 const PAGE = argOf('page', EP.page);
 const API = argOf('api', EP.api);
-const DATA_DIR = resolve(ROOT, argOf('data', 'data'));
+/*
+ * 数据集目录：一个账号一个子目录。
+ *
+ * 采集默认写 `data/<账号目录>`，用 `--data data/joker` 这类写法指定。
+ * 不默认写进 `data/` 根目录：多份数据集平铺时 `index.json` 和 `cur_pool_stat_*.json`
+ * 可能来自不同账号，拼起来的报表是错的却不报错。
+ *
+ * 采集是「覆盖写」——同一个 --data 目录跑第二次会用新数据覆盖旧文件。
+ */
+const DATA_DIR = resolve(ROOT, argOf('data', 'data/current'));
 const VERIFY_DIR = join(DATA_DIR, '_verify');
 const CFG = JSON.parse(readFileSync(join(ROOT, 'config/report.json'), 'utf8'));
 const CHANNELS = CFG.channels;

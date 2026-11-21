@@ -13,9 +13,9 @@
  * 这份脚本是「口径的唯一实现」。文档只描述结果，不再重复算法。
  * 用法：node scripts/build-report.mjs [--data data] [--out report.html]
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname, resolve, relative, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -35,15 +35,51 @@ const argOf = (name, fallback) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
 };
-const DATA_DIR = resolve(ROOT, argOf('data', 'data'));
 /*
- * 默认输出到 output/report.html，而不是仓库根。
+ * 数据集目录。
  *
- * 原因：这个文件每次构建都会变，放在根目录容易和「已提交的产物」混淆，
- * 也容易让用户打开一份旧的还以为是新的。固定路径 + 已被 .gitignore 忽略，
- * 刷新同一个地址就是最新版。
+ * `data/` 下每个账号一个子目录（`data/<name>/`），出图时用 `--data data/<name>` 选。
+ * 不写成 `data/` 根目录平铺：多份数据集混在一起时，`index.json` 只会剩下最后一个账号的，
+ * 而 `cur_pool_stat_*.json` 却是另一个账号的——两者拼起来算出的报表是错的，还不会报错。
+ *
+ * 没传 `--data` 时的兜底：`data/` 下恰好只有一份数据集，就直接用它（只有一份时不写参数也能跑）。
+ * 有多份时**报错退出**，不猜。猜错不会报错——报表照样生成，只是数字属于另一个账号，
+ * 这种「看起来成功了但内容是错的」比直接失败难发现得多。
  */
-const OUT_FILE = resolve(ROOT, argOf('out', 'output/report.html'));
+function pickDataDir() {
+  const explicit = argOf('data', null);
+  if (explicit) return resolve(ROOT, explicit);
+  const base = resolve(ROOT, 'data');
+  if (!existsSync(base)) return base;
+  const found = readdirSync(base, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => join(base, d.name))
+    .filter((p) => existsSync(join(p, 'index.json')));
+  if (found.length === 1) return found[0];
+  if (found.length > 1) {
+    console.error(`data/ 下有 ${found.length} 份数据集，用 --data 指定要哪一份：`);
+    for (const p of found) console.error(`  node scripts/build-report.mjs --data ${relative(ROOT, p)}`);
+    process.exit(1);
+  }
+  return base;
+}
+const DATA_DIR = pickDataDir();
+/*
+ * 输出到 `output/report-<数据集名>.html`，**不再有 `output/report.html`**。
+ *
+ * 为什么废弃那个固定名字：这个项目同时维护多份数据集（天猪、joker），
+ * 都往 `output/report.html` 写的话，后一次构建会把前一次的产物盖掉——
+ * 两份报表长得几乎一样，只是数字不同，发错人不会有人发现。这是最容易酿成事故的一处。
+ *
+ * 默认值按数据集目录名自动拼，所以 `--data data/tianzhu` 不传 `--out` 就是
+ * `output/report-tianzhu.html`；要别的名字用 `--out` 显式指定。
+ * 仍然放在 `output/`（已被 .gitignore 忽略）而不是仓库根，
+ * 免得和「已提交的产物」混淆、打开一份旧的还以为是新的。
+ */
+const OUT_FILE = resolve(
+  ROOT,
+  argOf('out', `output/report-${basename(DATA_DIR)}.html`),
+);
 
 const CFG = JSON.parse(readFileSync(join(ROOT, 'config/report.json'), 'utf8'));
 
@@ -176,13 +212,155 @@ function markGuaranteed(rounds) {
   return rounds;
 }
 
+/** 逐轮胜负：直出且不是保底获得才算胜场。口径见 references/report-rules.md §1。 */
+function winBits(rounds) {
+  return rounds.map((r) => (r.direct && !r.guar ? 1 : 0));
+}
+
 /** 累计不歪率：直出且不是保底获得才算胜场。 */
 function cumulativeWinRate(rounds) {
+  return cumulativeOfBits(winBits(rounds));
+}
+
+/** 累计胜率（入参是 0/1 序列）：第 i 项＝前 i+1 轮的胜率。 */
+function cumulativeOfBits(bits) {
   let wins = 0;
-  return rounds.map((r, i) => {
-    if (r.direct && !r.guar) wins += 1;
+  return bits.map((b, i) => {
+    wins += b;
     return Math.round((wins / (i + 1)) * 1000) / 10;
   });
+}
+
+/** 滑动窗口胜率：第 i 项＝以 i 结尾的最近 `window` 轮的胜率。
+ *  不足 `window` 轮的头部也要返回（用已有的几轮算），但形状计算会跳过这些不完整窗口。 */
+function rollingWinRate(bits, window) {
+  return bits.map((_, i) => {
+    const a = Math.max(0, i - window + 1);
+    const seg = bits.slice(a, i + 1);
+    return Math.round((seg.reduce((s, x) => s + x, 0) / seg.length) * 1000) / 10;
+  });
+}
+
+/**
+ * 累计不歪率的「轨迹形状」：谷底、涨幅、非↔欧横跳次数。
+ *
+ * **为什么不能只看终值**：累计曲线会收敛到终值附近，终值只差 8 个百分点的两个号，
+ * 走法可以完全相反——实测天猪号从 14.3% 一路爬到 48.1%（爬出来的），
+ * joker 号则在 70% 和 20% 之间来回起伏（跳出来的）。终值读不出这件事。
+ *
+ * **横跳的分界线不是 50%**。50% 是「小欧」和「大欧」的分界，两边都是欧，
+ * 在 50% 上下浮动不代表横跳。真正的横跳是**在非酋和欧之间来回**：
+ * `nonEdge`（非酋档上界）以下算非、`euroEdge`（50/50 理论期望）以上算欧，
+ * 中间的「薛定谔」带两边都不算——它本来就是「还看不出来」的地带，在里面游荡不算横跳。
+ *
+ * **横跳必须看滑动窗口，不能看累计值**。累计值是全程平均，早期的大坑会被越摊越淡：
+ * joker 号的累计值从未跌破 35%（谷底 42.9%），但把窗口收到最近 10 轮，
+ * 它的近期胜率一路从 70% 掉到 20% 再回到 80%——那是实实在在的「一会欧一会非」，
+ * 只是在全程累计里被平均没了。所以 `flips` 在 `rollingWinRate()` 的序列上统计。
+ *
+ * `minSamples`：前几轮的累计值是噪音，不是这个人的水平。
+ * 1 轮 0%、2 轮 50% 这种极值会把谷底拉到 0%，于是每个账号都能自称「曾是非酋」。
+ * 默认从第 5 轮起算（实测天猪号前 3 轮都是 0%，排除后谷底落在第 7 轮的 14.3%）。
+ */
+function winRateShape(bits, opts = {}) {
+  const nonEdge = opts.nonEdge ?? 35;
+  const euroEdge = opts.euroEdge ?? 50;
+  const minSamples = opts.minSamples ?? 5;
+  const window = opts.window ?? 10;
+  const from = Math.max(0, minSamples - 1);
+
+  const cumulative = cumulativeOfBits(bits);
+  const pts = cumulative.slice(from);
+  if (pts.length < 2) return null;
+
+  let ti = 0;
+  for (let i = 1; i < pts.length; i += 1) if (pts[i] < pts[ti]) ti = i;
+  const trough = pts[ti];
+  const final = pts[pts.length - 1];
+
+  /*
+   * 横跳：在「滑动窗口胜率」上数非↔欧的切换。窗口不满的头部不参与（样本不够，读数不可信）。
+   *
+   * **注意下标偏移**：`rollingWinRate()` 返回的数组与 `bits` 等长（按轮对齐），
+   * 但这里遍历的是 `slice(window - 1)` 之后的**切片**，所以循环变量 `i` 是「切片的第几个」，
+   * 不是「第几轮」。换算回轮索引必须 `i + (window - 1)`，否则会整体前移 9 轮：
+   * 实测 joker 号用错偏移会算出 v1.1～v1.2、53 轮前，正确是 v1.2～v1.4、44 轮前。
+   *
+   * `flipIdxs` 存的是**轮索引（0 基，与 `charRounds` 对齐）**，供上层映射成版本号。
+   */
+  const rolling = rollingWinRate(bits, window).slice(window - 1);
+  const roundOffset = window - 1;
+  const flipIdxs = [];
+  /*
+   * `flipEvents` 记每一次横跳的**具体读数**，供标签 tip 逐条列出。
+   *
+   * 为什么不能只给总次数：用户看到「来回 2 次」还是不知道到底怎么跳的——
+   * 是从 55% 掉到 30% 再弹回 52%（真横跳），还是 49%↔51%（几乎没动）？
+   * 次数相同，含义完全不同。所以每次 flip 都带上轮次、方向和当时的窗口胜率。
+   *
+   * `winRate` 取的是**跳变发生那一轮的窗口值**（即跨过分界线后的新值），
+   * `from` / `to` 是 ±1 的档位符号（-1 非酋、+1 欧）。
+   */
+  const flipEvents = [];
+  let side = null;
+  /*
+   * `lastOf` 记「每个档位最后一次读到的窗口值」。
+   *
+   * 横跳的「变化」必须给出**两侧的读数**，只写跨过去之后的值看不出跳幅：
+   * 「窗口 30%」不知道是从 55% 掉下来的，还是从 36% 蹭下来的。
+   * 但也不能拿上一轮的值当起点——中间可能隔着几轮薛定谔带（35~50 不计数），
+   * 上一轮的值未必属于同一个档。所以取「同档最后一次真实读数」，那是真值、可复核。
+   */
+  const lastOf = { '-1': null, '1': null };
+  for (let i = 0; i < rolling.length; i += 1) {
+    const s = rolling[i] < nonEdge ? -1 : rolling[i] >= euroEdge ? 1 : 0;
+    if (!s) continue;
+    if (side != null && s !== side) {
+      const idx = i + roundOffset;
+      flipIdxs.push(idx);
+      flipEvents.push({ idx, winRate: rolling[i], prevWinRate: lastOf[String(side)], from: side, to: s, low: null });
+    }
+    side = s;
+    lastOf[String(s)] = rolling[i];
+  }
+  /*
+   * 每一段「掉进非酋档」里窗口最低到过多少。
+   *
+   * 这是横跳里最有信息量的那个数：joker 号的**累计**谷底是 42.9%（从没进过非酋档），
+   * 但它的 10 轮窗口实打实掉到过 20%——只说「掉进非酋档」看不出掉得多深。
+   *
+   * 算法：对每个「进入非酋」的 flip，向后扫到下一次 flip（或序列结束），取这段的最小值。
+   * 用 `rolling` 的**切片下标**（`idx - roundOffset`）回查，别直接拿轮索引去索引切片。
+   */
+  for (const ev of flipEvents) {
+    if (ev.to !== -1) continue;
+    const startSlice = ev.idx - roundOffset;
+    const nextFlip = flipEvents.find((x) => x.idx > ev.idx);
+    const endSlice = nextFlip ? nextFlip.idx - roundOffset - 1 : rolling.length - 1;
+    let low = Infinity;
+    for (let k = startSlice; k <= endSlice && k < rolling.length; k += 1) low = Math.min(low, rolling[k]);
+    ev.low = Number.isFinite(low) ? low : null;
+  }
+  const flips = flipIdxs.length;
+  const oscillated = flips >= (opts.oscillationFlips ?? 2);
+
+  return {
+    minSamples,
+    window,
+    nonEdge,
+    euroEdge,
+    trough,
+    troughIdx: from + ti,
+    troughVersion: null,
+    final,
+    rise: Math.round((final - trough) * 10) / 10,
+    flips,
+    flipIdxs,
+    flipEvents,
+    oscillated,
+    rollingMin: rolling.length ? Math.min(...rolling) : null,
+    rollingMax: rolling.length ? Math.max(...rolling) : null,
+  };
 }
 
 /** 连续段统计：返回 [{k, start, end, chain}]，按长度降序。
@@ -269,7 +447,14 @@ function seriesOf(rounds, predicate, opts = {}) {
 
 const roundsOf = (channel) => markGuaranteed(buildRounds(loadGolds(channel)));
 
-/** 十连多金组：同频道内，把同秒且 sort 差 ≤ N 的连续金归为一组。 */
+/**
+ * 十连多金组：同频道内，把同秒且 sort 差 ≤ N 的连续金归为一组。
+ *
+ * 一组未必是 2 金。实测样本里有 雅 79 抽 → 1 抽 → 5 抽（同一发十连出三金），
+ * 音擎也有 啜泣摇篮 68 → 青溟笼舍 4 → 青溟笼舍 2。
+ * 所以这里返回整组，由调用方按 `length` 分档统计双金 / 三金 / 四金——
+ * 只按「双金」写死会把三金一起吞进双金的计数里，标签和图例都会说谎。
+ */
 function multiGoldGroups(golds) {
   const groups = [];
   let run = [];
@@ -285,6 +470,21 @@ function multiGoldGroups(golds) {
   flush();
   return groups;
 }
+
+/**
+ * 多金组按金数分档：`{2: 5, 3: 1}` 表示 5 组双金、1 组三金。
+ *
+ * 分档而不只给总数，是因为「十连双金 ×5」这句话在有三金的账号里是错的：
+ * 读者会以为那 5 次都是两金，实际其中一次是三金。
+ */
+function multiGoldBySize(groups) {
+  const out = new Map();
+  for (const g of groups) out.set(g.length, (out.get(g.length) ?? 0) + 1);
+  return out;
+}
+
+/** 版本号主版本："1.4" → "1"。版本过滤器按主版本分档（1.x / 2.x / 3.x）。 */
+const majorOf = (version) => String(version ?? '').split('.')[0] || '';
 
 // ---------------------------------------------------------------- 组装报表数据
 
@@ -329,14 +529,93 @@ const channelReports = CFG.channels.map((ch) => {
 });
 
 const character = channelReports.find((c) => c.key === 'character_up');
+// 音擎频段：十连多金要和角色池合并统计（见下面的 multiGold 注释）
+const weapon = channelReports.find((c) => c.key === 'weapon_up');
 const charRounds = character.rounds;
 // 每 UP 均同样扣垫抽：分母是「已经结算的金」，垫着的抽数还没换来金，不该摊进去
 const pullsPerUp = charRounds.length ? character.effectivePulls / charRounds.length : null;
 const winRate = cumulativeWinRate(charRounds);
 const finalWinRate = winRate.length ? winRate[winRate.length - 1] : null;
 
+/*
+ * 轨迹形状（谷底 / 涨幅 / 非↔欧横跳）—— 供「翻身的非酋」「薛定谔的非酋」两个标签使用。
+ * 阈值全部来自 config.numbers.winRateShape，改配置就生效。
+ */
+const charBits = winBits(charRounds);
+const winShape = winRateShape(charBits, CFG.numbers.winRateShape ?? {});
+if (winShape) {
+  winShape.troughVersion = charRounds[winShape.troughIdx]?.version ?? null;
+  /*
+   * 横跳发生的位置 → 版本号。
+   *
+   * 为什么需要：`flips` 数的是**整个序列**（从第 window 轮一直数到最后），
+   * 不是「最近几轮」。所以这个标签说的是「**曾经**来回过」，是历史事件，不是当前状态。
+   * 光写「近期胜率来回跳」会让一个 44 轮前就稳定下来的号看起来还在跳——
+   * 所以文案必须带上「哪一版到哪一版之间」和「距今多少轮」，读者才知道这是旧事。
+   *
+   * 实测 joker 号：2 次 flip 落在第 20 轮（v1.2）和第 27 轮（v1.4），距今 44 轮；
+   * 近 30 个窗口的 flips 早已是 0。
+   */
+  const idxs = winShape.flipIdxs ?? [];
+  winShape.flipFromVersion = idxs.length ? charRounds[idxs[0]]?.version ?? null : null;
+  winShape.flipToVersion = idxs.length ? charRounds[idxs[idxs.length - 1]]?.version ?? null : null;
+  winShape.flipToAgo = idxs.length ? charBits.length - (idxs[idxs.length - 1] + 1) : null;
+
+  /*
+   * 每一次横跳的可读明细，逐行拼好供 tip 用。
+   *
+   * 用户要的是「具体的横跳变化」，不是「来回 2 次」这种汇总。
+   * 每行都带齐四件事：哪一版 · 哪一轮 · 往哪个方向跳 · 跳到多少。
+   * 掉进非酋档的那一条再补上「这段最低到多少」——只有这个数能说明「掉得多深」。
+   *
+   * 方向箭头故意用「欧 → 非」这种汉字而不是 ↗↘：报表整体是中文，
+   * 箭头在等宽字体下宽度不稳，多行对齐会歪。
+   */
+  winShape.flipLines = (winShape.flipEvents ?? []).map((ev) => {
+    const round = charRounds[ev.idx] ?? {};
+    const ver = round.version ? `v${round.version}` : '—';
+    const dir = ev.to === -1 ? '欧 → 非' : '非 → 欧';
+    /*
+     * 有起点就写成「55% → 30%」的变化，没有起点（同档第一次读数就已是这天）才退回单值。
+     * 起点缺失只在序列极短时发生，正常账号不会有。
+     */
+    const move = ev.prevWinRate != null && ev.prevWinRate !== ev.winRate
+      ? `${ev.prevWinRate}% → ${ev.winRate}%`
+      : `${ev.winRate}%`;
+    const low = ev.to === -1 && ev.low != null && ev.low < ev.winRate ? `，最低 ${ev.low}%` : '';
+    /*
+     * 必须写「近 N 轮不歪率」而不是「窗口」。
+     *
+     * 「窗口」是算法内部的说法（rollingWinRate 的窗口长度），读者看到「窗口 50% → 30%」
+     * 根本不知道在量什么——是这个号的运气？是抽数？还是某个比例？
+     * 补上「不歪率」才和报表其余部分（顶部 KPI、折线、右轴）用的是同一套词，
+     * 补上「近 N 轮」才说明它和「累计不歪率」不是一回事——
+     * 这两个数是不同的量：joker 累计谷底 42.9%，但近 10 轮能掉到 20%。
+     * 只写「不歪率 20%」读者会拿它去和顶部的 56.3% 比，然后发现对不上。
+     */
+    const win = `近 ${winShape.window} 轮不歪率`;
+    return `${ver} 第 ${ev.idx + 1} 轮 ${dir}：${win} ${move}${low}`;
+  });
+}
+
 const extremeRounds = charRounds.filter((r) => r.total <= CFG.numbers.extremePulls);
-const multiGold = multiGoldGroups(character.golds);
+/*
+ * 十连多金：**角色池 + 音擎**一起算。
+ *
+ * 为什么要跨频道合并：早年只统计角色池，音擎的多金完全没进标签。
+ * 实测 joker 号角色池 5 组多金、音擎另有一组三金 + 一组双金，
+ * 只写角色池等于漏报一半——读者会以为音擎从没出过多金。
+ *
+ * 合并前**必须按频道分段**再各自成组：
+ * `sameTenPull` 比的是「同秒 + sort 差 ≤ N」，而 sort 是每个频道各自从 1 开始数的。
+ * 不同频道的两个金如果 sort 恰好接近、recordTime 又落在同一秒，会被误判成同一发十连；
+ * 这种错误不会报错，只会凭空多出一组多金。
+ * 所以这里不是一个扁平数组，而是「按频道分段的数组」，
+ * 段内才做同发十连的判定。
+ */
+const multiGoldGoldsByChannel = [character, weapon].filter(Boolean).map((ch) => ch.golds);
+const multiGold = multiGoldGoldsByChannel.flatMap((golds) => multiGoldGroups(golds));
+const multiGoldSize = multiGoldBySize(multiGold);
 const upStreaks = seriesOf(charRounds, (r) => r.direct, { breakOnGuaranteed: true });
 const lossStreaks = seriesOf(charRounds, (r) => r.off > 0);
 const nearMiss = charRounds.filter((r) => r.off > 0 && r.total < pullsPerUp);
@@ -349,10 +628,41 @@ const metrics = {
   pullsPerUp: pullsPerUp == null ? null : Math.round(pullsPerUp * 10) / 10,
   winRate: finalWinRate,
   extremeRounds: extremeRounds.length,
+  /*
+   * 多金：total 是所有多金组的总数，multiGold2 / 3 / 4 按金数分档。
+   * 只给 total 会让「十连双金 ×5」在有三金的账号里变成错的（5 次里有一次是三金）。
+   * 标签模板可以写 {multiGold2} / {multiGold3} / {multiGold4}。
+   */
   multiGoldRounds: multiGold.length,
+  multiGold2: multiGoldSize.get(2) ?? 0,
+  multiGold3: multiGoldSize.get(3) ?? 0,
+  multiGold4: multiGoldSize.get(4) ?? 0,
+  maxMultiGold: multiGold.reduce((m, g) => Math.max(m, g.length), 0),
   maxUpStreak: upStreaks.length ? upStreaks[0].k : 0,
   maxLossStreak: lossStreaks.length ? lossStreaks[0].k : 0,
   nearMissRounds: nearMiss.length,
+  /*
+   * 轨迹指标：把 winShape 摊平进 metrics，配置里的标签条件就能直接引用
+   * （metric 条件只读 metrics，不认嵌套对象）。
+   * 缺失时给 null，标签条件写 `>=` 时 null 不会被误判成立。
+   */
+  winRateTrough: winShape?.trough ?? null,
+  winRateRise: winShape?.rise ?? null,
+  winRateTroughVersion: winShape?.troughVersion ?? null,
+  winRateFlips: winShape?.flips ?? 0,
+  /*
+   * 横跳发生的位置（历史事件，不是当前状态）。缺失给 null——
+   * 标签条件写 `>=` 时 null 不会误判成立，tip 里也不会渲染出 "vnull"。
+   */
+  winRateFlipFromVersion: winShape?.flipFromVersion ?? null,
+  winRateFlipToVersion: winShape?.flipToVersion ?? null,
+  winRateFlipToAgo: winShape?.flipToAgo ?? null,
+  /*
+   * 每次横跳的逐行明细（`\n` 分隔，悬浮气泡是 `white-space: pre`，直接换行显示）。
+   * 空数组时给空串而不是 null——tip 模板里 `{winRateFlipList}` 会渲染成 "null"。
+   */
+  winRateFlipList: (winShape?.flipLines ?? []).join('\n'),
+  winRateSamples: winShape ? charBits.length : 0,
 };
 
 /** 称号：按每 UP 均查配置里的 10 档，取第一个满足的档位。 */
@@ -426,22 +736,75 @@ function evaluateTags() {
         out.push({
           id: idx === 0 ? rule.id : `${rule.id}-${k}`,
           name,
-          tone,
+          /*
+           * 最长的那条连 UP 用 highlight（更亮的金）。
+           *
+           * 连 UP 可能同时出 5 连、4 连、3 连好几条，它们现在都是同一个金色，
+           * 读者第一眼分不出哪条是这个账号的「最高纪录」。
+           * 只有 idx === 0（lens 按长度降序，第一个就是最长）提亮，
+           * 其余保持常规 positive。
+           *
+           * **只对连 UP 生效**：连歪（loss-streak）走的是同一套代码，
+           * 也给 idx===0 提亮的话，「代理人 7 连歪」这种最霉的纪录会被高亮成主角，
+           * 语义完全反了。判据用规则的 tone 是不是 negative。
+           */
+          tone: idx === 0 && rule.tone !== 'negative'
+            ? (CFG.tags.tone.highlight?.color ?? tone)
+            : tone,
           tip,
           bars: same.map((s) => `${s.start}-${s.end}`),
         });
       }
       continue;
-      continue;
     }
 
     if (rule.kind === 'event') {
       if (!multiGold.length) continue;
-      const name = rule.showCount ? `${rule.nameTemplate}${times(multiGold.length)}` : rule.nameTemplate;
-      const tip = multiGold
-        .map((g) => `${[...new Set(g.map((x) => `v${x.version}`))].join('、')}：${g.map((x) => `${x.name} ${x.count} 抽`).join(' → ')}`)
-        .join('\n');
-      out.push({ id: rule.id, name, tone, tip, bars: [] });
+      /*
+       * 事件标签按金数分档：双金一条、三金一条、四金一条。
+       *
+       * 过去的写法是「只要有任意多金组就出一个 十连双金 ×N」——
+       * 三金会被算进双金里，文案直接是错的：实测样本里就有
+       * v1.4 雅 79 抽 → 1 抽 → 5 抽 的三金，写成「十连双金」等于说少了。
+       *
+       * 现在每组按自己的 length 落档：size=2 用 nameTemplate，
+       * 更大的用 nameTemplate3 / nameTemplate4（模板里 {k} 是金数），
+       * 缺省回落到 nameTemplate 里带 {k} 的写法。
+       * 每个档位单独计数（{multiGold2} / {multiGold3}），tip 也只列自己档位的组。
+       */
+      const sizes = [...new Set(multiGold.map((g) => g.length))].sort((a, b) => a - b);
+      for (const size of sizes) {
+        const groups = multiGold.filter((g) => g.length === size);
+        const tpl = (size === 2 ? rule.nameTemplate : rule[`nameTemplate${size}`]) ?? rule.nameTemplate;
+        const name = fill(tpl, { k: size, ...metrics });
+        const tip = groups
+          .map((g) => `${[...new Set(g.map((x) => `v${x.version}`))].join('、')}：${g.map((x) => `${x.name} ${x.count} 抽`).join(' → ')}`)
+          .join('\n');
+        out.push({
+          // 双金沿用原 id（配置 suppressWhen 里引用的是它），更高档位加后缀
+          id: size === 2 ? rule.id : `${rule.id}-${size}`,
+          name: rule.showCount ? `${name}${times(groups.length)}` : name,
+          /*
+           * 十连多金一律 highlight：这是整份报表里最罕见、最值得炫耀的事件，
+           * 和普通「连 UP」放同一个金色会把它淹没。
+           */
+          tone: CFG.tags.tone.highlight?.color ?? tone,
+          tip,
+          bars: [],
+          /*
+           * 悬浮高亮用：每组最后一金的 `sort`。
+           *
+           * 为什么不在这里就算成柱子下标：`multiGold` 是**角色池 + 音擎合并**的
+           * （见 multiGoldGoldsByChannel），而主图一次只画一个频道，
+           * round 下标在不同频道里是两套互不相干的编号。在这里折成下标，
+           * 音擎那几组会被错画到角色池的柱子上——不会报错，只是高亮错柱子。
+           *
+           * 所以只把稳定标识（频道内的 sort 序号）带给前端，
+           * 由前端按「当前频道」自己映射成柱位，映射逻辑与多金青点完全共用一份。
+           */
+          multiGoldSorts: groups.map((g) => g[g.length - 1].sort),
+        });
+      }
       continue;
     }
 
@@ -550,6 +913,70 @@ const versions = (() => {
   return uniq;
 })();
 
+/**
+ * 把版本号切成「连续段」：同一版本的柱子归为一组，用于横轴只标一次版本。
+ *
+ * 为什么不直接每个柱子都写 v1.0：
+ *   一个版本里抽得多时会有几根柱同属 v2.0，横轴就变成 v2.0 v2.0 v2.0 密麻麻一片，
+ *   既读不出「这是同一个版本」，也挤压了真正需要辨认的相邻版本。
+ *   切段之后每组只在中间标一次，组的范围由 `from`/`to` 给出，前端据此画组背景。
+ *
+ * 返回 [{version, from, to}]，from/to 是 rounds 的下标（闭区间）。
+ */
+function versionGroups(rounds) {
+  const groups = [];
+  rounds.forEach((r, i) => {
+    const last = groups[groups.length - 1];
+    // 只合并相邻的同版本柱。版本连续不交叉是采集数据的性质，
+    // 若同一版本因数据异常再次出现，会另起一组而不是把中间别的版本吞进来。
+    if (last && last.version === r.version) last.to = i;
+    else groups.push({ version: r.version, from: i, to: i });
+  });
+  return groups;
+}
+
+/**
+ * 主图数据集：一个频道一份。
+ *
+ * 为什么主图要支持多频道：
+ *   抽卡总览原来只画角色池，音擎要翻到第二屏详情里才能看。
+ *   音擎的 UP 成本是完全独立的一套数（保底 80 而非 90、每 UP 抽数也不同），
+ *   把它并进角色池的柱子里会让两边都不成立，所以是「切数据集」而不是「加柱子」。
+ */
+function chartOf(channel) {
+  const rounds = channel.rounds;
+  const perUp = rounds.length ? channel.effectivePulls / rounds.length : null;
+  const groups = multiGoldGroups(channel.golds);
+  return {
+    channelId: channel.id,
+    key: channel.key,
+    label: channel.label,
+    detailLabel: channel.detailLabel,
+    rounds,
+    /*
+     * 官方口径的总抽数与垫抽一起带出去。
+     * 前端标题行要写「N 个 UP · N 抽」，用柱子求和会少掉垫抽
+     * （实测 6320 官方 vs 6318 柱和），两个数并排出现时就对不上。
+     */
+    pulls: channel.stats?.pulls ?? rounds.reduce((s, r) => s + r.total, 0),
+    pity: channel.pity ?? 0,
+    perUp: perUp == null ? null : Math.round(perUp * 10) / 10,
+    winRate: cumulativeWinRate(rounds),
+    extremePulls: CFG.numbers.extremePulls,
+    versionGroups: versionGroups(rounds),
+    /*
+     * 多金点的位置：取组内最后一金的 sort，前端再映射回所属柱子。
+     * `size` 带出去让前端按金数给点不同大小——三金点比双金点大一圈，
+     * 光看点的数量分不出「两次双金」和「一次三金」。
+     */
+    multiGold: groups.map((g) => ({
+      sort: g[g.length - 1].sort,
+      size: g.length,
+      names: g.map((x) => x.name),
+    })),
+  };
+}
+
 const report = {
   schema: 'zzz-stats/report@1',
   generatedAt: new Date().toISOString(),
@@ -572,17 +999,23 @@ const report = {
   metrics,
   tags,
   title: metrics.title,
-  chart: {
-    /*
-     * 主图固定画角色池（独家）。把频道 id 一起带出去，
-     * 前端才知道「详情里哪一行能对应到柱子」——切到音擎/常驻时不该乱高亮。
-     */
-    channelId: CFG.channels.find((c) => c.key === 'character_up')?.id ?? null,
-    rounds: charRounds,
-    winRate,
-    extremePulls: CFG.numbers.extremePulls,
-    multiGold: multiGold.map((g) => ({ sort: g[g.length - 1].sort, names: g.map((x) => x.name) })),
-  },
+  /*
+   * 主图数据集按频道分开，前端用 tab 切换。
+   *
+   * 只收「有 50/50」且「真的折出了 UP 轮」的频道：
+   *   - 常驻 / 邦布没有 UP 概念，折不出「这一轮花多少抽换到 UP」，画出来没有意义；
+   *   - 复刻角色 / 复刻音擎常常是 0 轮（账号没抽过），留着会给出一个点进去全空的 tab。
+   * 一个都没有时 charts 为空数组，前端会跳过整块图表而不是崩在 Math.max(...[])。
+   */
+  charts: channelReports
+    .filter((c) => c.has5050 && c.rounds.length > 0)
+    .map((c) => chartOf(c)),
+  /*
+   * 版本过滤器：按主版本分档（1.x / 2.x / 3.x）。
+   * 只列当前账号真实出现过的档位，不写死 1/2/3——
+   * 未来版本更新后不用改代码，也只给出有数据可筛的选项。
+   */
+  versionFilters: [...new Set(versions.map(majorOf))].filter(Boolean).sort((a, b) => Number(a) - Number(b)),
   channels: channelReports.map((c) => ({
     id: c.id,
     key: c.key,
@@ -682,11 +1115,21 @@ function inlineImages(report) {
     return hash;
   };
 
-  // 主图头像：数据里只留图标 hash，前端用 ICONS[hash] 还原
-  for (const r of report.chart.rounds) {
-    r.avatarKey = encode('avatars', r.itemId);
-    for (const s of r.side) s.avatarKey = encode('avatars', s.itemId);
-    for (const x of r.losts ?? []) x.avatarKey = encode('avatars', x.itemId);
+  /*
+   * 主图头像：数据里只留图标 hash，前端用 ICONS[hash] 还原。
+   *
+   * 图标目录按频道类型选：代理人头像是圆头像（assets/avatars），
+   * 音擎只有方形道具图标（assets/items）——音擎的 item id 在 avatars 下根本不存在。
+   * 早先主图只画角色池，写死 'avatars' 没事；接上音擎 tab 后写死会让每根音擎柱
+   * 都掉到占位图上（还会刷一屏「缺图标」警告）。
+   */
+  for (const c of report.charts) {
+    const dir = c.key.startsWith('weapon') ? 'items' : 'avatars';
+    for (const r of c.rounds) {
+      r.avatarKey = encode(dir, r.itemId);
+      for (const s of r.side) s.avatarKey = encode(dir, s.itemId);
+      for (const x of r.losts ?? []) x.avatarKey = encode(dir, x.itemId);
+    }
   }
   // 详情图标
   for (const ch of Object.values(report.details)) {
@@ -755,9 +1198,6 @@ for (const [token, text] of Object.entries(textSubs)) {
   html = html.split(token).join(esc);
 }
 
-mkdirSync(dirname(OUT_FILE), { recursive: true });
-writeFileSync(OUT_FILE, html);
-
 // ---------------------------------------------------------------- 校验 + 摘要
 
 /*
@@ -766,7 +1206,18 @@ writeFileSync(OUT_FILE, html);
  * 左边是「已出金的抽数 + 当前垫抽」，右边是官方总抽数。金数对得上但记录缺抽时会在这里露出来。
  * 常驻/邦布没有任何 is_up 记录，所以只对 50/50 频道额外做 UP 轮校验。
  */
+/*
+ * 校验分两级：
+ *   warn  —— 数据层面的可疑点（缺图标、口径对不上等）。打印后照常出图：
+ *            图标缺失有占位图兜底，是设计好的降级，不该挡住交付。
+ *   fatal —— 产物一定不可信的问题。**必须挡住构建（exit 1）**，
+ *            否则「跑一次没事」就会漏过去，断言等于没写。
+ *
+ * 目前只有坐标轴退化算 fatal：那条断言的整个存在意义是「不靠人记得」，
+ * 只打一行 ⚠️ 而照样退出 0，下次改代码时仍然会静默退回去。
+ */
 const warn = [];
+const fatal = [];
 for (const c of channelReports) {
   if (!c.stats) {
     warn.push(`${c.label}: index 里没有对应 type_stats，抽数只能从记录推算`);
@@ -809,6 +1260,80 @@ const nonBangbooPulls = channelReports.reduce((s, c) => s + (c.key === 'bangboo'
 if (report.totals.pullsOfficial != null && report.totals.pullsOfficial !== nonBangbooPulls) {
   warn.push(`官方 total_gacha_count=${report.totals.pullsOfficial} ≠ 非邦布频道之和 ${nonBangbooPulls}（两个口径都不含邦布）`);
 }
+
+/*
+ * 轴上限的防回归校验。
+ *
+ * 为什么要有这条：右轴（不歪率）曾经「修好又退回去」一次——
+ * 左轴改成了「先读配置 axisPullsMax」，右轴漏了同一步、只留了自适应，
+ * 于是角色池显 60%、音擎显 80%，跨图没法对比。
+ * 之所以没被发现，是因为复刻角色那栏峰值恰好 100%、自适应出来也是 100%，
+ * 随便点开一个频道看着是对的。
+ *
+ * 这里做的不是「验证图表」，而是**验证产物里每个频道都拿到了配置的固定上限**：
+ * 产物 HTML 里会内嵌 report 数据，前端照这个值设轴。只要有一个频道缺键，
+ * 前端就会静默回退到自适应——所以必须在这里断言「每个可画频道都有值」。
+ */
+const axisWinMax = CFG.numbers.axisWinRateMax;
+const pullsMaxCfg = CFG.numbers.axisPullsMax ?? {};
+/*
+ * 上面那段只验「配置在不在」，但这次的回归根因是**前端没读配置**（charts.js 只留了自适应）。
+ * 所以再断言一次：charts.js 里必须真的出现这两个配置键的读取。
+ *
+ * 检查前必须先剥掉注释：这两个键名在注释里也出现过（就是解释这段历史的那段），
+ * 直接 includes 会被注释骗过去——实测把读取那行删掉、注释留着，检查仍然通过。
+ */
+const stripJsComments = (src) => src
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/(^|[^:])\/\/.*$/gm, '$1');
+const chartsCode = stripJsComments(chartsJs);
+for (const key of ['axisWinRateMax', 'axisPullsMax']) {
+  if (!chartsCode.includes(`CFG.numbers.${key}`)) {
+    fatal.push(`assets/report/charts.js 没有真正读取 CFG.numbers.${key}：坐标轴会退化成按数据自适应，跨图不可比`);
+  }
+}
+if (axisWinMax == null) {
+  fatal.push('config.numbers.axisWinRateMax 没配：右轴会回退成按数据自适应，跨图将无法对比');
+} else {
+  for (const c of report.charts) {
+    if (!c.winRate?.length) continue;
+    const peak = Math.max(...c.winRate);
+    if (peak > axisWinMax) {
+      fatal.push(`${c.label}: 不歪率峰值 ${peak}% > 固定上限 ${axisWinMax}%，曲线会被截断`);
+    }
+  }
+}
+if (!Object.keys(pullsMaxCfg).length) {
+  fatal.push('config.numbers.axisPullsMax 没配：左轴会回退成按数据自适应，跨图将无法对比');
+} else {
+  for (const c of report.charts) {
+    if (!pullsMaxCfg[c.key]) {
+      fatal.push(`${c.label}: axisPullsMax 里没有 ${c.key}，左轴会回退成自适应，与其他频道不可比`);
+    } else {
+      const tallest = c.rounds.reduce((m, r) => Math.max(m, r.total), 0);
+      if (tallest > pullsMaxCfg[c.key]) {
+        fatal.push(`${c.label}: 最高柱 ${tallest} 抽 > 固定上限 ${pullsMaxCfg[c.key]}，柱子会被截断`);
+      }
+    }
+  }
+}
+
+/*
+ * fatal 优先：**不写产物、直接退出 1**。
+ *
+ * 顺序很关键：文件写出必须放在校验之后。早先 writeFileSync 在校验之前，
+ * 就算这里真退 1，坏产物也已经躺在 output/ 里了——CI 红了，但人打开文件看到的还是坏图。
+ */
+if (fatal.length) {
+  console.error('');
+  for (const f of fatal) console.error(`  ✖ ${f}`);
+  console.error('');
+  console.error(`构建失败：${fatal.length} 个致命问题，未写出 ${OUT_FILE}`);
+  process.exit(1);
+}
+
+mkdirSync(dirname(OUT_FILE), { recursive: true });
+writeFileSync(OUT_FILE, html);
 
 const sizeMB = (Buffer.byteLength(html) / 1024 / 1024).toFixed(2);
 console.log(`报表 → ${OUT_FILE}（${sizeMB} MB，内嵌 ${icons.unique} 张图标去重后引用 ${icons.used} 处，可单独发送）`);

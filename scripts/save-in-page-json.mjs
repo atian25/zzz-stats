@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 把 scripts/fetch-in-page.js 的返回结果落成 data/ 下的文件。
+ * 把 scripts/fetch-in-page.js 的返回结果落成 data/<账号>/ 下的文件（默认 data/current）。
  *
  * 用途：不管你用哪种浏览器能力取到数据（会话自带工具、moli、Playwright、人工复制），
  * 只要拿到那段 JSON，就能接上同一个报表构建流程：
@@ -26,7 +26,11 @@ const argOf = (f, d) => {
   const i = args.indexOf(`--${f}`);
   return i >= 0 && args[i + 1] ? args[i + 1] : d;
 };
-const DATA_DIR = resolve(ROOT, argOf('data', 'data'));
+/*
+ * 默认写 data/current：一个账号一个子目录，与 collect.mjs / build-report.mjs 一致。
+ * 用 --data data/<账号> 指到已有的那份数据上。
+ */
+const DATA_DIR = resolve(ROOT, argOf('data', 'data/current'));
 
 async function readStdin() {
   const chunks = [];

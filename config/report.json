@@ -6,11 +6,44 @@
     "_comment": "sPityExpect × fiftyFifty = 角色池每 UP 期望抽数（62.5 × 1.5 = 93.75），只在文档和标签文案里用作理论基准；判档一律用账号自己的均值。detailBarDivisor：详情条满格对应的抽数（100 抽 = 满格）。 countsTowardTotals：邦布抽卡用的是邦布币，和调频券不是同一种货币，所以不计入「总抽卡数 / 平均每金」这些跨频道汇总。channels[].pityCap：该频段官方保底抽数（常驻/独家/重映 90，音擎/回响 80，邦布 80，见 references/api.md §5）。",
     "sPityExpect": 62.5,
     "fiftyFifty": 1.5,
+    "baselineWinRate": 50,
     "extremePulls": 40,
     "multiGoldSortGap": 9,
     "detailBarDivisor": 100,
     "detailBarMinPx": 44,
-    "segmentLabelMin": 8
+    "segmentLabelMin": 8,
+    "barMaxWidth": 56,
+    "winRateTiers": [
+      {
+        "max": 35,
+        "key": "unlucky"
+      },
+      {
+        "max": 50,
+        "key": "shrodinger"
+      },
+      {
+        "max": null,
+        "key": "lucky"
+      }
+    ],
+    "axisPullsMax": {
+      "character_up": 180,
+      "weapon_up": 160,
+      "permanent": 180,
+      "bangboo": 160,
+      "character_return": 180,
+      "weapon_return": 160
+    },
+    "axisWinRateMax": 100,
+    "winRateShape": {
+      "_comment": "累计不歪率的「轨迹形状」参数，供「非酋翻身记」「薛定谔的非酋」两个标签使用。nonEdge/euroEdge：判定非酋与欧的分界，中间那条带两边都不算（它就是「薛定谔」带，在里面游荡不算横跳）。50 是 50/50 理论期望，小欧/大欧都在它之上，所以 50 不是横跳线。minSamples：前 N 轮的累计值是噪音，1 轮 0% 不是「曾经非酋」，默认从第 5 轮起算。window：横跳要在滑动窗口上看——全程累计会把早年的坑越摊越淡（joker 累计谷底 42.9% 从没进过非酋档，但 10 轮窗口一路从 70% 掉到 20% 再回 80%）。oscillationFlips：窗口序列里非↔欧切换几次算「来回横跳」，2 次＝完整一个来回（非→欧→非 或 欧→非→欧）。",
+      "nonEdge": 35,
+      "euroEdge": 50,
+      "minSamples": 5,
+      "window": 10,
+      "oscillationFlips": 2
+    }
   },
   "channels": [
     {
@@ -150,6 +183,12 @@
       },
       "info": {
         "color": "#3F7BFF"
+      },
+      "shrodinger": {
+        "color": "#8A8A96"
+      },
+      "highlight": {
+        "color": "#FFE066"
       }
     },
     "rules": [
@@ -170,7 +209,7 @@
             "value": 2
           }
         ],
-        "tip": "十连出过 {multiGoldRounds} 次双金 · {extremeRounds} 次在 {extremePulls} 抽内出金"
+        "tip": "十连出过 {multiGoldRounds} 次多金（双金 {multiGold2} · 3 金 {multiGold3}）· {extremeRounds} 次在 {extremePulls} 抽内出金"
       },
       {
         "id": "great-luck",
@@ -244,11 +283,14 @@
       {
         "id": "multi-gold",
         "nameTemplate": "十连双金",
-        "tone": "neutral",
+        "nameTemplate3": "十连 3 金",
+        "nameTemplate4": "十连 4 金",
+        "tone": "positive",
         "kind": "event",
         "event": "multiGold",
         "showCount": true,
-        "tipTemplate": "{list}"
+        "tipTemplate": "{list}",
+        "_comment": "按一组的金数分档出标签：2 金→十连双金，3 金→十连 3 金，4 金→十连 4 金。2 金保留中文「双金」（约定俗成），3 金及以上写阿拉伯数字。不要只写 nameTemplate —— 三金被叫成双金是事实错误（实测账号里 雅 79/1/5 就是三金）。 tone 用 positive（金）：十连出多金是明确的欧，不该用中性青——青色是「青点」图表记号的色，不是「好运」的色。"
       },
       {
         "id": "near-miss",
@@ -261,12 +303,37 @@
         },
         "showCount": true,
         "tipTemplate": "{list}"
+      },
+      {
+        "id": "non-to-euro",
+        "name": "非酋翻身记",
+        "tone": "positive",
+        "kind": "metric",
+        "_comment": "翻身：曾经真的掉进过非酋档，现在爬出来了，而且涨幅够大。三个条件缺一不可——只写「曾是非酋」会让所有新号都中（前几轮样本少，很容易 0%）；只写「现在涨了」会把本来就在欧档的正常回归也算进来。不与「薛定谔的非酋」互斥（用户明确要求）：一个号可以既翻过身、又一路来回跳。",
+        "all": [
+          { "metric": "winRateTrough", "op": "<", "value": 35 },
+          { "metric": "winRate", "op": ">=", "value": 35 },
+          { "metric": "winRateRise", "op": ">=", "value": 15 }
+        ],
+        "tip": "最低 {winRateTrough}%（v{winRateTroughVersion}），现在 {winRate}%，一路涨了 {winRateRise} 个百分点"
+      },
+      {
+        "id": "shrodinger-non",
+        "name": "薛定谔的非酋",
+        "tone": "shrodinger",
+        "kind": "metric",
+        "_comment": "横跳：不是「样本少没定型」，而是不歪率在非酋和欧之间来回跳。判据在滑动窗口序列上数非↔欧切换，不是看累计曲线——累计会把早年的坑摊平（joker 累计谷底 42.9% 从没进过非酋档，但近 10 轮不歪率从 70% 掉到 20% 再回 80%）。**flips 数的是完整窗口的全序列，不是最近几轮**，所以这是**历史事件、不是当前状态**：一个号可能很多轮前就稳定了，标签仍然成立。因此 tip 必须带出版本区间和距今轮数，**不得写成「近期」**。判定仍要求窗口真的进出非酋档（<35%），不是在小欧/大欧之间浮动（那两档都在 50% 以上，同属欧，不算横跳）。第二行逐条列出每次横跳的「版本 · 轮次 · 方向 · 近 N 轮不歪率」，掉进非酋档的那段还带最低点——只写「来回 2 次」看不出是从 55% 掉到 30% 还是 49%↔51%，那是两件完全不同的事。**文案里不出现「窗口」二字**：那是算法内部说法，读者不知道在量什么；必须写全「近 N 轮不歪率」，并和顶部「累计不歪率」明确区分——两者是不同的量（joker 累计谷底 42.9%，但近 10 轮能掉到 20%）。",
+        "all": [
+          { "metric": "winRateFlips", "op": ">=", "value": 2 }
+        ],
+        "tip": "不歪率曾在非酋和欧之间来回横跳 {winRateFlips} 次（v{winRateFlipFromVersion}～v{winRateFlipToVersion}），最近一次在 {winRateFlipToAgo} 轮前\n{winRateFlipList}"
       }
     ],
     "_prioComment": "优先级从高到低。冲突时保留优先级靠前者：「运势极佳/时运不济」是宏观概括，一旦有具体的 K 连 UP / K 连歪标签，前者就多余了（同一件事说两遍），所以被 suppress。「欧气附体」与「非酋附体」互斥：前者看双金/极欧，后者看均值过高，同时成立时以非酋为准（负向信息更有行动价值）。"
   },
   "colors": {
     "_comment": "堆叠柱下段＝歪掉的抽数，上段＝UP 本身。柱体表达运气，红章表达 50/50 结果，两者不是一回事。",
+    "_winRateComment": "折线三档和柱体用同一套语义色（红→绿→蓝＝差→好→极好），但**不能直接复用柱体的色值**：折线会横穿柱子，同色时对比度只有 1.00:1，压在柱子上就看不见了。所以折线取同色相的**提亮版**，对底色 7.7~10.9:1。提亮版压在同类柱子上仍不够（实测红 1.31 / 绿 2.30 / 蓝 1.80，全低于 3:1），所以每段线再画一层深色描边（`winRateHalo`，见下一键），实测紧邻对比度升到红 5.67 / 绿 9.13 / 蓝 6.69。改这三个值只改这里。",
     "extreme": {
       "top": "#3F7BFF",
       "off": "#1B3C78"
@@ -279,19 +346,25 @@
       "top": "#FF5F6D",
       "off": "#A81E28"
     },
-    "winRateLine": "#F2E23C",
     "multiGoldDot": "#7BE0FF",
     "versionDivider": "#3A3A42",
     "lossStamp": "#FF5F6D",
     "detailGood": "#2E8F45",
     "detailBad": "#FF5F6D",
     "accent": "#F5C04A",
-    "qrPlate": "#FFFFFF"
+    "qrPlate": "#FFFFFF",
+    "winRateUnlucky": "#FF8A94",
+    "winRateSchrodinger": "#5FD98A",
+    "winRateLucky": "#7FB4FF",
+    "_winRateHaloComment": "折线的深色描边。折线会横穿柱子，提亮版同色相压在柱体上只有 1.31~2.30:1（实测红 1.31 / 绿 2.30 / 蓝 1.80），描边把线和柱子隔开。**取深色而不是换更亮的线色**：换亮只解决绿档，红蓝仍低；深色描边三档一次解决，且能保住「红/绿/蓝＝差/好/极好」的语义。取值比图表底色 #1d1d23 更深，对**柱体浅色上段** 4.74~6.57:1、对底色 1.16:1（几乎无感），所以线画在空白处不会多出一圈黑边，只在压到柱子时起作用。**已知局限**：压在柱体**深色下段**时只有 1.82~2.66:1（蓝深最差），此时描边和柱子几乎混在一起——但这一档本来就不需要描边补救（彩色线压深色段本身已有 3.23~6.00:1，全部达标），所以不构成问题。",
+    "winRateHalo": "#0d0d10"
   },
   "copy": {
     "chartTitle": "抽卡总览",
     "detailTitle": "抽卡详情",
     "titleRowMeta": "{upCount} 个 UP · {pulls} 抽",
+    "chartMetaFiltered": "{shown} / {upCount} 个 UP · {pulls} 抽",
+    "chartEmpty": "还没有可画的 UP 记录",
     "detailMetaAll": "{goldCount} 金 · 每金 {perGold} 抽",
     "detailMetaMerged": "{upCount} 次 UP · 每 UP {perUp} 抽",
     "detailEmpty": "这个频段还没有 S 级记录",
@@ -312,23 +385,16 @@
       {
         "text": "绿＝欧",
         "swatch": "good"
-      },
-      {
-        "text": "黄线＝累计不歪率"
-      },
-      {
-        "text": "青点＝十连双金 ×{multiGoldRounds}"
       }
     ],
     "tip": {
-      "multiGoldRound": "本发十连双金",
+      "multiGoldRound": "本发十连多金",
       "nearMiss": "似非实欧，白赚大保底",
       "direct": "总共 {total} 抽，直出",
       "guaranteed": "总共 {total} 抽，大保底，上个池子歪了「{from}」",
       "lost": "总共 {total} 抽，大保底，{off} 抽歪{names}",
       "winRate": "累计不歪率 {rate}%"
     },
-    "legendTail": "官方接口 · {goldCount} 条 S 记录",
     "repo": {
       "url": "https://github.com/atian25/zzz-stats",
       "label": "npx skills add atian25/zzz-stats",

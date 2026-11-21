@@ -219,13 +219,38 @@ html, body {
 .tag[data-tone="neutral"] { color: var(--multi-gold-dot, #7be0ff); }
 .tag[data-tone="info"] { color: var(--extreme); }
 .tag:hover { background: color-mix(in srgb, currentColor 22%, transparent); }
+/*
+ * highlight 标签：最长连 UP + 十连多金。
+ *
+ * 这两类是全份报表里最值得炫耀的事件，但和普通「连 UP」同为金色时会被淹没。
+ * 只调亮度不够（两个金在暗底上只差几个色阶），所以加同色外发光：
+ * 光晕在深色背景上一眼可辨，比单纯换色更容易被注意到。
+ */
+.tag[data-highlight="true"] {
+  background: color-mix(in srgb, currentColor 20%, transparent);
+  border-color: currentColor;
+  box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 45%, transparent),
+              0 0 12px color-mix(in srgb, currentColor 30%, transparent);
+}
+.tag[data-highlight="true"]:hover {
+  background: color-mix(in srgb, currentColor 30%, transparent);
+}
 
 /* ---------------------------------------------------------------- 自绘气泡 */
 
 .tip {
   position: fixed;
   z-index: 60;
-  max-width: 320px;
+  /*
+   * 420 而不是 320。
+   *
+   * 气泡是 `white-space: pre`（保留换行、不折行），所以 max-width 一旦小于最长那行，
+   * 文字不会换行而是**横向溢出被裁掉**——多行的 tip 会看起来像被截断了半句。
+   * 实测「v1.2～v1.4 之间在非酋和欧之间来回 2 次，最近一次在 44 轮前」需要 333px，
+   * 320 会把最后几个字吃掉。420 给横跳明细那种最长行留够余量。
+   * 上限仍受视口约束：place() 会把它翻到鼠标左侧，见 charts.js。
+   */
+  max-width: 420px;
   padding: 7px 10px;
   border-radius: 7px;
   background: #0d0d10;
@@ -265,7 +290,127 @@ html, body {
   padding: 9px 14px;
 }
 .panel-title { font-size: 15px; font-weight: 700; }
+/*
+ * meta 仍然是「靠右推」的元素，但 tab 与过滤器插在它前面。
+ * 这里把 auto 外边距留在 meta 上，tab / chip 依次贴左，
+ * 视觉顺序是「标题 · 频段 tab · 版本 chip ————— N 个 UP · N 抽」。
+ */
 .panel-meta { margin-left: auto; font-size: 11px; color: var(--ink-faint); font-family: var(--mono); }
+
+/*
+ * 主图频段 tab（独家 / 音擎 …）。
+ *
+ * 与第二屏的 .detail-tab 同一套读法（金色下划线表示选中），
+ * 但更紧凑：主图面板头还要塞版本 chip、meta 和折叠按钮，一行装不下就会换行顶掉图表高度。
+ */
+.chart-tabs { display: flex; gap: 2px; flex-wrap: nowrap; }
+.chart-tabs:empty { display: none; }
+.chart-tab {
+  padding: 3px 9px 5px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-dim);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+.chart-tab:hover { color: var(--ink); }
+.chart-tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.chart-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/*
+ * 版本过滤器：漏斗图标 + 带勾选态的 1.x / 2.x / 3.x。
+ *
+ * 为什么改掉原来的实心金色 chip：
+ *   1) 它和左边的频段 tab 长得太像，读者分不清哪个是切频道、哪个是筛版本；
+ *      加一个漏斗图标当「这是什么」的提示。
+ *   2) 原来选中/未选中只差「金色填充 vs 灰描边」，打码截图压成灰度后几乎看不出。
+ *      现在改成勾 vs 短横——这是形状差异，压色、缩小都还认得出来。
+ *
+ * 窄屏（≤720px）：`.panel-head` 换行，过滤条 `order: 4` 独占一行并横向滚动，
+ * 否则会被面板右边裁掉、点不到（见文件底部媒体查询）。
+ * 宽屏下 `flex-wrap: nowrap` + `min-width: 0` 保证不折行——
+ * `1.x` 这类短标签本身不会挤成两行。
+ */
+.chart-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  margin-left: 8px;
+  min-width: 0;
+}
+.chart-filters:empty { display: none; }
+
+/* 漏斗：灰色、不可点，只是这排东西的说明符 */
+.filter-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink-faint);
+  opacity: .8;
+  flex: none;
+}
+
+/*
+ * 版本过滤：chip 本身无边框、无底色，但**方框必须留着**。
+ *
+ * 走过一次弯路：为了不扎眼，把外框和勾选框一起删了，结果只剩「✓ 1.x」这样的纯文字，
+ * 看上去就是一行说明文字，没人知道它能点。
+ * 现在：外层 chip 保持无框无底（不抢主图的注意力），
+ * 内层勾选框保留 1px 细框 —— 那个方框就是「这里可以勾」的唯一提示，不能删。
+ *
+ * **选中态不用金色，只用中性灰**。`--accent`（金 #F5C04A）在这张报表里是有语义的：
+ * `tag[data-tone="positive"]` 用它表示「欧气/好运」。过滤器勾上 ≠ 好运，
+ * 用金色会被读成「勾了就是欧」，是错误暗示。tab 选中态仍用金色没问题——
+ * 那是「你现在在看哪个」，与运气无关。
+ * 区分只靠**形状**（勾 vs 短横）+ 明暗：勾的亮度可比短横高，两者形状本已不同，
+ * 灰度、打码、甚至完全去掉颜色后依然分得出来。
+ */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 3px 1px 1px;
+  border: 0;
+  background: none;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: none;
+  transition: color .12s ease;
+}
+.chip:hover { color: var(--ink); }
+
+/* 勾选框：细框常驻，是「可点击」的唯一视觉暗示 */
+.chip .chip-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 3px;
+  background: none;
+  flex: none;
+  color: var(--panel-edge);
+  transition: border-color .12s ease, color .12s ease;
+}
+.chip .chip-box svg { display: block; }
+
+.chip:hover .chip-box { border-color: var(--ink-faint); }
+/* 选中：文字提亮 + 框描边提亮 + 勾用正常文字色。全程中性灰，不碰 accent。 */
+.chip[aria-pressed="true"] { color: var(--ink); }
+.chip[aria-pressed="true"] .chip-box {
+  border-color: var(--ink-faint);
+  color: var(--ink);
+}
+.chip:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
 
 
 .collapse-btn {
@@ -332,6 +477,16 @@ html, body {
 
 .chart-main { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 
+/* 没有任何可画频道时的空态：居中一句话，不要一张坏掉的坐标轴 */
+.chart-main .chart-empty {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
 .chart-panel {
   flex: 1 1 auto;
   display: flex;
@@ -359,7 +514,11 @@ html, body {
   margin-right: 4px;
   vertical-align: -1px;
 }
-.legend .legend-tail { margin-left: auto; font-family: var(--mono); }
+/*
+ * 图例尾注（「官方接口 · N 条 S 记录」）已按用户要求删除。
+ * 原来靠 `.legend-tail { margin-left: auto }` 把尾注推到最右，
+ * 那条规则跟着一起删掉了——留着没用，而且以后有人加同类元素会被它意外推到右边。
+ */
 
 /* ------------------------------------------------------------ 抽卡详情 */
 
@@ -551,7 +710,14 @@ html, body {
    */
   cursor: default;
 }
-/* 高度与详情图标一致（26px），问号用金色描边方块，和真实头像区分开 */
+/*
+ * 垫抽行的问号块：**尺寸、圆角、底色都跟头像一致**（26px / 6px / #26262e），
+ * 只靠一个「?」和一圈暗描边表明「下一个 S 未知」。
+ *
+ * 早先做成亮金色渐变配深棕文字：尺寸虽然对，但一整排暗色头像里突然出现一个
+ * 高亮方块，看上去像「没加载出来的破图」而不是刻意的占位符，风格也不搭。
+ * 占位符应当安静——它要说明的是「这里还没有东西」，不该比真头像更显眼。
+ */
 .pity-tile {
   flex: 0 0 auto;
   width: 26px;
@@ -561,11 +727,11 @@ html, body {
   align-items: center;
   justify-content: center;
   font-family: var(--mono);
-  font-size: 15px;
-  font-weight: 700;
-  color: #3a2a05;
-  background: linear-gradient(160deg, #f6d27a, #c8871f);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-faint);
+  background: #26262e;
+  box-shadow: inset 0 0 0 1px #35353f;
 }
 /*
  * 绿色斜纹条：斜纹方向和详情里的「红条（非酋）」一致，
@@ -589,6 +755,31 @@ html, body {
   .nick { font-size: 22px; }
   .kpi .v { font-size: 20px; }
   .meta-line { gap: 14px; }
+}
+
+/*
+ * 窄屏（手机）：面板头一行塞不下「标题 + 频段 tab + 漏斗过滤 + meta + 折叠按钮」。
+ *
+ * 早先 panel-head 是 nowrap，窄屏下后面的内容直接被裁到面板外面——
+ * 实测 390px 宽时 3.x 那个勾选框整个看不见，点不到等于功能没有。
+ * 这里让 header 换行、过滤条独占一行，并允许它横向滚动（档位最多 3~5 个，滚一下就能全看到）。
+ * 不去压缩 chip 尺寸：10.5px 已经接近可读下限，再小就既难点也难认。
+ */
+@media (max-width: 720px) {
+  .panel-head {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .chart-filters {
+    order: 4;
+    width: 100%;
+    margin-left: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .chart-filters::-webkit-scrollbar { display: none; }
+  .panel-meta { margin-left: auto; }
+  .collapse-btn { margin-left: 0; }
 }
 
 @media print {

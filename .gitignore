@@ -14,5 +14,7 @@
 #   assets/avatars/                角色圆头像缓存
 #   assets/items/                  角色/音擎/邦布图标缓存
 
-# 测试产物（含真实昵称/UID，不入库）
+# 截图产物（含真实昵称/UID，不入库）
+# screenshot.mjs 默认就写 docs/shots/，忘了加 --privacy 2 时这里兜住，不会误提交
 docs/demo/
+docs/shots/
