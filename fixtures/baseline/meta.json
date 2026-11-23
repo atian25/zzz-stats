@@ -47,5 +47,6 @@
   },
   "total_gacha_count": 3714,
   "total_s_count": 62,
-  "total_counts_exclude_bangboo": true
+  "total_counts_exclude_bangboo": true,
+  "synthetic": true
 }

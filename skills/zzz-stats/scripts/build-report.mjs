@@ -1289,6 +1289,18 @@ const report = {
     nickname: meta.nickname ?? null,
     nicknameKnown: Boolean(meta.nickname),
     uid: String(meta.uid ?? ''),
+    /*
+     * 这套数据是不是编的（`fixtures/` 里的开发基线）。
+     *
+     * 唯一消费者是 scripts/screenshot.mjs 的 `--preview`：标注为 true 的数据集
+     * 出 README 头图时不再强制打码（「玩家A」遮成「玩*****」只是难看，不保护任何人）；
+     * 没有这个标记的**一律当真实数据**，仍然强制打码 + 原断言。
+     *
+     * 只认严格的布尔 true：`"true"` 字符串、1、缺失 都按真实处理——
+     * 手写 meta.json 时最容易写成字符串，而那种错误必须往安全那边倒。
+     * 前端不读这个字段，它不进任何渲染路径。
+     */
+    synthetic: meta.synthetic === true,
     region: meta.region ?? 'prod_gf_cn',
     /*
      * 区服名：优先按 region 查表，查不到再看 meta.server（cn / os），最后原样显示。

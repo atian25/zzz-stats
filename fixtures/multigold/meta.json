@@ -9,5 +9,6 @@
   "source": "https://act-api-takumi.mihoyo.com/event/nap_gacha_record",
   "total_gacha_count": 8245,
   "total_s_count": 140,
-  "total_counts_exclude_bangboo": true
+  "total_counts_exclude_bangboo": true,
+  "synthetic": true
 }

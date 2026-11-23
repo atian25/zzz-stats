@@ -13,7 +13,8 @@
  *   node skills/zzz-stats/scripts/screenshot.mjs --width 1440 --height 900
  *   node skills/zzz-stats/scripts/screenshot.mjs --out-dir /tmp/shots --html output/<账号名>/report.html
  *   node skills/zzz-stats/scripts/screenshot.mjs --privacy 2           # 截图前先点全打码（对外用）
- *   node skills/zzz-stats/scripts/screenshot.mjs --preview             # README 预览图 → docs/preview.png（整页 2x，强制打码）
+ *   node skills/zzz-stats/scripts/screenshot.mjs --preview             # README 预览图 → docs/preview.png（整页 2x）
+ *                                                                      # 真实数据强制打码；meta.synthetic === true 的数据集不打码
  *   node skills/zzz-stats/scripts/screenshot.mjs --chart 音擎 --filter 2
  *   node skills/zzz-stats/scripts/screenshot.mjs --detail 独家重映     # 切底部详情面板的频段
  *
@@ -30,6 +31,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { findChrome, chromeArgs } from './drivers.mjs';
 import { wantsHelp, printHelp, WORK_DIR_NOTE } from './cli-help.mjs';
 import { listOutputReports } from './datasets.mjs';
+import { extractReport, previewPrivacyPolicy, checkPreviewGuard } from './preview-privacy.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /*
@@ -50,7 +52,7 @@ if (wantsHelp()) {
       { flag: '--filter <档>', desc: '只留指定版本档位（如 2；多个用 1,2）' },
       { flag: '--detail <名>', desc: '切底部详情面板的频段 tab（如 独家重映）' },
       { flag: '--collapse', desc: '收起主图，让详情面板进首屏' },
-      { flag: '--preview', desc: '出 README 头图：整页 2x，强制打码到 2 并断言' },
+      { flag: '--preview', desc: '出 README 头图：整页 2x；真实数据强制打码到 2 并断言，meta.synthetic 为 true 的数据集不打码' },
       { flag: '--out-file <file>', desc: '配合 --preview 指定输出，默认 docs/preview.png' },
       { flag: '--cwd <dir>', desc: '用户工作目录，默认当前目录' },
       { flag: '--help, -h', desc: '打印本帮助后退出，不启动浏览器' },
@@ -250,11 +252,33 @@ const tmpDir = join(tmpdir(), `zzz-shot-${randomBytes(4).toString('hex')}`);
 mkdirSync(tmpDir, { recursive: true });
 const pageFile = join(tmpDir, 'report.html');
 /*
- * 预览图**强制**打码到 2，不接受用 --privacy 覆盖。
- * README 是对外公开的，这张图从默认的全显示状态直接截就等于把真名和 UID 贴到互联网上；
- * report-rules.md §2 把这条定成硬约束，已经因为同一件事踩过两次。
+ * 预览图的隐私策略：**按数据集来源分流**，判据只有一个——产物里 `report.meta.synthetic === true`。
+ *
+ * 这段历史必须留着，改之前先读懂：
+ *   - README 的预览图连着两版把真名和真 UID 截进了公开仓库，事后才发现。
+ *     于是 `--preview` 被定成**无条件**强制打码到 2，截图前再断言 `#nick` / `#uid` 都含 `*`，
+ *     断言不过就中止、不写文件。那道断言是对的，**不能拆**。
+ *   - 但它对 `fixtures/` 里的假数据没有意义。`fixtures/baseline` 是「玩家A / 10000001」，
+ *     本来就是编的，遮成「玩*****」只是让预览图变难看，还掩盖真实排版（用户原话：
+ *     「github 截图没更新，既然是模拟名字的话，就不用打星号了」）。
+ *
+ * 所以现在分两条路，**都在脚本里断言，不是「记得点两下」**：
+ *   synthetic === true  → 不点眼睛（保持状态 0），断言反着来：昵称/UID 里**不含** `*`；
+ *   其余（含字段缺失）  → 维持原样：强制 2，断言 `*` 必须在。
+ *
+ * 判定逻辑在 preview-privacy.mjs（纯函数，可对着假数据测，见 test-preview-privacy.mjs）。
+ * **没有标记一律当真实数据**：不猜、不按 UID 长度或昵称形状推断——
+ * 猜错一次就是真名进公开仓库，而「忘了写标记」只会让图难看一点。
  */
-const EFFECTIVE_PRIVACY = PREVIEW ? 2 : PRIVACY;
+const previewPolicy = PREVIEW
+  ? previewPrivacyPolicy(extractReport(readFileSync(HTML, 'utf8')))
+  : null;
+const EFFECTIVE_PRIVACY = PREVIEW ? previewPolicy.privacy : PRIVACY;
+
+if (PREVIEW) {
+  console.log(`预览图隐私：${previewPolicy.reason} → 眼睛点到 ${EFFECTIVE_PRIVACY}`
+    + `，断言「${previewPolicy.expectMasked ? '已打码（必须含 *）' : '未打码（不许含 *）'}」`);
+}
 writeFileSync(pageFile, withState(readFileSync(HTML, 'utf8'), { privacy: EFFECTIVE_PRIVACY, chartLabel: CHART, filters: FILTER, detailLabel: DETAIL, collapse: COLLAPSE }), 'utf8');
 
 /*
@@ -401,12 +425,15 @@ try {
       }, sessionId).catch(() => null);
 
       /*
-       * 打码硬断言：对外发的图在截图**之前**确认真的盖住了。
+       * 打码硬断言：对外发的图在截图**之前**确认隐私状态真的对上了。
        *
-       * report-rules.md §2 把这条定成硬约束，理由是踩过两次——README 的预览图
-       * 连着两版把真名和 UID 截进了公开仓库，而打码版一旦推送就再也收不回来
-       * （`git show <旧commit>:docs/preview.png` 永远取得到）。
-       * 脚本原来只负责点击、不负责验证，等于把「点没点中」交给运气。
+       * 两条分支的期待相反，都由 preview-privacy.mjs 的 checkPreviewGuard() 判定：
+       *   - 真实数据：必须已经遮住（`*` 必须在），这是踩过两次的那条硬约束；
+       *   - synthetic 数据：必须没遮（`*` 不许在），且昵称/UID 不能是空——空说明页面没渲染出来。
+       *
+       * 为什么两边都要断言、而不是「模拟数据就放松一下」：
+       * 放松成「不管」的话，一次 CSS/JS 事故把页面渲染成空白、或者把 synthetic 判错，
+       * 就没人看得出来了。断言反着写，两种事故都会当场中止。
        *
        * 宁可不出图，也不出一张带真名的图：断言不过直接中止，不写文件。
        */
@@ -421,14 +448,14 @@ try {
         }, sessionId).catch(() => null);
         let g = null;
         try { g = guard?.result?.value ? JSON.parse(guard.result.value) : null; } catch { /* ignore */ }
-        const nickOk = !!g && g.nick.includes('*');
-        const uidOk = !!g && /\*/.test(g.uid);
-        if (!g || g.eye !== '2' || !nickOk || !uidOk) {
+        const verdict = checkPreviewGuard(previewPolicy, g);
+        if (!verdict.ok) {
           failed += 1;
-          console.error(`  ✗ 打码断言没过（eye=${g?.eye} nick=${JSON.stringify(g?.nick)} uid=${JSON.stringify(g?.uid)}）`);
-          console.error('    对外图不允许带真名/真 UID，已中止，未写文件。');
+          console.error(`  ✗ 隐私断言没过（${verdict.why}）`);
+          console.error('    真实数据不允许带真名/真 UID，synthetic 数据不允许被误遮，已中止，未写文件。');
           continue;
         }
+        console.log(`  ✓ 隐私断言：eye=${g.eye} nick=${JSON.stringify(g.nick)} uid=${JSON.stringify(g.uid)}`);
       }
 
       /*
