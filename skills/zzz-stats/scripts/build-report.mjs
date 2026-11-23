@@ -1070,6 +1070,29 @@ function detailRows(channel, merged) {
  * 最后按 itemId 稳定排序。不按名字排——中文名排序对读者没有意义。
  * 不按出现次数排：那样「从没 UP 过但最近刚拿到」的珂蕾妲会压在最新的 UP 角色上面。
  */
+/*
+ * 右栏每行的「欧 / 非」标记：每 UP 均抽 vs 理论期望。
+ *
+ * 口径用户已定死（config 的 numbers._luckComment 有完整理由）：
+ *   avg = pulls / upRounds（各轮 total 累加 ÷ 当 UP 的轮数）
+ *   avg <  baseline × (1 − band)  → euro   🌟
+ *   avg >  baseline × (1 + band)  → bad    🌚
+ *   其余                          → null   不标，保持干净
+ *
+ * **只对 isUp 判**：非 UP 角色没有抽数（它们是被歪出来的，抽数记在别人头上），
+ * 给它们判会算出 0 抽 = 欧，纯属胡说。
+ */
+function luckOf(c, numbers) {
+  if (!c.isUp || !c.upRounds) return null;
+  const avg = c.pulls / c.upRounds;
+  const base = numbers.luckBaseline;
+  const band = numbers.luckBand;
+  if (!(base > 0) || !(band >= 0)) return null; // 配置写坏了就不标，不猜
+  if (avg < base * (1 - band)) return 'euro';
+  if (avg > base * (1 + band)) return 'bad';
+  return null;
+}
+
 function charSummary() {
   const byId = new Map();
   const touch = (itemId, name) => {
@@ -1182,6 +1205,11 @@ function charSummary() {
       lostOut: x.lostOut,
       lostOutMain: x.lostOutMain,
       lostOutSide: x.lostOutSide,
+      /*
+       * 欧 / 非标记：'euro' | 'bad' | null。渲染层只按这个值挑 emoji，
+       * 不在前端重算——阈值改了要跟着 config 走，两处各算一遍必然漂移。
+       */
+      luck: luckOf({ isUp: x.upRounds > 0, upRounds: x.upRounds, pulls: x.pulls }, CFG.numbers),
     }))
     .sort((a, b) => Number(b.isUp) - Number(a.isUp)
       || b.lastTime - a.lastTime
@@ -1787,6 +1815,37 @@ if (!Object.keys(pullsMaxCfg).length) {
         `右栏 ${c.name} 有 ${withLoss} 次获得在 tip 里写了歪出明细，但它只有 ${c.lostRounds} 轮歪：` +
         `疑似把十连副金（round.side）混进了 losses——side 的语义是「下一轮的保底已被吃掉」，不是这一轮歪`,
       );
+    }
+  }
+}
+
+/*
+ * 右栏欧非标记断言：防「标记与行内数字互相打脸」。
+ *
+ * ① **只许 UP 角色有标记。** 非 UP 角色没有抽数，标了就是 0 抽 = 欧的胡说。
+ * ② **标记必须与行内均抽自洽。** 逐行用 `pulls / upRounds` 复算一遍，
+ *    与 `luck` 对不上说明判定用错了字段（比如拿 pulls 而不是均抽去比阈值）。
+ * ③ **阈值必须真从 config 读。** 把 luckBaseline 改成 0 之类会静默让全部角色变「非」，
+ *    所以显式检查它是个正数、且区间下界 < 上界。
+ */
+{
+  const rows = report.charSummary ?? [];
+  const num = CFG.numbers;
+  const lo = num.luckBaseline * (1 - num.luckBand);
+  const hi = num.luckBaseline * (1 + num.luckBand);
+  if (!(num.luckBaseline > 0) || !(num.luckBand >= 0) || !(lo < hi)) {
+    fatal.push(`numbers.luckBaseline(${num.luckBaseline}) / luckBand(${num.luckBand}) 配置无效：算不出 [下界, 上界]`);
+  } else {
+    for (const c of rows) {
+      if (!c.isUp && c.luck) {
+        fatal.push(`右栏 ${c.name} 不是 UP 角色却有欧非标记 ${c.luck}：非 UP 没有抽数，不该判`);
+      }
+      if (!c.isUp) continue;
+      const avg = c.pulls / c.upRounds;
+      const want = avg < lo ? 'euro' : (avg > hi ? 'bad' : null);
+      if (c.luck !== want) {
+        fatal.push(`右栏 ${c.name} 均抽 ${avg.toFixed(1)}（${c.pulls}/${c.upRounds}）应是 ${want ?? '平档'}，实际 ${c.luck ?? '平档'}：判定口径与行内数字不一致`);
+      }
     }
   }
 }

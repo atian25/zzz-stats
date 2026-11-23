@@ -1086,6 +1086,39 @@ html, body {
   color: var(--ink);
   font-weight: 600;
 }
+/*
+ * 欧 / 非标记（🌟 / 🌚）。
+ *
+ * ## 为什么单独设 font-family
+ *
+ * `.detail-char-stats` 是 `var(--mono)`（等宽，数字对齐用）。彩色 emoji 在 mono 栈里
+ * 会被回退到黑白字形或被压成豆腐块——`DM Mono` / Menlo 都没有彩色 emoji。
+ * 所以这里显式把 `Apple Color Emoji` / `Segoe UI Emoji` / `Noto Color Emoji` 排在最前，
+ * 让浏览器直接命中彩色字体，后面的 mono 只是兜底。
+ *
+ * ## 为什么不会撑高 34px 行
+ *
+ * 行高是硬约束（见 `.detail-char` 上面那段注释，8 × 34 = 272 的最大值依赖它）。
+ * 三件事一起保证它不撑高：
+ *  ① `font-size: 10px` —— 与 stats 行同量级，emjio 实际字形约 12px 高，低于 14px 的 line-height；
+ *  ② `line-height: 14px` 显式写死，不让 emoji 字体自带的行高参与计算；
+ *  ③ `display: inline-block` + `vertical-align: middle` 去掉基线下沉（emoji 字形底边常低于基线）。
+ * 实测 25 行仍是 34px、`.detail-chars-body` 高度不变（1440 480 / 720 272）。
+ */
+.detail-char-luck {
+  flex: 0 0 auto;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", var(--mono);
+  font-size: 10px;
+  line-height: 14px;
+  display: inline-block;
+  vertical-align: middle;
+  /*
+   * 去掉 emoji 字形自带的侧边留白：右侧留白现在正好顶在行尾，
+   * 不减掉的话最长那行（「2 影 384 抽 歪 2 次」+ 标记）在 720 窄档更容易贴边。
+   * 用负 margin 而不是改 gap——gap 是 stats 行所有格位的间距，动它会连带动别的。
+   */
+  margin-right: -1px;
+}
 .detail-char-pulls { color: var(--ink-dim); }
 .detail-char-lost { color: var(--detail-bad, #ff5f6d); }
 /*

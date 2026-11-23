@@ -1790,6 +1790,25 @@
       }
       main.appendChild(top);
 
+      /*
+       * 欧 / 非标记：**行尾最后一个**，排在「N 影 / N 抽 / 歪 N 次」之后。
+       *
+       * 用户原话：「放在后面，不要放前面」。所以它紧跟文字尾巴，**不做任何对齐处理**：
+       * 既不用 `margin-left: auto` 推到行最右，也不回行首——每行文字长短不同，
+       * emoji 的位置就跟着参差，这正是用户要的效果（他明确否掉了「为了对齐好看」的做法）。
+       *
+       * 判定在构建期算好（`build-report.mjs` 的 `luckOf()`，阈值在
+       * `config/report.json` 的 `numbers.luckBaseline` / `luckBand`），
+       * 这里只按 `c.luck` 挑 emoji，**不在前端重算**——两处各算一遍必然漂移。
+       *
+       * 平档（`luck === null`）**不 append 任何东西**：不留空 span、不占位。
+       * 用户要的是「干净」，一个空盒子会让行尾多出一段空白。
+       *
+       * 无障碍：emoji 是内容不是装饰，所以带 `role="img"` + `aria-label`，读屏能读出「欧」/「非」。
+       * **不要再加原生 `title`**：整行已经有 `row.dataset.tip`（`buildCharTip`）那套自定义提示，
+       * 再加 title 会多出一个浏览器原生 tooltip，悬停时两个提示叠在一起；
+       * 而且用户明确说过不要任何解释文字，语义用 aria-label 交代就够了。
+       */
       const stats = el('div', 'detail-char-stats');
       // 影画徽标 —— 两种角色都有
       const badge = el('span', 'detail-char-portraits');
@@ -1834,6 +1853,19 @@
        * （`is_up === false` 表示它是被歪出来的，不是它输了 50/50）。
        * 数据层仍保留 `pulls` / `lostOut` 供 tip 与将来使用，但**界面不渲染**。
        */
+      /*
+       * emoji 追加在 stats 行**最后**：此时「影画 / 抽数 / 歪 N 次」三个 span 已就位。
+       * 注意 `detail-char-lost` 对没歪的角色是**空 span 但必须保留**（见上面那段注释），
+       * emoji 排在它之后，不影响那套占位逻辑——空 span 没有内容宽度，emoji 不会因此被推开。
+       */
+      const luck = c.luck ? CFG.copy.detailCharLuck?.[c.luck] : null;
+      if (luck) {
+        const mark = el('span', 'detail-char-luck', luck.emoji);
+        mark.dataset.luck = c.luck;
+        mark.setAttribute('role', 'img');
+        mark.setAttribute('aria-label', luck.label);
+        stats.appendChild(mark);
+      }
       main.appendChild(stats);
       row.appendChild(main);
 

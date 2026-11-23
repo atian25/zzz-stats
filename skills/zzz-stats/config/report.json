@@ -3,9 +3,12 @@
   "version": "2026-11",
   "_comment": "报表口径与文案的唯一来源。改称号、改阈值、改配色都只改这里，不要改 scripts/ 或 assets/report/。",
   "numbers": {
-    "_comment": "sPityExpect × fiftyFifty = 角色池每 UP 期望抽数（62.5 × 1.5 = 93.75），只在文档和标签文案里用作理论基准；判档一律用账号自己的均值。detailBarDivisor：详情条满格对应的抽数（100 抽 = 满格）。 countsTowardTotals：邦布抽卡用的是邦布币，和调频券不是同一种货币，所以不计入「总抽卡数 / 平均每金」这些跨频道汇总。channels[].pityCap：该频段官方保底抽数（常驻/独家/重映 90，音擎/回响 80，邦布 80，见 references/api.md §5）。",
+    "_comment": "sPityExpect × fiftyFifty = 角色池每 UP 期望抽数（62.5 × 1.5 = 93.75），只在文档和标签文案里用作理论基准；判档一律用账号自己的均值。detailBarDivisor：详情条满格对应的抽数（100 抽 = 满格）。 countsTowardTotals：邦布抽卡用的是邦布币，和调频券不是同一种货币，所以不计入「总抽卡数 / 平均每金」这些跨频道汇总。channels[].pityCap：该频段官方保底抽数（常驻/独家/重映 90，音擎/回响 80，邦布 80，见 references/api.md §5）。luckBaseline / luckBand：右栏每行欧非标记的判据，见下一条 _luckComment。",
     "sPityExpect": 62.5,
     "fiftyFifty": 1.5,
+    "_luckComment": "右栏欧非标记的判定口径，用户选定，不要改。基准 luckBaseline = 理论期望 sPityExpect × fiftyFifty = 62.5 × 1.5 = 93.75，±luckBand(15%) 为平档：区间 [79.6875, 107.8125]。每 UP 均抽 = pulls / upRounds（该角色各轮 total 累加 ÷ 它当 UP 的轮数），均抽 < 下界记欧（🌟）、> 上界记非（🌚）、中间不标。**用理论值而不是账号均值**——账号均值会被账号整体运气拉平，同一只角色在不同账号会得到不同标记；也**不是「歪没歪」**：蕾米埃尔 194 抽听着多，但它 3 只均 64.7 属欧；简 159 抽只 1 只、均 159 才是非。只对 isUp === true 的角色判，非 UP 角色没有抽数据，不标也不占位。",
+    "luckBaseline": 93.75,
+    "luckBand": 0.15,
     "baselineWinRate": 50,
     "extremePulls": 40,
     "multiGoldSortGap": 9,
@@ -338,6 +341,11 @@
     "detailCharsEmpty": "这个账号还没有角色记录",
     "detailCharPulls": "{n} 抽",
     "detailCharLost": "歪 {n} 次",
+    "_luckLabelComment": "右栏欧非标记的 emoji 与无障碍标签，配套 numbers.luckBaseline / luckBand。euro 用 🌟、bad 用 🌚；平档不标（用 null，不要写空字符串占位）。label 会进 aria-label，读屏能读出「欧」/「非」，不能只有图没有语义。不要加 title——整行已有 data-tip 自定义提示，两个会叠。",
+    "detailCharLuck": {
+      "euro": { "emoji": "🌟", "label": "欧" },
+      "bad": { "emoji": "🌚", "label": "非" }
+    },
     "mergeToggle": "真实抽数",
     "legend": [
       {
