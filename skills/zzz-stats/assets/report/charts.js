@@ -1727,14 +1727,18 @@
    * **不要在渲染层重新聚合**：那会让「左栏和右栏对不上」这类问题变成两处口径各写一遍。
    */
   function renderDetailChars() {
-    const box = $('#detail-chars');
+    /*
+     * 真正的容器是 `.detail-chars-fill`（绝对定位铺满右栏，不参与行高计算）。
+     * 父级 `#detail-chars` 只负责被 grid 拉成与左栏等高，见 charts.css 的说明。
+     */
+    const box = $('#detail-chars-fill') || $('#detail-chars');
     if (!box) return;
     box.innerHTML = '';
 
-    const head = el('div', 'detail-chars-head');
-    head.appendChild(el('span', 'detail-chars-title', CFG.copy.detailCharsTitle ?? '角色汇总'));
-    box.appendChild(head);
-
+    /*
+     * 标题不在这里画：它在 `.detail-head` 里和「抽卡详情」并排、由模板直接输出，
+     * 这样两个标题天然同一行、各贴自己那一列。这里只负责列表与口径小字。
+     */
     const chars = R.charSummary ?? [];
     if (!chars.length) {
       box.appendChild(el('div', 'detail-chars-empty', CFG.copy.detailCharsEmpty ?? '这个账号还没有角色记录'));
@@ -1771,22 +1775,37 @@
       main.appendChild(top);
 
       const stats = el('div', 'detail-char-stats');
-      // 影画徽标
+      // 影画徽标 —— 两种角色都有
       const badge = el('span', 'detail-char-portraits');
       badge.textContent = `${c.portraits} 影`;
       badge.dataset.tip = `${c.name} 在全部频段的记录中出现 ${c.appearances} 次；第 1 只给 0 影，之后每只 +1 影`;
-
       stats.appendChild(badge);
-      stats.appendChild(el('span', 'detail-char-pulls', fill(CFG.copy.detailCharPulls ?? '{n} 抽', { n: c.pulls })));
 
-      if (c.lostApplicable) {
-        if (c.lost > 0) {
-          const lost = el('span', 'detail-char-lost', fill(CFG.copy.detailCharLost ?? '歪 {n} 次', { n: c.lost }));
-          stats.appendChild(lost);
+      if (c.isUp) {
+        /*
+         * UP 角色才显示抽数与歪轮数。
+         *
+         * 抽数口径（A）：只累加**这个角色自己每条记录**的 `count`。
+         * `count` 是距上一金的抽数，所以雅 3 只 = 78+77+75 = 230。
+         * 期间歪出去的那些抽**不计入**——那是别人（歪出的角色）的成本，
+         * 算进来会把「拿到这只雅花了多少」抬高。
+         */
+        stats.appendChild(el('span', 'detail-char-pulls', fill(CFG.copy.detailCharPulls ?? '{n} 抽', { n: c.pulls })));
+        if (c.lostRounds > 0) {
+          stats.appendChild(el('span', 'detail-char-lost', fill(CFG.copy.detailCharLost ?? '歪 {n} 次', { n: c.lostRounds })));
         } else {
           stats.appendChild(el('span', 'detail-char-nolost', CFG.copy.detailCharNoLost ?? '未歪'));
         }
       }
+      /*
+       * 非 UP 角色**只显示影画**（B）。
+       *
+       * 用户的说法：「非 UP 角色 显示几命即可」。这些角色从来没有当过 UP，
+       * 给它们算「一共多少抽」没有意义——它们是别人池子里歪出来的，
+       * 抽数属于把它歪出来的那个 UP 角色；而「歪了几次」在它们身上语义正好反了
+       * （`is_up === false` 表示它是被歪出来的，不是它输了 50/50）。
+       * 数据层仍保留 `pulls` / `lostOut` 供 tip 与将来使用，但**界面不渲染**。
+       */
       main.appendChild(stats);
       row.appendChild(main);
 
@@ -1803,13 +1822,22 @@
     const lines = [
       `${c.name}`,
       `全部频段合计出现 ${c.appearances} 次 → ${c.portraits} 影（第 1 只 0 影）`,
-      `一共 ${c.pulls} 抽（含歪出的记录）`,
     ];
-    /*
-     * 歪的语义是「50/50 输了」，只对有 50/50 的频段成立。
-     * 常驻 / 邦布抽到的角色不算歪，所以这里只在出现过 50/50 记录时才写这一行。
-     */
-    if (c.lostApplicable) lines.push(c.lost > 0 ? `其中 50/50 歪出 ${c.lost} 次` : '50/50 没有歪过');
+    if (c.isUp) {
+      lines.push(
+        // A 口径：只累加这个角色自己每条记录的 count，不含期间歪出的抽
+        `一共 ${c.pulls} 抽（这个角色自己每条记录的抽数累加）`,
+        c.lostRounds > 0
+          ? `追它共 ${c.upRounds} 轮，其中 ${c.lostRounds} 轮歪了 50/50`
+          : `追它共 ${c.upRounds} 轮，50/50 一次没歪`,
+      );
+    } else {
+      /*
+       * 非 UP 角色：界面只给影画（B）。tip 是补充说明，不重复展示被刻意省掉的数字，
+       * 只解释「为什么这里没有抽数和歪」——否则读者会以为是漏了。
+       */
+      lines.push('没有当过 UP，所以不统计抽数与歪次数');
+    }
     return lines.join('\n');
   }
 

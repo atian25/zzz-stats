@@ -63,20 +63,33 @@
 
 <!-- 第二屏：抽卡详情 -->
 <section class="panel detail-panel">
+  <!--
+    头部只留两个**同级**栏标题：「抽卡详情」(左栏) …… 「角色汇总」(右栏)。
+    它们必须落在同一行、各自贴住自己那一列的左边缘，读起来才像两个平级的栏标题。
+
+    频段 tab / #merge / #detail-meta 全部挪进左栏内部的第一行（.detail-toolbar）。
+    为什么：它们描述的都是「左栏这块列表」的状态，挂在整张卡的表头会让人以为
+    它们对右栏也生效——而右栏是跨频段全局汇总，跟 tab 无关。
+  -->
   <div class="detail-head">
     <span class="detail-title">/*__COPY_DETAIL_TITLE__*/</span>
-    <div class="detail-tabs" id="detail-tabs" role="tablist"></div>
-    <div class="detail-tools">
-      <label class="merge-toggle">
-        <input type="checkbox" id="merge">
-        <span>/*__COPY_MERGE_TOGGLE__*/</span>
-      </label>
-      <span class="detail-meta" id="detail-meta"></span>
-    </div>
+    <span class="detail-chars-title" id="detail-chars-title">/*__COPY_DETAIL_CHARS_TITLE__*/</span>
   </div>
   <div class="detail-body">
-    <div class="detail-list" id="detail-list"></div>
-    <aside class="detail-chars" id="detail-chars"></aside>
+    <div class="detail-main">
+      <div class="detail-toolbar">
+        <div class="detail-tabs" id="detail-tabs" role="tablist"></div>
+        <div class="detail-tools">
+          <label class="merge-toggle">
+            <input type="checkbox" id="merge">
+            <span>/*__COPY_MERGE_TOGGLE__*/</span>
+          </label>
+          <span class="detail-meta" id="detail-meta"></span>
+        </div>
+      </div>
+      <div class="detail-list" id="detail-list"></div>
+    </div>
+    <aside class="detail-chars" id="detail-chars"><div class="detail-chars-fill" id="detail-chars-fill"></div></aside>
   </div>
 </section>
 

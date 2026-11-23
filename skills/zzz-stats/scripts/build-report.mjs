@@ -1031,43 +1031,90 @@ function detailRows(channel, merged) {
  * - **影画** = 出现次数 − 1。第 1 只给 0 影画，第 2 只给 1 影画（游戏里升 1 影需要 2 只）。
  *   注意这是**按记录次数反推**的，不是游戏里读到的影画等级：超过 7 只（6 影后继续抽）
  *   的情况照实显示 6 以上，所以前端要注明口径，不能写成确定结论。
- * - **总抽数** = 该角色所有记录的 `count` 之和。`count` 是「距上一金抽数」，
- *   所以这个和就是「为了拿到这些只，一共花了多少抽」。**歪出来的记录也计入**——
- *   它同样是这个角色的获取成本，排除掉会低估。
- * - **歪了几次**：只数**有 50/50 的频段**里 `is_up === false` 的记录条数。
- *   歪的语义是「50/50 输了」，只对独家 / 独家重映成立；常驻和邦布没有 50/50，
- *   角色在常驻被抽到**不算歪**，否则会把常驻记录全算成歪。
+ * - **总抽数** = 该角色**自己每条记录**的 `count` 之和。`count` 是「距上一金抽数」，
+ *   所以雅 3 只 = 78+77+75 = 230 抽。**期间歪出去的抽不计入**——那是被歪出的角色的成本，
+ *   算进来会抬高这个角色自己的获取成本。
  *
- * 排序：先按出现次数降序（影画高的更有信息量），再按总抽数降序，最后按 itemId 稳定排序。
- * 不用名字排——中文名排序对读者没有意义。
+ * **只有 UP 角色才展示抽数与歪**（用户定的：「非 UP 角色显示几命即可」）。
+ * 非 UP 角色从没当过 UP，给它算「一共多少抽」没有意义（抽数属于把它歪出来的那个 UP），
+ * 而「歪了几次」在它身上恰好是反的。数据里仍保留 `pulls` / `lostOut` 供 tip 与将来使用，
+ * 但渲染层不输出。
+ *
+ * ## 「歪」的两种语义（这是被写错过一次的地方，别再用 `is_up === false` 数条数）
+ *
+ * `is_up === false` 的意思是**这个角色是被歪出来的**，不是「这个角色歪了 N 次」。
+ * 拿它当「歪次数」，会让猫又这种常驻角色显示「歪 2 次」——语义正好反了：
+ * 它从来没当过 UP，怎么可能输 50/50。
+ *
+ * 正确的判定走**已有的轮次模型**（`buildRounds` / `markGuaranteed`，与主图同一套）：
+ *
+ * - **UP 角色**：一轮 UP 里 `off > 0`（期间出过非 UP 金）或 `guar`（上一轮副金带出的保底）
+ *   = 这一轮歪了。所以「歪 N 次」= 为了追它，一共歪过几轮。
+ * - **非 UP 角色**：「被歪出 N 次」= 它在别人的轮次里作为非 UP 金出现过几回
+ *   （`round.losts` 是被歪掉的，`round.side` 是十连里跟在 UP 后面的副金，两者都是「被歪出」）。
+ *
+ * 只数 `has5050` 且 `kind === 'avatar'` 的频道（独家 / 独家重映）：歪的语义是「50/50 输了」，
+ * 常驻和邦布没有 50/50，那里的角色不算被歪出；音擎的 50/50 输给音擎，与角色无关。
+ *
+ * ## 排序
+ *
+ * UP 角色在前、非 UP 在后；两组各自按**最后获得时间倒序**（该角色所有记录的 `record_time` 最大值），
+ * 最后按 itemId 稳定排序。不按名字排——中文名排序对读者没有意义。
+ * 不按出现次数排：那样「从没 UP 过但最近刚拿到」的珂蕾妲会压在最新的 UP 角色上面。
  */
 function charSummary() {
   const byId = new Map();
+  const touch = (itemId, name) => {
+    let cur = byId.get(itemId);
+    if (!cur) {
+      cur = {
+        itemId,
+        name,
+        appearances: 0,
+        pulls: 0,
+        lastTime: 0,
+        upRounds: 0,
+        lostRounds: 0, // UP 角色的「歪 N 次」
+        lostOut: 0, // 非 UP 角色的「被歪出 N 次」
+        lostOutMain: 0, // 其中：作为轮内非 UP 金被歪掉
+        lostOutSide: 0, // 其中：十连里跟在 UP 后面的副金
+      };
+      byId.set(itemId, cur);
+    }
+    return cur;
+  };
+
+  // ① 出现次数 / 总抽数 / 最后获得时间：跨全部频段
   for (const channel of channelReports) {
     for (const g of channel.golds) {
       if (g.itemType !== 'ItemType_Avatar') continue;
-      const k = g.itemId;
-      const cur = byId.get(k) || {
-        itemId: g.itemId,
-        name: g.name,
-        appearances: 0,
-        pulls: 0,
-        lost: 0,
-        lostApplicable: false,
-      };
+      const cur = touch(g.itemId, g.name);
       cur.appearances += 1;
       cur.pulls += g.count;
-      /*
-       * 歪只认 50/50 频道。`has5050` 为假的频道（常驻 / 邦布）即使 `is_up` 是 false
-       * 也不是「歪」——那里根本没有 50/50 可输。
-       */
-      if (channel.has5050) {
-        cur.lostApplicable = true;
-        if (g.isUp !== true) cur.lost += 1;
-      }
-      byId.set(k, cur);
+      if (g.recordTime > cur.lastTime) cur.lastTime = g.recordTime;
     }
   }
+
+  // ② 歪：走轮次模型，只认有 50/50 的角色频道（独家 / 独家重映）
+  for (const channel of channelReports) {
+    if (!channel.has5050 || channel.kind !== 'avatar') continue;
+    for (const r of channel.rounds) {
+      const up = touch(r.itemId, r.name);
+      up.upRounds += 1;
+      if (r.off > 0 || r.guar) up.lostRounds += 1;
+      for (const x of r.losts ?? []) {
+        const c = touch(x.itemId, x.name);
+        c.lostOut += 1;
+        c.lostOutMain += 1;
+      }
+      for (const x of r.side ?? []) {
+        const c = touch(x.itemId, x.name);
+        c.lostOut += 1;
+        c.lostOutSide += 1;
+      }
+    }
+  }
+
   return [...byId.values()]
     .map((x) => ({
       itemId: x.itemId,
@@ -1076,11 +1123,17 @@ function charSummary() {
       // 影画 = 出现次数 − 1，第 1 只给 0
       portraits: Math.max(0, x.appearances - 1),
       pulls: x.pulls,
-      lost: x.lost,
-      lostApplicable: x.lostApplicable,
+      lastTime: x.lastTime,
+      // 「UP 角色」= 在 50/50 角色频道里当过 UP
+      isUp: x.upRounds > 0,
+      upRounds: x.upRounds,
+      lostRounds: x.lostRounds,
+      lostOut: x.lostOut,
+      lostOutMain: x.lostOutMain,
+      lostOutSide: x.lostOutSide,
     }))
-    .sort((a, b) => b.appearances - a.appearances
-      || b.pulls - a.pulls
+    .sort((a, b) => Number(b.isUp) - Number(a.isUp)
+      || b.lastTime - a.lastTime
       || String(a.itemId).localeCompare(String(b.itemId)));
 }
 
@@ -1415,6 +1468,8 @@ const textSubs = (() => {
   const map = {
     '/*__COPY_CHART_TITLE__*/': CFG.copy.chartTitle ?? '抽卡总览',
     '/*__COPY_DETAIL_TITLE__*/': CFG.copy.detailTitle ?? '抽卡详情',
+    // 右栏标题和「抽卡详情」并列在头部，由模板输出（不是 charts.js 画的）
+    '/*__COPY_DETAIL_CHARS_TITLE__*/': CFG.copy.detailCharsTitle ?? '角色汇总',
     '/*__COPY_MERGE_TOGGLE__*/': CFG.copy.mergeToggle ?? '显示真实抽数',
   };
   return map;

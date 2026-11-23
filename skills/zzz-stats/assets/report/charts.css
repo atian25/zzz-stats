@@ -546,16 +546,60 @@ html, body {
    */
   margin: 0 20px 10px;
   padding-bottom: 6px;
+  /*
+   * 两栏的列定义放在这里**只写一份**：`.detail-head`（两个同级栏标题）和
+   * `.detail-body`（左栏列表 / 右栏角色汇总）必须用完全相同的列与 gap，
+   * 否则「角色汇总」标题就会跟它下面那一栏错开几个像素。
+   * 各断点只覆盖这个变量，两处永远同步——分开写两份是必然漂移的。
+   */
+  --detail-cols: minmax(0, 1fr) minmax(220px, 300px);
+  --detail-gap: 12px;
 }
+/*
+ * 头部只放两个**同级**栏标题：左「抽卡详情」、右「角色汇总」，同一行、各贴自己那一列。
+ *
+ * 频段 tab / 显示真实抽数 / meta 都挪进了左栏第一行（.detail-toolbar）——它们描述的
+ * 是左栏那份列表的状态，挂在整卡表头会让人以为对右栏也生效（右栏是跨频段全局汇总，与 tab 无关）。
+ */
 .detail-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px 8px;
-  flex-wrap: nowrap;
+  display: grid;
+  grid-template-columns: var(--detail-cols);
+  gap: var(--detail-gap);
+  align-items: baseline;
+  padding: 10px 0 6px;
 }
 .detail-title { font-size: 15px; font-weight: 700; }
-.detail-tabs { display: flex; gap: 4px; flex-wrap: nowrap; overflow: hidden; }
+/*
+ * 右栏标题在头部时，左边距 = 右栏 `border-left` 1px + `padding-left` 11px = 12px，
+ * 这样它和下面「角色汇总」列表里第一行头像的左边缘对齐（实测 x 一致）。
+ */
+.detail-chars-title {
+  padding-left: 12px;
+  font-size: 15px;
+  font-weight: 700;
+}
+/*
+ * 左栏内部第一行：频段 tab + 显示真实抽数 + meta。
+ *
+ * 为什么允许换行：1440 的左栏有 1058px，tabs 332 + toggle 87 + meta 123 放得下；
+ * 但 800 的左栏只有 478px，三样合计约 564px **必然放不下**。
+ * 与其缩小字号或裁掉文字（两者都会让「能点、能读」失效），不如让 tools 折到第二行。
+ */
+.detail-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.detail-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 10px;
+  padding: 0 14px;
+  min-height: 30px;
+  flex: 0 0 auto;
+}
+.detail-tabs { display: flex; gap: 4px; flex-wrap: wrap; min-width: 0; }
 .detail-tab {
   padding: 4px 10px 6px;
   border: 0;
@@ -780,33 +824,49 @@ html, body {
  */
 .detail-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
-  gap: 12px;
+  grid-template-columns: var(--detail-cols);
+  gap: var(--detail-gap);
   /*
    * 这里**不能加左右内边距**：左栏 `.detail-list` 自己就有 14px，
    * 外层再加一层会让左栏所有内容整体右移 14px —— 而左栏要求逐像素不变。
+   * 头部的两个栏标题同样贴 0，右栏标题靠 `.detail-chars-title` 的 12px 左内边距对齐右栏内容。
    */
   padding: 0 0 4px;
-  align-items: start;
+  /*
+   * 两栏等高，且**高度只由左栏决定**。
+   *
+   * 为什么不能写死：左栏第一行（工具栏）会随宽度折行——1440/1000/900 是一行 30px，
+   * 800/760 折成两行 47px。写死 510 会让 800 下右栏短 17px。
+   *
+   * 做法：右栏的**在流内容为空**（真正的列表放进绝对定位的 `.detail-chars-fill`），
+   * 所以它不参与行高计算，行高 = 左栏的自然高度（工具栏 + 480 = 510 或 527）；
+   * `align-items: stretch` 再把这个高度给右栏，绝对定位的 fill 用 `inset: 0` 铺满，
+   * 内部的 `.detail-chars-body`（flex:1 + overflow-y:auto）自己滚。
+   *
+   * 试过两条都不行：①`align-items: stretch` + 右栏在流内容 → 右栏 25 行把行高撑到 1141，
+   * 左栏跟着变高；②左栏加 `contain: size` → 左栏高度直接变 0（实测）。
+   */
+  align-items: stretch;
 }
 
 .detail-chars {
-  /*
-   * 右栏高度跟左栏对齐，内部自己滚。
-   * 左栏是 480px 固定高（历史遗留），这里显式跟着它，两个滚动区看起来才是一套。
-   */
-  height: 480px;
-  display: flex;
-  flex-direction: column;
+  position: relative;
+  overflow: hidden;
   border-left: 1px solid #2c2c35;
-  padding-left: 11px;
   min-width: 0;
 }
-.detail-chars-head {
-  padding: 2px 0 6px;
-  flex: 0 0 auto;
+/*
+ * 右栏真正的容器：绝对定位铺满 `.detail-chars`，因此不参与行高计算。
+ * 内边距放在这里而不是父级——绝对定位的包含块是父级的 padding box，
+ * 父级加 padding-left 会让 fill 从 padding 外沿开始，视觉上丢掉那 11px。
+ */
+.detail-chars-fill {
+  position: absolute;
+  inset: 0;
+  padding-left: 11px;
+  display: flex;
+  flex-direction: column;
 }
-.detail-chars-title { font-size: 12px; font-weight: 700; color: var(--ink-dim); }
 .detail-chars-body {
   flex: 1 1 auto;
   overflow-y: auto;
@@ -886,6 +946,11 @@ html, body {
 .detail-char-pulls { color: var(--ink-dim); }
 .detail-char-lost { color: var(--detail-bad, #ff5f6d); }
 .detail-char-nolost { color: var(--ink-faint); }
+/*
+ * 曾经有一条 `.detail-char-lostout`（「被歪出 N 次」）。按用户定的口径，
+ * 非 UP 角色**只显示影画**，那个徽标不再渲染，样式一并删掉——
+ * 留着一条没人用的类名，下次有人看到就会以为它还在用。
+ */
 
 /* --------------------------------------------------------------- 响应式 */
 
@@ -897,7 +962,8 @@ html, body {
  * 这一步是「先缩，不是先塌」——只有真的并排放不下（≤640）才改成一列。
  */
 @media (max-width: 1000px) {
-  .detail-body { grid-template-columns: minmax(0, 1fr) minmax(190px, 240px); }
+  /* 只改变量：头部和正文同时收到 240，两个栏标题不会错位 */
+  .detail-panel { --detail-cols: minmax(0, 1fr) minmax(190px, 240px); }
 }
 
 @media (max-width: 1320px) {
@@ -939,15 +1005,30 @@ html, body {
    * 把并排塌掉才出的问题。
    *
    * 塌了之后右栏不再固定高度，跟着内容走；否则会留一大片空滚动区。
+   * 头部塌成一列：两个栏标题竖着排，「角色汇总」去掉右栏专属的左内边距，
+   * 和「抽卡详情」左对齐（此时它们不再分属左右两列）。
    */
-  .detail-body { grid-template-columns: minmax(0, 1fr); }
+  .detail-panel { --detail-cols: minmax(0, 1fr); }
+  .detail-head { gap: 0; }
+  .detail-chars-title { padding-left: 0; }
+  /*
+   * 塌成一列后不再跟左栏等高：`.detail-body` 默认的 stretch 会让右栏被拉成
+   * 左栏那么高（510 以上），底下留一大片空滚动区。这里回到 start，右栏按自身内容 + 上限走。
+   */
+  .detail-body { align-items: start; }
+  /* 塌成一列后右栏不再跟左栏等高，改回按内容走 + 上限，否则底下留一大片空滚动区 */
   .detail-chars {
-    height: auto;
+    position: static;
+    overflow: visible;
     max-height: 320px;
     border-left: 0;
     border-top: 1px solid #2c2c35;
-    padding-left: 0;
     padding-top: 8px;
+  }
+  .detail-chars-fill {
+    position: static;
+    padding-left: 0;
+    max-height: 320px;
   }
 }
 
