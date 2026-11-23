@@ -692,11 +692,18 @@ checkbox 自己用 `align-self: center` 居、不参与基线计算，勾选框�
 
 - **改前 vs 改后**：改前是左栏 `height: 480px` + `overflow-y: auto`，右栏靠绝对定位的
   `.detail-chars-fill` 拿到左栏那 480 再自己滚（窄屏还有 `max-height: 8 × 34 = 272`）。
-  改后这些全删：`.detail-chars-fill` 回 `position: static`、两处 `overflow-y: auto` 去掉、
-  `.detail-body` 的 `align-items` 从 `stretch` 改 **`start`**。
-- **为什么必须改 `start`**：`stretch` 会把较矮的右栏拉到左栏高度。实测 1440 独家（左 41 行、右 25 行）
-  下右栏内容 854、左栏 1231，`stretch` 时右栏被拉到 1231，**最后一行下面空 381px**（超过一个行高 34px）。
-  改 `start` 后同口径实测 **4px**，四档一致。
+  改后这些全删：`.detail-chars-fill` 回 `position: static`、两处 `overflow-y: auto` 去掉。
+  `.detail-body` 的 `align-items` **保持 `stretch`**（曾经改成 `start`，已推翻，见下）。
+- **为什么是 `stretch` 不是 `start`**：`.detail-chars` **没有背景色**，盒子被拉长不产生任何可见空白；
+  右栏唯一看得见的是 `border-left` 那条 1px 竖线，而它的**长度就等于盒子高度**。
+  所以盒子高度直接决定那条线画到哪。
+  - `start`（被推翻那版）：`.detail-chars` 高 854，竖线到 **1873** 就断，左栏到 2250 ——
+    下面 377px 没线，看起来像右栏内容没加载完。实测 1440/1000/800 三档都是这个位置。
+  - **`stretch`（现在）**：盒子被拉到 1231，竖线画到 **2250**，与左栏底边齐平。
+  - 两版 `.detail-chars-body` 的内容高**都是 854**（25 × 34 + 4），一点没变；
+    变的只是外层盒子和那条线的长度。**别拿「内容高 854」自证 `start` 更好**。
+  - 曾经的信条「最后一行到底边 > 34px 就说明被拉长」已作废：`stretch` 下那个距离是 381px，
+    但它量的是**不可见的盒子**，不是用户看得见的东西。
 - **运行期口径**：切频段时页面高度会变（独家 41 行最高、音擎回响 1 行最矮），
   这是流式布局的固有行为，不要说成 bug，也不要为了「不跳」把定高加回来。
 - 实测（`fixtures/baseline`，四档 1440/1000/800/720）：两栏的 `overflow-y` 全部是 `visible`
