@@ -236,7 +236,15 @@ function buildRounds(golds) {
   while (i < golds.length) {
     const g = golds[i];
     if (!g.isUp) {
-      losts.push({ name: g.name, itemId: g.itemId, count: g.count, sort: g.sort });
+      losts.push({
+        name: g.name,
+        itemId: g.itemId,
+        count: g.count,
+        sort: g.sort,
+        // 非 UP 角色 tip 的「逐次来源」要用它来排时间、标版本（见 charSummary 的 ③）
+        recordTime: g.recordTime,
+        version: g.version,
+      });
       i += 1;
       continue;
     }
@@ -256,7 +264,14 @@ function buildRounds(golds) {
     // 十连副金：紧跟在 UP 之后、同秒且 sort 差 ≤ N 的非 UP 金
     let j = i + 1;
     while (j < golds.length && sameTenPull(golds[j - 1], golds[j]) && !golds[j].isUp) {
-      round.side.push({ name: golds[j].name, itemId: golds[j].itemId, count: golds[j].count, sort: golds[j].sort });
+      round.side.push({
+        name: golds[j].name,
+        itemId: golds[j].itemId,
+        count: golds[j].count,
+        sort: golds[j].sort,
+        recordTime: golds[j].recordTime,
+        version: golds[j].version,
+      });
       round.total += golds[j].count;
       j += 1;
     }
@@ -1115,6 +1130,16 @@ function charSummary() {
         upRounds: 0,
         lostRounds: 0, // UP 角色的「歪 N 次」
         gains: [], // 逐次获得明细：{recordTime, version, total, losses[]}，供右栏 tip
+        /*
+         * 非 UP 角色的逐次获得来源：`{recordTime, sort, version, kind, count, upName?}`。
+         *
+         * 用户原话：「换行注明下它的每一影的分别来源，是常驻多少抽出的还是抽哪个 up 多少抽歪的」。
+         * `kind` 三种，与真实数据来源一一对应：
+         *   'perm' 常驻频段直接出（`count` = 距上一金的抽数，**不是获取成本**）
+         *   'lost' 抽某个 UP 时歪出来（`count` = 那一金自己的 count）
+         *   'side' 十连里跟在 UP 后面的副金（`count` 恒为 1，措辞不写抽数，见 charts.js）
+         */
+        sources: [],
         lostOut: 0, // 非 UP 角色的「被歪出 N 次」
         lostOutMain: 0, // 其中：作为轮内非 UP 金被歪掉
         lostOutSide: 0, // 其中：十连里跟在 UP 后面的副金
@@ -1188,6 +1213,76 @@ function charSummary() {
     }
   }
 
+  /*
+   * ③ 非 UP 角色的「每一影分别从哪来」——右栏 tip 逐行写它。
+   *
+   * 用户原话：「不要写『没当过 UP』，然后换行注明下它的每一影的分别来源，
+   * 是常驻多少抽出的还是抽哪个 up 多少抽歪的」。
+   *
+   * 三个来源全部收齐（一个角色可能同时出现在多处，实测珂蕾妲 6 次里
+   * 2 次常驻、4 次从不同 UP 的轮里歪出）：
+   *
+   *   a) `round.losts`  → kind='lost'，抽某个 UP 时歪出来的
+   *   b) `round.side`   → kind='side'，十连里跟在 UP 后面的副金
+   *   c) 常驻频段 golds → kind='perm'，常驻直接出
+   *
+   * **只认 `ItemType_Avatar`**：邦布频道里全是邦布，音擎频道里全是音擎，
+   * 不筛的话「某邦布」会混进角色影画表，而且它的 count 与角色池完全不是一套语义。
+   *
+   * ## 闭合（构建期有断言拦着）
+   *
+   * `sources.length` 必须**恒等于** `appearances`：每一条获得记录都必须有且只有一条来源，
+   * 否则 tip 要么少写一影、要么凭空多一影。实测 baseline 六个非 UP 角色全部闭合
+   * （珂蕾妲 6/6、猫又 4/4、「11号」4/4、格莉丝 2/2、丽娜 2/2、莱卡恩 1/1）。
+   *
+   * 能闭合的结构性原因：非 UP 角色在角色池里的每一次出现，要么落在某一轮的 `losts`
+   * （轮前的非 UP 金），要么落在 `side`（十连副金），要么在常驻频段的 golds 里——
+   * 这三处覆盖了所有能产出角色的地方。口径差异（常驻的 count 是「距上一金」）不影响条数。
+   */
+  for (const channel of channelReports) {
+    // a) 抽 UP 时歪出 + b) 十连副金：都在 has5050 的角色频道里
+    if (channel.has5050 && channel.kind === 'avatar') {
+      for (const r of channel.rounds) {
+        for (const x of r.losts ?? []) {
+          const c = touch(x.itemId, x.name);
+          c.sources.push({
+            kind: 'lost',
+            recordTime: x.recordTime,
+            sort: x.sort,
+            version: x.version ?? r.version,
+            count: x.count,
+            upName: r.name,
+          });
+        }
+        for (const x of r.side ?? []) {
+          const c = touch(x.itemId, x.name);
+          c.sources.push({
+            kind: 'side',
+            recordTime: x.recordTime,
+            sort: x.sort,
+            version: x.version ?? r.version,
+            count: x.count,
+            upName: r.name,
+          });
+        }
+      }
+    }
+    // c) 常驻频段直接出
+    if (channel.kind === 'permanent') {
+      for (const g of channel.golds) {
+        if (g.itemType !== 'ItemType_Avatar') continue;
+        const c = touch(g.itemId, g.name);
+        c.sources.push({
+          kind: 'perm',
+          recordTime: g.recordTime,
+          sort: g.sort,
+          version: g.version,
+          count: g.count,
+        });
+      }
+    }
+  }
+
   return [...byId.values()]
     .map((x) => ({
       itemId: x.itemId,
@@ -1208,6 +1303,16 @@ function charSummary() {
        * 和游戏里看影画顺序一致。并列时用 sort 兜底（同一天两只的极端情况）。
        */
       gains: x.gains
+        .slice()
+        .sort((a, b) => a.recordTime - b.recordTime || (a.sort ?? 0) - (b.sort ?? 0)),
+      /*
+       * 非 UP 角色的逐次来源（UP 角色这里是空数组，tip 走 `gains` 那套）。
+       *
+       * 排序与 `gains` 同一规则：recordTime 正序，第一个是「本体」，之后影画1..N。
+       * 并列时用 sort 兜底——实测「11号」有两条都落在 v2.0，recordTime 不同但版本相同，
+       * 时间戳能分开；真出现同秒的极端情况靠 sort。
+       */
+      sources: x.sources
         .slice()
         .sort((a, b) => a.recordTime - b.recordTime || (a.sort ?? 0) - (b.sort ?? 0)),
       lostOut: x.lostOut,
@@ -1231,12 +1336,51 @@ function charSummary() {
  */
 const charSummaryRows = charSummary();
 
+/**
+ * 详情条的分母：**该频道当前视图自己的最大抽数**，但不低于该频道的保底上限。
+ *
+ * 改前是 `numbers.detailBarDivisor = 100` 写死的固定参照——**超过 100 抽的全部封顶满宽**，
+ * 于是 104 抽和 159 抽画出一样长的条（1440 实测两者都是 948.11px，十条并排时肉眼完全
+ * 分不出来）。固定参照的另一个毛病是频道间不可比：同一档宽度下，9 抽的小频道和 159 抽的
+ * 大频道都被压在同一个 100 上。
+ *
+ * 现在按「这个视图自己」定标：
+ *   divisor = max(该视图所有行的最大 pulls, 该频道 channels[].pityCap)
+ *
+ * **为什么要 pityCap 兜底**：只取最大值时，单条记录的频道分母就等于它自己 → 必然 100% 满格。
+ * 独家重映正好是这种情况（1 行 76 抽），拿 90 兜底后是 84.4%，不满格。
+ * 超过保底上限的极端单行（例如只有一轮 100 抽的 90 保底频道）仍会满格——
+ * 那是它的抽数真的越过了这条基准线，不是分母退化，照实画。
+ *
+ * **all 与 merged 各自算**，不共用：两者同一时刻只显示一个，没有并排比较的场景，
+ * 而共用会让「all 最长 82 抽」把 merged 的 159 抽压成半格。用户已明确两者不必一致。
+ *
+ * **和主图不同轴是刻意的**，用户原话「详情条的比例不需要和上方主图保持一致，各自独立」：
+ * 主图比较的是「每一轮成本」在固定 Y 轴（`numbers.axisPullsMax`）里的位置，
+ * 详情条比较的是「这个频道里谁最贵」。两处各自独立定标，跨图比长度本就不是读者会做的事。
+ */
+function detailBarDivisor(rows, channel) {
+  const maxPulls = (rows ?? []).reduce((m, r) => Math.max(m, r.pulls ?? 0), 0);
+  const cap = channel?.pityCap ?? 0;
+  return Math.max(maxPulls, cap) || null;
+}
+
 const details = Object.fromEntries(
   CFG.channels.map((ch) => {
     const c = channelReports.find((x) => x.id === ch.id);
+    const all = detailRows(c, false);
+    const merged = detailRows(c, true);
     return [ch.id, {
-      all: detailRows(c, false),
-      merged: detailRows(c, true),
+      all,
+      merged,
+      /*
+       * 分母随「当前视图」走，前端按 `d.divisor[merged ? 'merged' : 'all']` 取，
+       * 不再自己算 —— 口径只在构建期算一次，`charts.js` 只负责画。
+       */
+      divisor: {
+        all: detailBarDivisor(all, c),
+        merged: detailBarDivisor(merged, c),
+      },
       perGold: c.perGold,
       has5050: ch.has5050,
     }];
@@ -1791,6 +1935,89 @@ if (!Object.keys(pullsMaxCfg).length) {
 }
 
 /*
+ * 详情条分母断言：防「分母退化」与「不同抽数画出同样长度」。
+ *
+ * 分母是详情条唯一的量值来源，写错了不会报错、只会静默把长条压成一样长
+ * （改前 `/100` 就是这个症状：1440 独家 merged 里 104 抽和 159 抽都是 948.11px）。
+ * 三条检查：
+ *
+ * ① **分母必须 ≥ 该视图最长行的 pulls。** 小于它就意味着有行超出 100%，
+ *    前端 `Math.min(1, …)` 会把它悄悄截成满格，两条不同的抽数画出一样的长度。
+ * ② **分母必须 ≥ 该频道 pityCap。** 这是「单条记录的频道不许必然满格」那条口径的
+ *    实现方式：独家重映只有 1 行 76 抽，若分母退化成 76，它就恒为 100%。
+ * ③ **同一视图里 pulls 不同的两行，条宽必须能区分。** 用和前端完全相同的公式复算
+ *    `max(minPx, (轨道宽−34) × pct)`，同一档宽度下若有两条不同 pulls 落到同一个像素值，
+ *    说明它们都被 44px 保底吃掉了——那是保底的正常行为，**但不同 pulls 必须来自保底**
+ *    （都在 44px 时才允许相等），不能是分母算错导致的封顶。
+ *
+ * 这里只算**逻辑比例**（不含轨道宽），所以用「比例值」而不是像素：
+ * 比例相同且都不是保底钳制 → 报错。
+ */
+{
+  const minPx = CFG.numbers.detailBarMinPx;
+  if (!(minPx > 0)) {
+    fatal.push(`numbers.detailBarMinPx(${minPx}) 不是正数：详情条会塌成 0 宽`);
+  }
+  for (const ch of CFG.channels) {
+    const c = channelReports.find((x) => x.id === ch.id);
+    if (!c) continue;
+    const d = details[ch.id];
+    if (!d) {
+      fatal.push(`频道 ${ch.label} 没有 details 条目：详情面板会空白`);
+      continue;
+    }
+    for (const mode of ['all', 'merged']) {
+      const rows = d[mode];
+      const divisor = d.divisor?.[mode];
+      if (!rows.length) continue;
+      if (!(divisor > 0)) {
+        fatal.push(`频道 ${ch.label} 的 ${mode} 视图分母 ${divisor} 不是正数：条宽无法计算`);
+        continue;
+      }
+      const maxPulls = rows.reduce((m, r) => Math.max(m, r.pulls ?? 0), 0);
+      if (divisor < maxPulls) {
+        fatal.push(
+          `频道 ${ch.label} 的 ${mode} 视图分母 ${divisor} < 最长行 ${maxPulls} 抽：` +
+          '超出的行会被截成满格，不同抽数画出同样长度',
+        );
+      }
+      if (ch.pityCap != null && divisor < ch.pityCap) {
+        fatal.push(
+          `频道 ${ch.label} 的 ${mode} 视图分母 ${divisor} < pityCap ${ch.pityCap}：` +
+          '单条记录的频道会必然满格（分母退化）',
+        );
+      }
+      /*
+       * 比例去重：同一比例值上出现**不同 pulls** 就是「不同抽数画成一样长」。
+       * 允许相等的情形只有一种——两行都被 minPx 保底钳制，此时比例不生效。
+       * 判断方法：该行的原始条宽 `(轨道−34) × pct` 是否小到连 minPx 都不到。
+       * 轨道宽未知（随视口变），所以用 1440 的实测轨道 982.1 做参照：
+       * 只要 `(982.1−34) × pct < minPx`，这一行在 1440 就是保底钳制的。
+       */
+      const REF_TRACK = 982.1; // 1440 实测 .detail-track 宽
+      const clamped = (pct) => (REF_TRACK - 34) * pct < minPx;
+      const seen = new Map();
+      for (const r of rows) {
+        const pct = Math.max(0, Math.min(1, (r.pulls ?? 0) / divisor));
+        const key = pct.toFixed(6);
+        if (!seen.has(key)) seen.set(key, []);
+        seen.get(key).push({ name: r.name, pulls: r.pulls, clamped: clamped(pct) });
+      }
+      for (const [, group] of seen) {
+        const pulls = new Set(group.map((g) => g.pulls));
+        if (pulls.size <= 1) continue;
+        if (group.every((g) => g.clamped)) continue; // 全被保底钳制，长度相同是刻意的
+        const names = group.map((g) => `${g.name} ${g.pulls}抽`).join('、');
+        fatal.push(
+          `频道 ${ch.label} 的 ${mode} 视图有不同抽数却同条宽：${names}` +
+          `（都算成 ${group[0].pulls} 抽 / 分母 ${divisor} 的比例）`,
+        );
+      }
+    }
+  }
+}
+
+/*
  * 右栏 tip 明细断言（`gains`）：防的是「tip 与行内数字互相打脸」。
  *
  * 两条独立校验：
@@ -1823,6 +2050,35 @@ if (!Object.keys(pullsMaxCfg).length) {
       fatal.push(
         `右栏 ${c.name} 有 ${withLoss} 次获得在 tip 里写了歪出明细，但它只有 ${c.lostRounds} 轮歪：` +
         `疑似把十连副金（round.side）混进了 losses——side 的语义是「下一轮的保底已被吃掉」，不是这一轮歪`,
+      );
+    }
+  }
+}
+
+/*
+ * 非 UP 角色 tip 来源断言（`sources`）：防「tip 少写一影 / 多写一影」。
+ *
+ * 右栏 tip 对非 UP 角色是**逐影列举**（本体：… / 影画1：…），所以条数必须正好等于影画数 + 1。
+ * 少一条 tip 就少一行、多一条就凭空多一影；两种都不会报错，只会安静地显示错内容。
+ *
+ * 为什么这条断言值得存在：`sources` 来自三处（轮 losts / 轮 side / 常驻 golds），
+ * 任何一处漏遍历（比如忘了常驻频道、或者 side 的 recordTime 没补上导致排序错）
+ * 都会让某个角色的条数对不上。而 `appearances` 是另一条独立路径数出来的
+ * （跨全部频段数 avatar 金），拿它当标尺正好能抓到这类漏洞。
+ *
+ * 注意**不能拿 `portraits` 当标尺**：portraits = appearances − 1，用它反推等于
+ * 把两个本就该独立的量绑在一起，断言会退化成「sources = sources」。
+ */
+{
+  for (const c of report.charSummary ?? []) {
+    if (c.isUp) continue;
+    const n = (c.sources ?? []).length;
+    if (n !== c.appearances) {
+      const kinds = (c.sources ?? []).map((s) => s.kind).join(',') || '（空）';
+      fatal.push(
+        `右栏 ${c.name} 的来源 ${n} 条 ≠ 出现 ${c.appearances} 次：` +
+        `tip 会少写或多写影画（来源明细：${kinds}）。` +
+        '三处来源必须全覆盖——轮 losts / 轮 side / 常驻 golds，且只收 ItemType_Avatar',
       );
     }
   }

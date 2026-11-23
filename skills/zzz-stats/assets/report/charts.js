@@ -1599,6 +1599,19 @@
     const d = R.details[ch.id];
     const merged = detailState.merged && ch.has5050;
     const rows = merged ? d.merged : d.all;
+    /*
+     * 详情条的分母：**该频道当前视图自己的最大抽数，但不低于该频道保底上限**。
+     * 由 build-report 算好放进 `d.divisor[视图]`，前端只用不重算——
+     * 口径只在构建期算一次（与 luckOf / perGold 同一条约定）。
+     *
+     * 改前是 `numbers.detailBarDivisor` 写死的 100：超过 100 抽的全部封顶满宽，
+     * 1440 独家 merged 里 104 抽和 159 抽都是 948.11px，肉眼看不出差别。
+     * 现在 all / merged 各自定标，两者不共用分母（同一时刻只显示一个）。
+     *
+     * 分母缺失（老产物 / 手改数据）时退回 1，即所有条都满格——
+     * 不猜、不崩，但那种状态一眼可见是坏的。
+     */
+    const divisor = d.divisor?.[merged ? 'merged' : 'all'] || 1;
 
     const toggle = $('#merge');
     toggle.checked = merged;
@@ -1667,8 +1680,13 @@
         const bar = el('div', 'detail-bar');
         const good = row.pulls <= (ch.perGold || Infinity);
         bar.dataset.side = good ? 'good' : 'bad';
-        // 条长 = 抽数/100 的轨道占比（78 抽 ≈ 78%），保底 44px，给右侧歪章留出空间
-        const pct = Math.max(0, Math.min(1, row.pulls / CFG.numbers.detailBarDivisor));
+        /*
+         * 条长 = 抽数 / **本视图分母** 的轨道占比，保底 44px。
+         *
+         * 分母来自构建期（`divisor`，见上面那段），不是固定 100——所以最长那一行
+         * 才会接近满格、短条才会真的短。改前固定 /100 时超过 100 抽的全部一样长。
+         */
+        const pct = Math.max(0, Math.min(1, row.pulls / divisor));
         bar.style.width = `max(${CFG.numbers.detailBarMinPx}px, calc((100% - 34px) * ${pct.toFixed(4)}))`;
         bar.textContent = `${row.pulls}抽`;
         track.appendChild(bar);
@@ -1936,17 +1954,63 @@
    */
   function buildCharTip(c) {
     /*
-     * 非 UP 角色只显示影画，没有抽数与歪，也不必逐次列。
-     * 用户要求「同样保持简短，一行说明即可，别堆字」——所以只写它是什么。
+     * 非 UP 角色：**逐影注明每一只的来源**，不再写「没当过 UP」。
      *
-     * 措辞必须是「没当过 UP」，**不能写「常驻角色」**：
-     * 数据里这 6 个并不都出现在常驻频段（实测 baseline：丽娜 / 格莉丝 / 「11号」
-     * 只在独家出现过，莱卡恩只在常驻，珂蕾妲 / 猫又在两处都有）。
-     * 写「常驻角色」会和左栏那个「常驻」tab 撞车，等于凭空给它们安了个来源。
-     * 真正成立的事实只有一条：它们在 50/50 频道里从来没当过 UP。
+     * 用户原话（这条推翻了上一版）：
+     *   「珂蕾妲•5影・没当过 UP 这 tip 不好，不要写 "没当过 UP"，
+     *     然后换行注明下它的每一影的分别来源，是常驻多少抽出的还是抽哪个 up 多少抽歪的」
+     *
+     * 上一版的措辞理由是「这 6 个并不都出现在常驻频段，写『常驻角色』会给出假的来源」——
+     * 那个顾虑仍然成立，但结论（于是只写「没当过 UP」）是错的：真实来源本来就有、而且可查，
+     * 直接列出来比一句否定句有信息量。现在改用数据里的 `c.sources` 逐条点名。
+     *
+     * ## 三种措辞（`kind` 与真实来源一一对应，别混用）
+     *
+     *   'perm' → `常驻 N 抽`
+     *     N 是**「距上一金」的抽数**，不是这只角色的获取成本。常驻没有轮次模型，
+     *     每一金的 count 都是相对上一金的间隔，累加没有意义。措辞用「常驻 N 抽」
+     *     而不是「N 抽抽到」，就是为了不说成成本（口径写在 report-rules.md）。
+     *
+     *   'lost' → `抽「X」时 N 抽歪出`
+     *     N 是那一金自己的 count，X 是那轮的 UP 名。名字用 `quoteName()` 包，
+     *     **不再套一层**——「11号」这种自带引号的名字会被判成已有引号而原样返回。
+     *
+     *   'side' → `抽「X」时十连副金`
+     *     **不能写「N 抽」**：side 的 count 实测恒为 1（十连里排在 UP 后面的那一金，
+     *     距上一金只差 1 个 sort），写「1 抽」会被读成「1 抽就抽到了」，完全误导。
+     *     它的语义是「同一发十连里附带出来的」，所以直接说「十连副金」。
+     *
+     * ## 日期省略
+     *
+     * UP 角色的 `gains` 每行带 `· 2024-12-18`；非 UP 这里**不带日期**——
+     * 一行已经有「抽「菲欧妮」时 21 抽歪出 · v3.3」这么长，再加 11 个字符会顶到
+     * `.tip` 的 max-width 420px 边缘（那是 `white-space: pre`，超了是**横向裁掉**不是折行）。
+     * 版本号足够定位到时间段，用户看的是「哪来的」不是「哪天」。
+     *
+     * ## 兜底
+     *
+     * `sources` 为空或条数对不上（老数据集 / 数据异常）时退回纯摘要，**不带「没当过 UP」**。
+     * 不能返回空串：空 tip 会让 hover 出一个空气泡。
+     * 条数对不上时不输出半截内容——半截列表比没有列表更容易被当成完整答案。
      */
     if (!c.isUp) {
-      return `${c.name} · ${c.portraits} 影 · 没当过 UP`;
+      const head = `${c.name} · ${c.portraits} 影`;
+      const srcs = c.sources ?? [];
+      if (!srcs.length || srcs.length !== c.appearances) return head;
+      const detail = srcs.map((s, i) => {
+        const label = i === 0 ? '本体' : `影画${i}`;
+        const ver = s.version ? ` · v${s.version}` : '';
+        let where;
+        if (s.kind === 'perm') {
+          where = `常驻 ${s.count} 抽`;
+        } else if (s.kind === 'side') {
+          where = `抽${quoteName(s.upName)}时十连副金`;
+        } else {
+          where = `抽${quoteName(s.upName)}时 ${s.count} 抽歪出`;
+        }
+        return `${label}：${where}${ver}`;
+      });
+      return [head, ...detail].join('\n');
     }
     const lines = (c.gains ?? []).map((g, i) => {
       /*
