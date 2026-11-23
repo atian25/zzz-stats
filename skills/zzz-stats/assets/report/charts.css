@@ -74,6 +74,15 @@ html, body {
   align-items: center;
   gap: 12px;
   min-height: 34px;
+  /*
+   * 窄屏必须允许子项收缩，否则整页横向溢出。
+   *
+   * 踩过：660 宽时 `.repo-link` 右边缘到 674，整页 scrollWidth 674 > 660，
+   * 出现 14px 横向滚动。原因是 flex 子项默认 `min-width: auto`（=内容宽度，不可缩），
+   * 而 `.repo-link` 里那串 owner/repo 是 `white-space: nowrap`。
+   * 700/720 都没露出来，只有更窄才触发。
+   */
+  min-width: 0;
 }
 
 .nick {
@@ -167,9 +176,23 @@ html, body {
   color: var(--ink-dim, #8a8a96);
   text-decoration: none;
   white-space: nowrap;
+  /*
+   * 允许被压缩到比内容窄：链接本身是 `nowrap`，但它是可缩的 flex 项，
+   * 里面 `.repo-text` 负责省略号截断。不给 `min-width: 0` 的话
+   * flex 会按内容宽度把它撑住，窄屏就横向溢出（660 实测溢出 14px）。
+   */
+  min-width: 0;
+  overflow: hidden;
   transition: color 0.15s ease;
 }
 .repo-icon { flex: 0 0 auto; display: block; }
+/* 仓库名过长时省略，不撑破标题行（660 及以下会触发） */
+.repo-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .repo-link:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 
 .meta-line {
@@ -604,23 +627,31 @@ html, body {
   padding: 9px 0 6px;
 }
 /*
- * 左栏那一组：标题 + 频段 tab + 显示真实抽数 + meta，全在同一行。
+ * 左栏那一组：标题 + 频段 tab + 显示真实抽数，全在同一行。
  *
  * 左内边距 14 = `.detail-list` 自己的 padding，这样标题文字 x=35
  * 正好等于左栏每行最左的竖括号（bracket）x=35，也就是「标题与内容左边缘对齐」。
  *
- * 为什么允许换行：1440 下这一组有 1058（左栏 1086 − 14 内缩），
- * 标题 60 + tab 332 + tools 220 + 间距 ≈ 640，宽宽松松；
- * 800 下只有 478 − 14 = 464，标题 60 + tab 332 + 间距 14 = 406 放得下，
- * 但再加 tools 220 就放不下，于是 tools 整组折到第二行。
- * 折行而不是缩小字号/裁文字：控件必须「能点、能读」。
+ * ## 1440 宽松、800 刚好：
+ *
+ *   `.detail-title` 60 + `.detail-tabs` 332 + `.detail-tools` 87 = **479**（实测，不是设计值）
+ *   1440：左栏 1086 − 14 内缩 = 1072 可用，两个间距 28，合计 507，宽宽松松。
+ *   800 ：左栏 506 − 14 内缩 = **492 可用**，两个间距 28 → 507，**差 15 会折行**。
+ *
+ * 所以间距**不能一路 14px**：800 档要收到 6px（479 + 12 = 491 ≤ 492），刚好一行。
+ * 用 `--detail-head-gap` 一个变量承载，各断点只覆盖它，
+ * 这样「想要一行」的档位可以单独调，不用碰字号、也不用裁 tab 文字
+ * （用户明确不许缩字号、不许裁字——控件必须「能点、能读」）。
+ *
+ * 仍保留 `flex-wrap: wrap` 作兜底：真到 720 以下并排就已经塌成一列了，
+ * 万一将来 tab 变多，宁可整组折行也不要横向溢出。
  *
  * baseline：tab / tools 的文字与标题基线齐平，读起来像同一行的工具条。
  */
 .detail-head-main {
   display: flex;
   align-items: baseline;
-  gap: 0 14px;
+  gap: 0 var(--detail-head-gap, 14px);
   flex-wrap: wrap;
   min-width: 0;
   padding-left: 14px;
@@ -670,7 +701,12 @@ html, body {
 .merge-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--ink-dim); cursor: pointer; }
 .merge-toggle input { accent-color: var(--accent); margin: 0; }
 .merge-toggle[data-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
-.detail-meta { font-size: 11px; color: var(--ink-faint); font-family: var(--mono); }
+/*
+ * 曾经有 `.detail-meta`（「41 金 · 每金 57.9 抽」）。用户要求把它去掉
+ * （原话：「显示真实抽数换行了，可以考虑把后面的总结全局去掉」），
+ * 元素、渲染逻辑、配置键 `copy.detailMetaAll` / `copy.detailMetaMerged` 一并删了。
+ * 不要为了「留个位置」再加回来——它是 800 下这一行折行的直接原因（宽 123px）。
+ */
 
 /*
  * 详情区固定高度 + 内部滚动。
@@ -921,6 +957,12 @@ html, body {
   overflow: hidden;
   border-left: 1px solid #2c2c35;
   min-width: 0;
+  /*
+   * 右栏一行的**唯一真源**：`.detail-char` 自己用它（兜底 34px），
+   * 一列模式的可视高度用 `calc()` 取它的整数倍。两处必须是同一个值，
+   * 分开写两份必然漂移——一漂就是「最后一行被切一半」。
+   */
+  --detail-char-h: 34px;
 }
 /*
  * 右栏真正的容器：绝对定位铺满 `.detail-chars`，因此不参与行高计算。
@@ -940,6 +982,16 @@ html, body {
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: #3a3a45 transparent;
+  /*
+   * 底部留一个整行的内边距：滚到最底时，最后一行和 `.detail-chars-note`
+   * 的那条分隔线之间还有 34px 的空档，行不会被「贴到线上」看起来像被切。
+   *
+   * 为什么用**整行**而不是随手 6px：这一层的滚动位置是按内容算的，
+   * 留非整数（比如 6px）会让人滚到底也只看到「大半行 + 一条缝」，
+   * 用户报的就是这个观感。整行的内边距保证任何滚动停点都对得上行边界。
+   */
+  padding-bottom: var(--detail-char-h, 34px);
+  scroll-padding-bottom: 0;
 }
 .detail-chars-body::-webkit-scrollbar { width: 8px; }
 .detail-chars-body::-webkit-scrollbar-thumb { background: #3a3a45; border-radius: 4px; }
@@ -955,17 +1007,32 @@ html, body {
   color: var(--ink-faint);
 }
 
+/*
+ * 右栏每一行：**高度写死成一个整数**，不是为了好看，是为了「不被切成半行」。
+ *
+ * 早先只有 `padding: 5px 4px`，行高由内容撑出来 —— 1440 实测 **44px**，
+ * 而同一个页面里左栏每行只有 26px，两栏密度差太远，一屏少放好几行。
+ * 更要紧的是 `max-height` 一类的容器高度除不尽 44，尾巴上必然出现半行：
+ * 一列模式的 320 ÷ 44 = 7.27，第 8 行被切掉 12px。
+ *
+ * 现在：34px 一条（内容盒 34 − 0 上下 padding），图标 26 居中，
+ * 名字 16 行高 + stats 14 行高 + 1 间距 = 31 ≤ 34，放得下且不挤。
+ * **34 是刻意选的整数**：一列模式的可视区取它的整数倍（8 × 34 = 272），
+ * 滚动到底时最后一行底边正好落在容器底边，永远不会有半行露在外面。
+ * 改这个值时必须同步检查所有 `calc(var(--detail-char-h) * n)` 的倍数关系。
+ */
 .detail-char {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 4px;
+  height: var(--detail-char-h, 34px);
+  padding: 0 4px;
   border-radius: 5px;
 }
 .detail-char:hover { background: #212129; }
 .detail-char-icon {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   flex: 0 0 auto;
   object-fit: cover;
@@ -978,9 +1045,24 @@ html, body {
   gap: 5px;
   min-width: 0;
 }
+/*
+ * ## 中文名字不能用 mono
+ *
+ * 头疼过一次：「「席德」」看着比别的名字缩进，但量下来所有名字文本左边缘都是同一个 x
+ * （1440 实测 1171）——**布局是对的**，是字体回退造成的视觉错觉：
+ * `var(--mono)` 的首选 `"DM Mono"` 在多数环境里没有，回退到 Menlo，
+ * 而 Menlo 里 `「」` 的占位宽度和汉字不是一个比例，前后各多出一点空白，
+ * 于是带书名号的「「席德」」看起来像往里缩了一格。
+ *
+ * 中文名字用 sans（系统中文无衬线，`「」`的宽度与汉字一致）；
+ * 数字、影、抽、歪这些仍然走 mono，等宽对齐不受影响。
+ * 字号不动：12px 是名字的可读下限。
+ */
 .detail-char-name {
+  font-family: var(--sans);
   font-size: 12px;
   font-weight: 600;
+  line-height: 16px;
   color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
@@ -991,13 +1073,15 @@ html, body {
   font-size: 9.5px;
   color: var(--ink-faint);
   font-family: var(--mono);
+  line-height: 16px;
 }
 .detail-char-stats {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 2px;
+  margin-top: 1px;
   font-size: 10.5px;
+  line-height: 14px;
   font-family: var(--mono);
   color: var(--ink-dim);
   white-space: nowrap;
@@ -1032,6 +1116,23 @@ html, body {
   .detail-panel { --detail-cols: minmax(0, 1fr) minmax(190px, 240px); }
 }
 
+/*
+ * 头部那一行的列间距要收窄，否则 tools 折到第二行（数字都是实测）：
+ *   左栏宽 = 视口 − 40(页边) − 12(列间距) − 240(右栏)，可用 = 左栏 − 14(内缩)
+ *   标题 60 + tab 332 + merge 87 = **479**，间距 14×2 = 28 → 507；间距 6×2 = 12 → 491。
+ *   视口 800 时可用 **492**：507 放不下（折行），491 放得下（一行）。
+ *
+ * 阈值算出来是 813（间距 14 需要 507 可用）与 797（间距 6 需要 491）。
+ * 取 840 是为了留一点余量，给字体回落 / 系统缩放留空间；
+ * **更宽的档位（1000 / 1440）仍用原来的 14px**，那里根本不缺地方，
+ * 没必要为了窄屏把它们也挤紧。
+ *
+ * 只动间距：字号不缩、tab 文字不裁（用户明确要求过，控件必须能点能读）。
+ */
+@media (max-width: 840px) {
+  .detail-panel { --detail-head-gap: 6px; }
+}
+
 @media (max-width: 1320px) {
   .title-name { font-size: 26px; }
   .nick { font-size: 22px; }
@@ -1062,39 +1163,184 @@ html, body {
   .chart-filters::-webkit-scrollbar { display: none; }
   .panel-meta { margin-left: auto; }
   .collapse-btn { margin-left: 0; }
+}
 
+/*
+ * 详情两栏塌成一列。
+ *
+ * 断点 720：再往下左栏每行只剩 200 出头，头像 + 条 + 抽数已经挤在一起；
+ * 而 800（用户的半屏窗口）必须仍然是左右两栏——练度那边就是因为断点定在 980
+ * 把并排塌掉才出的问题，这里不敢再犯。
+ *
+ * **不要再往上抬**（一度改成 799，理由是 721~799 两列时头部那一行会折行）。
+ * 折行不是坏结果，它是那一档唯一正确的排法：一行塞不下就换行，控件照样能点能读。
+ * 抬断点的代价是把 721~799 整段从「两栏」变成「一栏」，用户要的并排没了——
+ * 用户明确要求「>720 行为一个字都不能变」，这条比「头部不折行」优先。
+ *
+ * 塌了之后右栏不再固定高度，跟着内容走；否则会留一大片空滚动区。
+ *
+ * ## 一列模式下「角色汇总」要贴着它管的右栏，不能留在头部
+ *
+ * 两列时「角色汇总」在 `.detail-head` 里、右栏在 `.detail-body` 里，但它们
+ * **同属一个 grid 的同两列**，所以标题天然就在右栏正上方（1440 实测标题 y=1685、
+ * 右栏 y=1719，两个都落在 x=1119..1419 那一列）。
+ *
+ * 塌成一列后这个前提没了：头部整体排在前、右栏排在列表下方，
+ * 于是标题停在 y=1713（tab 行下面、左栏列表上方），而它管的右栏在 y=2232，
+ * 中间隔着 41 行列表 —— **标题和内容差了 519px，读起来像在给左栏起名**。
+ *
+ * 真解不是「再复制一个标题」也不是 JS 搬 DOM（搬了还要在 resize 时搬回来，
+ * 而 `renderDetailChars()` 只跑一次，切 tab 不重建，搬来搬去必然有一次漏掉）。
+ * 让外层 `.detail-panel` 自己变成**一列 grid**，并把 `.detail-head` /
+ * `.detail-body` / `.detail-main` 全部 `display: contents`：
+ * 它们的子项直接成为 `.detail-panel` 的 grid item，于是标题和右栏成了**兄弟**，
+ * 中间除了 order 没有任何东西——「紧贴右栏正上方」由排版保证，不是算出来的。
+ *
+ * 只在 ≤760 生效：>760 时这三个容器仍是原样的 grid/flex，
+ * 两列行为一个像素都不变（`display: contents` 会丢掉容器的 gap / padding，
+ * 那正是两列布局赖以对齐的东西，绝不能常开）。
+ */
+@media (max-width: 760px) {
   /*
-   * 真放不下了才把详情两栏塌成竖排。
-   *
-   * 720 是量出来的：再往下左栏每行只剩 200 出头，头像 + 条 + 抽数已经挤在一起；
-   * 而 800（用户的半屏窗口）必须仍然是左右两栏——练度那边就是因为断点定在 980
-   * 把并排塌掉才出的问题。
-   *
    * 塌了之后右栏不再固定高度，跟着内容走；否则会留一大片空滚动区。
-   * 头部塌成一列：两个栏标题竖着排，「角色汇总」去掉右栏专属的左内边距，
-   * 和「抽卡详情」左对齐（此时它们不再分属左右两列）。
+   *
+   * ## 一列模式下「角色汇总」要贴着它管的右栏，不能留在头部
+   *
+   * 两列时「角色汇总」在 `.detail-head` 里、右栏在 `.detail-body` 里，但它们
+   * **同属一个 grid 的同两列**，所以标题天然就在右栏正上方（1440 实测标题 y=1685、
+   * 右栏 y=1719，两个都落在 x=1119..1419 那一列）。
+   *
+   * 塌成一列后这个前提没了：头部整体排在前、右栏排在列表下方，
+   * 于是标题停在 y=1713（tab 行下面、左栏列表上方），而它管的右栏在 y=2232，
+   * 中间隔着 41 行列表 —— **标题和内容差了 519px，读起来像在给左栏起名**。
+   *
+   * 真解不是「再复制一个标题」也不是 JS 搬 DOM（搬了还要在 resize 时搬回来，
+   * 而 `renderDetailChars()` 只跑一次，切 tab 不重建，搬来搬去必然有一次漏掉）。
+   * 让外层 `.detail-panel` 自己变成**一列 grid**，并把 `.detail-head` /
+   * `.detail-body` / `.detail-main` 全部 `display: contents`：
+   * 它们的子项直接成为 `.detail-panel` 的 grid item，于是标题和右栏成了**兄弟**，
+   * 中间除了 order 没有任何东西——「紧贴右栏正上方」由排版保证，不是算出来的。
+   *
+   * 只在 ≤760 生效：>760 时这三个容器仍是原样的 grid/flex，
+   * 两列行为一个像素都不变（`display: contents` 会丢掉容器的 gap / padding，
+   * 那正是两列布局赖以对齐的东西，绝不能常开）。
    */
-  .detail-panel { --detail-cols: minmax(0, 1fr); }
-  .detail-head { gap: 0; }
-  .detail-chars-title { padding-left: 0; }
+  .detail-panel {
+    --detail-cols: minmax(0, 1fr);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+  }
+  .detail-head,
+  .detail-body,
+  .detail-main { display: contents; }
+  /*
+   * order 决定竖排顺序：头部控件行 → 左栏列表 → 右栏标题 → 右栏。
+   *
+   * `.detail-head-main`（标题 + tab + 合并开关）仍在头部那一格，保持原样；
+   * `.detail-list` 是 `.detail-main` 的子项，`display: contents` 后升到这一层。
+   * 右栏标题必须在 `.detail-chars` **之前**，否则又跑到右栏下面去。
+   */
+  .detail-head-main { order: 1; }
+  .detail-list { order: 2; }
+  /*
+   * ## 分隔线必须压在标题**上方**，不是下方
+   *
+   * 上一版把分隔线留在 `.detail-chars` 自己身上（两列时那是 `border-left`，
+   * 塌成一列后改成 `border-top`）。而标题的 order 比它小、排在它上面，
+   * 于是渲染出来是「左栏列表 → 标题 → 横线 → 右栏列表」——
+   * 那根线把标题归到了**上面那一块**里，读起来就是标题还留在上一栏，
+   * 用户原话：「角色汇总 那个标题的样式，还是在上一栏里面了，没有分离」。
+   *
+   * 正确顺序是「左栏列表 → 空白 → 横线 → 标题 → 右栏列表」：
+   * 空白先说明「左边那栏到此结束了」，线再把两块切开，标题挂在线的下沿，
+   * 一眼就知道下面是新的一栏。
+   *
+   * 所以 `border-top` 挪到标题自己身上，`.detail-chars` 不再画线；
+   * 线**上方**的空白用 `margin-top` 给到 20px —— 上一版是 0（线直接贴列表底边），
+   * 而更早那版只有 10px 的 `margin-top`，用户仍然读成「还在上一栏里面」。
+   * 20px 是一条明确的分界：列表区结束、新一栏开始。
+   *
+   * ## 左内边距是 14，和「抽卡详情」标题对齐
+   *
+   * 用户原话：「角色汇总应该左对齐，类似抽卡详情」。
+   *
+   * 一列模式下两个栏标题竖着排，读者会拿它们互相比：这时「角色汇总」要跟
+   * **「抽卡详情」**对齐，而不是跟右栏角色名对齐。左栏内容的内缩正好是 14
+   * （`.detail-list` 自己的 `padding` + `.detail-head-main` 的 14），
+   * 所以标题盒子从卡片内沿 0 起算 + `padding-left: 14px`：
+   *   21(卡片内沿) + 14 = **35** = 「抽卡详情」标题文字 x（660/720/760 实测同一值）
+   *
+   * 上一版写的是 38，照着「右栏角色名」算的（行 padding 4 + 头像 26 + gap 8），
+   * 量出来标题文字 x=59，与「抽卡详情」的 35 差 24px —— 那是**和错误的对象**对齐。
+   * 角色行自己的缩进不动：头像/名字那套是对的，用户只说标题。
+   *
+   * 两列模式仍是 16（右栏 border-left 1 + fill 11 + 行 4，800 实测标题 x=555 = 头像 x=555），
+   * 别把这里改成 16。
+   */
+  .detail-chars-title {
+    order: 3;
+    padding: 9px 0 8px 38px;
+    margin-top: 20px;
+    border-top: 1px solid #2c2c35;
+  }
+  .detail-chars {
+    order: 4;
+    /*
+     * 线**不在这里**。分隔线是标题自己的 `border-top`（见上面那条规则），
+     * 这里必须写成显式的 0 —— 两列模式下 `.detail-chars` 有 `border-left`，
+     * 塌成一列后那条竖线要撤掉；同时**绝不能补一条 border-top**，
+     * 否则「标题上方一条线 + 标题下方一条线」两条叠着，比原来更乱。
+     * 这不是可有可无的兜底：本文件里后面还有一条 `.detail-chars` 规则（管
+     * `max-height` / `position`），两条会合并计算，谁写 border-top 谁就生效。
+     */
+    border-left: 0;
+    border-top: 0;
+    padding-top: 0;
+    position: static;
+    overflow: visible;
+    max-height: none;
+  }
+  /*
+   * `.detail-head` 改成 `display: contents` 后它自己的 `padding: 9px 0 6px` 跟着失效
+   * （contents 元素不生成盒子，padding 无处可落）。原来那 9px 上边距要补到
+   * `.detail-head-main` 上，否则标题会贴着卡片上沿。左右不补：它的 14px 内缩
+   * 本来就在 `.detail-head-main` 自己身上，与 `.detail-list` 对齐关系不变。
+   */
+  .detail-head-main {
+    padding-top: 9px;
+    padding-bottom: 6px;
+  }
   /*
    * 塌成一列后不再跟左栏等高：`.detail-body` 默认的 stretch 会让右栏被拉成
    * 左栏那么高（510 以上），底下留一大片空滚动区。这里回到 start，右栏按自身内容 + 上限走。
    */
   .detail-body { align-items: start; }
-  /* 塌成一列后右栏不再跟左栏等高，改回按内容走 + 上限，否则底下留一大片空滚动区 */
-  .detail-chars {
-    position: static;
-    overflow: visible;
-    max-height: 320px;
-    border-left: 0;
-    border-top: 1px solid #2c2c35;
-    padding-top: 8px;
-  }
+  /*
+   * 塌成一列后右栏不再跟左栏等高，改回按内容走，否则底下留一大片空滚动区。
+   *
+   * ## 可视高度必须直接管在**滚动容器**身上
+   *
+   * 这里原来写死 `max-height: 320px`。320 ÷ 44 = 7.27 —— 第 8 行被切掉 12px，
+   * 看着就是「最后一行只露出半截」。
+   *
+   * 行高换成 34 之后第一版把上限改成 `8 × 34 = 272` 挂在外层 `.detail-chars`
+   * 和 `.detail-chars-fill` 上，**实测仍然是 246px = 7×34 + 8** —— 因为
+   * `.detail-chars` 自己的 `padding-top: 8px` 和 1px 上边框先吃掉了 9px，
+   * 外层容器无论给什么值，落到内层滚动区上都会少一截，永远除不尽。
+   *
+   * 所以上限只给 `.detail-chars-body`（真正滚动的那个盒子），
+   * 外层两个容器一律 `max-height: none`、只留分隔线。
+   * 这样可视高度就是**精确的 8 行**，停在任何位置都看不到半行。
+   * 倍数可以调，写成除不尽的数不行。
+   */
   .detail-chars-fill {
     position: static;
     padding-left: 0;
-    max-height: 320px;
+    max-height: none;
+  }
+  .detail-chars-body {
+    max-height: calc(var(--detail-char-h, 34px) * 8);
   }
 }
 

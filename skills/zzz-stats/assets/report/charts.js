@@ -1605,9 +1605,14 @@
     toggle.disabled = !ch.has5050;
     toggle.closest('.merge-toggle').dataset.disabled = String(!ch.has5050);
 
-    $('#detail-meta').textContent = merged
-      ? fill(CFG.copy.detailMetaMerged, { upCount: d.merged.length, perUp: (ch.stats.upAvg || 0).toFixed(1) })
-      : fill(CFG.copy.detailMetaAll, { goldCount: d.all.length, perGold: d.perGold ? ch.stats.pulls === undefined ? '—' : (d.perGold).toFixed(1) : '—' });
+    /*
+     * 这里不再写 `#detail-meta`（「41 金 · 每金 57.9 抽」）。
+     *
+     * 用户原话：「显示真实抽数换行了，可以考虑把后面的总结全局去掉」。
+     * 它是头部那行最宽的一块（1440 实测 123px），也是 800 下 tools 折行的直接原因；
+     * 删掉之后 800 能塞回一行。**总结数字本身也一并去掉**，不搬到别处——
+     * 顶部 KPI 卡与右栏已经各有一份口径，这里再写一遍纯属重复。
+     */
 
     const list = $('#detail-list');
     list.innerHTML = '';

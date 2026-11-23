@@ -67,9 +67,13 @@
     头部是两个**同级**栏标题 + 左栏的控件：「抽卡详情 · tab · 显示真实抽数 · meta」……「角色汇总」。
 
     频段 tab 与「抽卡详情」同一行（用户看过上一版后要的：「还是放到跟它同行试试」）。
-    #merge / #detail-meta 也一起收进这一行：1440 下左栏扣掉内边距还有 1058，
-    标题 60 + tab 332 + tools 220 放得下；800 下放不下时整组换行（.detail-head-main 允许 wrap），
-    不缩字号、不裁文字——「能点、能读」优先于「一行」。
+    #merge 也一起收进这一行：1440 下左栏扣掉内边距还有 1058，
+    标题 60 + tab 332 + merge 87 放得下；800 下可用 492、需要 479+间距，收一下间距也放得下。
+
+    **这里不再有 #detail-meta**（「41 金 · 每金 57.9 抽」）。用户原话：
+    「显示真实抽数换行了，可以考虑把后面的总结全局去掉」——它是这行里最宽的一块
+    （1440 实测 123px），删掉之后 800 才装得下一行。要去掉的是**总结数字本身**，
+    不是换个地方显示；KPI 卡与右栏已经各有自己的口径，这里再写一遍是重复。
 
     左内边距 14 让标题/控件和 `.detail-list` 的内容盒起点对齐（都是 35），
     右栏标题靠自己的 12px 对齐右栏内容。两个 grid 列仍与 `.detail-body` 完全一致。
@@ -83,7 +87,6 @@
           <input type="checkbox" id="merge">
           <span>/*__COPY_MERGE_TOGGLE__*/</span>
         </label>
-        <span class="detail-meta" id="detail-meta"></span>
       </div>
     </div>
     <span class="detail-chars-title" id="detail-chars-title">/*__COPY_DETAIL_CHARS_TITLE__*/</span>
