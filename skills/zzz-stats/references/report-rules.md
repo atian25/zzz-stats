@@ -1127,6 +1127,31 @@ D 之所以是错解：它没动「左栏内部用不满」这个根因，只是
 > **不许加 `justify-content`** 或别的布局属性来「调匀」——用户要的是「紧跟 tab」这一个效果，
 > 加第二个布局属性会让这一行同时受两套分配规则支配，各档表现不可预测。
 
+**tab 组与配置区之间有一条竖向虚线**（用户原话「中间加个虚线啥的吧，好区分 tab 和 配置」）。
+落在 `.detail-tabs` 自己的右边缘上：
+
+```css
+.detail-tabs  { padding-right: 5px; border-right: 1px dashed #3a3a45; }
+.detail-tools { margin-left: 2px; }   /* 原来是 8px */
+```
+
+**关键在净占用与改前完全相等**：改前 `margin-left: 8px`；改后 5（padding-right）+ 1（border-right）
++ 2（margin-left）= **8px**。所以 790/800/900/1000/1440 五档的 `tools` 与 `label` 坐标
+**逐个浮点数完全不变**（实测 `IDENTICAL`）。颜色 `#3a3a45` 与 `.detail-list` 分隔线、
+`.detail-chars` 的 `border-left` 同一色阶。
+
+> **不许把这条线画在 `.detail-tools` 上**（`border-left` + `padding-left`）。
+> 那会真的多占宽度：790 那一档只有 18px 余量，实测挤成左 6 / 右 3；
+> `margin-left: 0` 再加虚线则 790 直接折行。
+> 画在 tab 组上、靠重分配原有的 8px 腾位置，才是零位移的做法。
+> 也不许换成实线 / 更粗 / `border-image` / `outline` / 伪元素。
+
+**721 / 760 两行档要单独说明**：这两档开关本来就在第二行，改后 x 从 43 变 **37**（左移 6px）。
+不是线撑出来的——第二行的起点是 `.detail-head-main` 的内容盒左缘（x=35）加 `margin-left`，
+所以 `margin-left` 从 8 改成 2，行首缩进就跟着减 6。两行结构没变（headH 61 / mainH 46），
+也没折成三行。若要这两档保持 43，就得让 `margin-left` 在折行时仍是 8——那会打破净占用相等的约束，
+五档位置就不再零变化，**取零位移为主，两行档接受这 6px**。
+
 **标题同行的判据是基线对齐**：`.detail-head` 用 `align-items: baseline`，不是 center/start。
 center 在 800 折行时会把右栏标题居到两行中线（比左栏低 9px）；start 在 1440 下差 4px；
 baseline 两者同为 15px/700，两条都过（实测 y 差 0px）。
