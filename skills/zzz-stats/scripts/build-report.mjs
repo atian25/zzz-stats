@@ -1031,9 +1031,17 @@ function detailRows(channel, merged) {
  * - **影画** = 出现次数 − 1。第 1 只给 0 影画，第 2 只给 1 影画（游戏里升 1 影需要 2 只）。
  *   注意这是**按记录次数反推**的，不是游戏里读到的影画等级：超过 7 只（6 影后继续抽）
  *   的情况照实显示 6 以上，所以前端要注明口径，不能写成确定结论。
- * - **总抽数** = 该角色**自己每条记录**的 `count` 之和。`count` 是「距上一金抽数」，
- *   所以雅 3 只 = 78+77+75 = 230 抽。**期间歪出去的抽不计入**——那是被歪出的角色的成本，
- *   算进来会抬高这个角色自己的获取成本。
+ * - **总抽数** = 该角色**每一轮那一轮的 `total`** 累加，不是只取 UP 那一条的 `count`。
+ *   一轮 `total` = 期间歪出的抽数 + 这一只自己的 `count` + 十连副金的 `count`。
+ *   所以雅 3 只 = 152 + 154 + 78 = 384 抽。大保底那一只必须把前面歪掉的抽算进成本，
+ *   否则「为了拿到它花了多少抽」会系统性偏低（只取 `count` 会算成 230，差 154 抽）。
+ *
+ * ## 自洽校验（构建期 fatal，见 testPullsClosure 附近的断言）
+ *
+ * 右栏所有 UP 角色的 `pulls` 之和必须等于**独家 + 独家重映的官方总抽数**
+ * （`GACHA_TYPE_CHARACTER_UP` 2372 + `GACHA_TYPE_CHARACTER_RETURN` 76 = 2448）。
+ * 这两个频道里每一抽都必然属于某一轮，所以只要口径是「轮 total 累加」就一定闭合；
+ * 一旦谁改回「只取 up 的 count」，这个和会立刻对不上（实测 1759 ≠ 2448），构建直接失败。
  *
  * **只有 UP 角色才展示抽数与歪**（用户定的：「非 UP 角色显示几命即可」）。
  * 非 UP 角色从没当过 UP，给它算「一共多少抽」没有意义（抽数属于把它歪出来的那个 UP），
@@ -1084,23 +1092,29 @@ function charSummary() {
     return cur;
   };
 
-  // ① 出现次数 / 总抽数 / 最后获得时间：跨全部频段
+  // ① 出现次数 / 最后获得时间：跨全部频段
   for (const channel of channelReports) {
     for (const g of channel.golds) {
       if (g.itemType !== 'ItemType_Avatar') continue;
       const cur = touch(g.itemId, g.name);
       cur.appearances += 1;
-      cur.pulls += g.count;
       if (g.recordTime > cur.lastTime) cur.lastTime = g.recordTime;
     }
   }
 
-  // ② 歪：走轮次模型，只认有 50/50 的角色频道（独家 / 独家重映）
+  /*
+   * ② 抽数 / 歪：走轮次模型，只认有 50/50 的角色频道（独家 / 独家重映）。
+   *
+   * 抽数 = 该角色每一轮那一轮的 `total` 累加（含期间歪出的 + 十连副金）。
+   * 这是「为了拿到这只花了多少抽」的真实成本，也能与官方总抽数闭合：
+   * fixtures/baseline 19 个 UP 角色合计 2448 = 2372 + 76，一抽不差。
+   */
   for (const channel of channelReports) {
     if (!channel.has5050 || channel.kind !== 'avatar') continue;
     for (const r of channel.rounds) {
       const up = touch(r.itemId, r.name);
       up.upRounds += 1;
+      up.pulls += r.total;
       if (r.off > 0 || r.guar) up.lostRounds += 1;
       for (const x of r.losts ?? []) {
         const c = touch(x.itemId, x.name);
@@ -1643,6 +1657,50 @@ if (!Object.keys(pullsMaxCfg).length) {
   });
   for (const c of nonAvatar) {
     fatal.push(`右栏含非角色条目 ${c.name}(${c.itemId})：音擎 / 邦布没有影画概念，不该进右栏`);
+  }
+}
+
+/*
+ * 抽数闭合断言：右栏所有 UP 角色的 pulls 之和 == 独家 + 独家重映的官方总抽数。
+ *
+ * 这两条断言是给「抽数口径」上的护栏。它被改错过两次：
+ *   ① 一开始拿 `is_up === false` 的条数当「歪」，语义整个反了；
+ *   ② 后来把抽数改成「只累加该角色自己那条 UP 记录的 count」，雅算出 230 —— 真实是 384。
+ * 第 ② 种的症状极隐蔽：每个数字单看都像个合理值，只有**加起来**才暴露
+ * （19 个 UP 只加到 1759，而官方是 2448，凭空少掉 689 抽全被「歪」藏走了）。
+ *
+ * 闭合成立的原因：这两个频道的每一抽都必然落在某一轮里（轮 = 一次 UP 获得及其前缀），
+ * 所以「轮 total 累加」在数学上恒等于官方总抽数；换成别的口径就一定不等。
+ *
+ * 范围只取 `has5050 && kind === 'avatar'`：右栏只统计角色，UP 轮也只在这两个频道产生。
+ * 音擎 / 常驻 / 邦布不参与（它们没有 UP 轮，也不该进这个和）。
+ *
+ * 官方口径取 `total_count − next_s_cur_times`（已抽，不含垫抽），与轮 total 天然对齐：
+ * 垫抽是「还没换来金」的部分，不属于任何一轮。实测独家重映 90 − 14 = 76 = 琉音那轮 total。
+ */
+{
+  const upChannels = channelReports.filter((c) => c.has5050 && c.kind === 'avatar');
+  if (upChannels.length) {
+    const official = upChannels.reduce((s, c) => s + c.effectivePulls, 0);
+    const ours = (report.charSummary ?? [])
+      .filter((c) => c.isUp)
+      .reduce((s, c) => s + c.pulls, 0);
+    if (ours !== official) {
+      const names = upChannels.map((c) => c.label).join(' + ');
+      fatal.push(
+        `右栏 UP 角色抽数合计 ${ours} ≠ ${names} 官方已抽 ${official}：` +
+        `抽数口径错了（必须是「该角色各轮 total 累加」，含期间歪出的抽，不能只取 UP 那条的 count）`,
+      );
+    }
+    /*
+     * 兜底：万一所有角色都没被认成 UP（比如 has5050 标记丢了），
+     * 上面那条会因为 0 ≠ official 而报警，不会静默通过。这里再显式挡一次
+     * 「官方有抽数但一个 UP 轮都没有」——那种情况说明轮次模型根本没跑起来。
+     */
+    const roundCount = upChannels.reduce((s, c) => s + c.rounds.length, 0);
+    if (roundCount === 0 && official > 0) {
+      fatal.push(`右栏 ${names} 官方有 ${official} 抽，但一轮都没解析出来：轮次模型没跑起来`);
+    }
   }
 }
 
