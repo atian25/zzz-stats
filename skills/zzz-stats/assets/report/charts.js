@@ -1601,6 +1601,7 @@
 
     const list = $('#detail-list');
     list.innerHTML = '';
+    renderDetailChars(d);
     if (!rows.length) {
       /*
        * 空频段也要画垫抽行：音擎回响正是「垫了 12 抽、一金未出」的典型，
@@ -1712,6 +1713,100 @@
    * 数据来自 index.json 的 type_stats[].next_s_cur_times，构建时已算好
    * {cur, cap, remain, pct, last}；前端只负责画，不重复算。
    */
+  /*
+   * 右栏：角色维度汇总。每个角色一行，三个数：
+   *   出现 N 次 → 影画（N−1）、一共用了多少抽、歪了几次。
+   *
+   * 全部是**当前频道**的聚合（跟着左上角 tab 走），不跨频道混；
+   * 合并模式（勾「显示真实抽数」）不改变这里的口径 —— 它只影响左栏怎么分行，
+   * 拿到的还是同一批金，所以右栏保持全量。
+   *
+   * 数据在构建期已经算好（build-report.mjs 的 charSummary），这里只画。
+   * **不要在渲染层重新聚合**：那会让「左栏和右栏对不上」这类问题变成两处口径各写一遍。
+   */
+  function renderDetailChars(d) {
+    const box = $('#detail-chars');
+    if (!box) return;
+    box.innerHTML = '';
+
+    const head = el('div', 'detail-chars-head');
+    head.appendChild(el('span', 'detail-chars-title', CFG.copy.detailCharsTitle ?? '角色汇总'));
+    box.appendChild(head);
+
+    const chars = d.chars ?? [];
+    if (!chars.length) {
+      box.appendChild(el('div', 'detail-chars-empty', CFG.copy.detailCharsEmpty ?? '这个频段还没有角色记录'));
+      return;
+    }
+
+    const body = el('div', 'detail-chars-body');
+    for (const c of chars) {
+      const row = el('div', 'detail-char');
+
+      const img = el('img', 'detail-char-icon');
+      img.src = iconOf(c.iconKey);
+      img.alt = c.name;
+      img.loading = 'lazy';
+      row.appendChild(img);
+
+      const main = el('div', 'detail-char-main');
+
+      const top = el('div', 'detail-char-top');
+      /*
+       * 角色名**不打码**：打码开关管的是账号身份（昵称 / UID），
+       * 角色名是游戏公开数据，跟「这是谁抽的卡」无关。
+       * 这里误用 displayName() 会让全打码状态下整列角色名变成 `***`。
+       */
+      const name = el('span', 'detail-char-name', c.name);
+      top.appendChild(name);
+      /*
+       * 影画超过 6 时加一个弱化标记：游戏内 6 影封顶，多出来的只可能是重复获取。
+       * 不是错误，但读者需要知道「这个 7 是按记录算的，不是游戏里的 7 影」。
+       */
+      if (c.portraits > CFG.numbers.portraitsCap) {
+        top.appendChild(el('span', 'detail-char-overcap', `${c.portraits} · 超上限`));
+      }
+      main.appendChild(top);
+
+      const stats = el('div', 'detail-char-stats');
+      // 影画徽标
+      const badge = el('span', 'detail-char-portraits');
+      badge.textContent = `${c.portraits} 影`;
+      badge.dataset.tip = `${c.name} 在记录中出现 ${c.appearances} 次；第 1 只给 0 影，之后每只 +1 影`;
+
+      stats.appendChild(badge);
+      stats.appendChild(el('span', 'detail-char-pulls', fill(CFG.copy.detailCharPulls ?? '{n} 抽', { n: c.pulls })));
+
+      if (c.lostApplicable) {
+        if (c.lost > 0) {
+          const lost = el('span', 'detail-char-lost', fill(CFG.copy.detailCharLost ?? '歪 {n} 次', { n: c.lost }));
+          stats.appendChild(lost);
+        } else {
+          stats.appendChild(el('span', 'detail-char-nolost', CFG.copy.detailCharNoLost ?? '未歪'));
+        }
+      }
+      main.appendChild(stats);
+      row.appendChild(main);
+
+      row.dataset.tip = buildCharTip(c);
+      body.appendChild(row);
+    }
+    box.appendChild(body);
+
+    const note = el('div', 'detail-chars-note', CFG.copy.detailCharsNote ?? '');
+    box.appendChild(note);
+  }
+
+  function buildCharTip(c) {
+    const lines = [
+      `${c.name}`,
+      `记录中出现 ${c.appearances} 次 → ${c.portraits} 影（第 1 只 0 影）`,
+      `一共 ${c.pulls} 抽（含歪出的记录）`,
+    ];
+    if (c.lostApplicable) lines.push(c.lost > 0 ? `其中歪出 ${c.lost} 次` : '没有歪过');
+    return lines.join('\n');
+  }
+
   function buildPityRow(pity) {
     if (!pity || pity.cap == null || !pity.cur) return null;
 

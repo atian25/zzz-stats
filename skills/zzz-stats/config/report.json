@@ -11,6 +11,8 @@
     "multiGoldSortGap": 9,
     "detailBarDivisor": 100,
     "detailBarMinPx": 44,
+    "_portraitsCapComment": "影画上限（游戏内 6）。右栏的影画数是「记录中出现次数 − 1」，超过这个数只可能是 6 影后继续重复获取，所以只是标一下、不截断——照实显示才是诚实的。",
+    "portraitsCap": 6,
     "segmentLabelMin": 8,
     "barMaxWidth": 56,
     "winRateTiers": [
@@ -334,6 +336,13 @@
     "detailMetaAll": "{goldCount} 金 · 每金 {perGold} 抽",
     "detailMetaMerged": "{upCount} 次 UP · 每 UP {perUp} 抽",
     "detailEmpty": "这个频段还没有 S 级记录",
+    "detailCharsTitle": "角色汇总",
+    "detailCharsEmpty": "这个频段还没有角色记录",
+    "_detailCharsNote": "右栏口径小字。影画那条必须写「记录中出现次数 − 1」而不是直接说影画等级：超过 7 只（6 影后继续抽）时会照实显示 6 以上，按记录反推不等于游戏内等级。总抽数那条要写明含歪出的记录。",
+    "detailCharsNote": "影画＝记录中出现次数 − 1；抽数含歪出的记录",
+    "detailCharPulls": "{n} 抽",
+    "detailCharLost": "歪 {n} 次",
+    "detailCharNoLost": "未歪",
     "mergeToggle": "显示真实抽数",
     "legend": [
       {

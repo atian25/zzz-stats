@@ -765,7 +765,140 @@ html, body {
     var(--detail-bad, #ff5f6d);
 }
 
+/* ------------------------------------------------------------ 详情右栏 */
+
+/*
+ * 左右两栏：左栏是原本的逐金列表（一行不动），右栏是角色维度汇总。
+ *
+ * ## 为什么用 minmax 而不是固定两列再写断点
+ *
+ * 练度那边踩过的坑：一到某个宽度就把并排塌成竖排，用户的半屏窗口（800~850）
+ * 正好落在断点里，于是「立绘占满整行、面板掉到下面」。
+ * 这里让左栏能收缩（minmax(0, 1fr)），右栏给一个可收缩的下界，
+ * 窗口变窄时两栏一起变窄，**最后才靠 grid-template-areas 塌成竖排**，
+ * 塌的时机由内容决定而不是一个拍脑袋的像素值。
+ */
+.detail-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  gap: 12px;
+  /*
+   * 这里**不能加左右内边距**：左栏 `.detail-list` 自己就有 14px，
+   * 外层再加一层会让左栏所有内容整体右移 14px —— 而左栏要求逐像素不变。
+   */
+  padding: 0 0 4px;
+  align-items: start;
+}
+
+.detail-chars {
+  /*
+   * 右栏高度跟左栏对齐，内部自己滚。
+   * 左栏是 480px 固定高（历史遗留），这里显式跟着它，两个滚动区看起来才是一套。
+   */
+  height: 480px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid #2c2c35;
+  padding-left: 11px;
+  min-width: 0;
+}
+.detail-chars-head {
+  padding: 2px 0 6px;
+  flex: 0 0 auto;
+}
+.detail-chars-title { font-size: 12px; font-weight: 700; color: var(--ink-dim); }
+.detail-chars-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #3a3a45 transparent;
+}
+.detail-chars-body::-webkit-scrollbar { width: 8px; }
+.detail-chars-body::-webkit-scrollbar-thumb { background: #3a3a45; border-radius: 4px; }
+.detail-chars-body::-webkit-scrollbar-track { background: transparent; }
+.detail-chars-empty { font-size: 11.5px; color: var(--ink-faint); padding: 8px 0; }
+.detail-chars-note {
+  flex: 0 0 auto;
+  padding-top: 6px;
+  margin-top: 4px;
+  border-top: 1px solid #26262e;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+}
+
+.detail-char {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  border-radius: 5px;
+}
+.detail-char:hover { background: #212129; }
+.detail-char-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  object-fit: cover;
+  background: #2a2a33;
+}
+.detail-char-main { min-width: 0; flex: 1 1 auto; }
+.detail-char-top {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+}
+.detail-char-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.detail-char-overcap {
+  flex: 0 0 auto;
+  font-size: 9.5px;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+}
+.detail-char-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 10.5px;
+  font-family: var(--mono);
+  color: var(--ink-dim);
+  white-space: nowrap;
+}
+.detail-char-portraits {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #2b2b35;
+  color: var(--ink);
+  font-weight: 600;
+}
+.detail-char-pulls { color: var(--ink-dim); }
+.detail-char-lost { color: var(--detail-bad, #ff5f6d); }
+.detail-char-nolost { color: var(--ink-faint); }
+
 /* --------------------------------------------------------------- 响应式 */
+
+/*
+ * 窄屏让右栏自己先收窄，而不是固定吃 300px 把左栏挤扁。
+ *
+ * 800 宽时右栏占 300 的话左栏只剩 446，抽数条从 426 塌到 253；
+ * 收到 240 后左栏回到 508，横条的「长度即数值」还读得出来。
+ * 这一步是「先缩，不是先塌」——只有真的并排放不下（≤640）才改成一列。
+ */
+@media (max-width: 1000px) {
+  .detail-body { grid-template-columns: minmax(0, 1fr) minmax(190px, 240px); }
+}
 
 @media (max-width: 1320px) {
   .title-name { font-size: 26px; }
@@ -797,6 +930,25 @@ html, body {
   .chart-filters::-webkit-scrollbar { display: none; }
   .panel-meta { margin-left: auto; }
   .collapse-btn { margin-left: 0; }
+
+  /*
+   * 真放不下了才把详情两栏塌成竖排。
+   *
+   * 720 是量出来的：再往下左栏每行只剩 200 出头，头像 + 条 + 抽数已经挤在一起；
+   * 而 800（用户的半屏窗口）必须仍然是左右两栏——练度那边就是因为断点定在 980
+   * 把并排塌掉才出的问题。
+   *
+   * 塌了之后右栏不再固定高度，跟着内容走；否则会留一大片空滚动区。
+   */
+  .detail-body { grid-template-columns: minmax(0, 1fr); }
+  .detail-chars {
+    height: auto;
+    max-height: 320px;
+    border-left: 0;
+    border-top: 1px solid #2c2c35;
+    padding-left: 0;
+    padding-top: 8px;
+  }
 }
 
 @media print {

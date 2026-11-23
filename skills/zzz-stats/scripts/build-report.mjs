@@ -1007,10 +1007,69 @@ function detailRows(channel, merged) {
     }));
 }
 
+/*
+ * 右栏：角色维度汇总。
+ *
+ * ## 三个指标的口径（全部按「当前频道」算，不跨频道混）
+ *
+ * - **出现次数**：该角色在当前频道的金记录里出现几条。每出现一次就是「拿到了一个」。
+ * - **影画** = 出现次数 − 1。第 1 只给 0 影画，第 2 只给 1 影画（游戏里升 1 影需要 2 只）。
+ *   注意这是**按记录次数反推**的，不是游戏里读到的影画等级：超过 7 只（6 影后继续抽）
+ *   的情况照实显示 6 以上，所以前端要注明口径，不能写成确定结论。
+ * - **总抽数** = 该角色所有记录的 `count` 之和。`count` 是「距上一金抽数」，
+ *   所以这个和就是「为了拿到这些只，一共花了多少抽」。**歪出来的记录也计入**——
+ *   它同样是这个角色的获取成本，排除掉会低估。
+ * - **歪了几次**：该角色 `is_up === false` 的记录条数。
+ *
+ * 排序：先按出现次数降序（影画高的更有信息量），再按总抽数降序，最后按 itemId 稳定排序。
+ * 不用名字排——中文名排序对读者没有意义。
+ */
+function charSummary(channel) {
+  const byId = new Map();
+  for (const g of channel.golds) {
+    const k = g.itemId;
+    const cur = byId.get(k) || {
+      itemId: g.itemId,
+      name: g.name,
+      appearances: 0,
+      pulls: 0,
+      lost: 0,
+      // 音擎频道没有「歪」的语义（is_up 恒为 true），前端据此决定要不要画歪次数
+      lostApplicable: channel.has5050,
+    };
+    cur.appearances += 1;
+    cur.pulls += g.count;
+    if (g.isUp !== true) cur.lost += 1;
+    byId.set(k, cur);
+  }
+  return [...byId.values()]
+    .map((x) => ({
+      itemId: x.itemId,
+      name: x.name,
+      appearances: x.appearances,
+      // 影画 = 出现次数 − 1，第 1 只给 0
+      portraits: Math.max(0, x.appearances - 1),
+      pulls: x.pulls,
+      lost: x.lost,
+      lostApplicable: x.lostApplicable,
+    }))
+    .sort((a, b) => b.appearances - a.appearances
+      || b.pulls - a.pulls
+      || String(a.itemId).localeCompare(String(b.itemId)));
+}
+
 const details = Object.fromEntries(
   CFG.channels.map((ch) => {
     const c = channelReports.find((x) => x.id === ch.id);
-    return [ch.id, { all: detailRows(c, false), merged: detailRows(c, true), perGold: c.perGold, has5050: ch.has5050 }];
+    return [ch.id, {
+      all: detailRows(c, false),
+      merged: detailRows(c, true),
+      perGold: c.perGold,
+      has5050: ch.has5050,
+      // 图标去重要按频道类型选目录（音擎/邦布只有 items），所以把 kind 一并带下去
+      kind: ch.kind,
+      chars: charSummary(c),
+    }];
   }),
 );
 
@@ -1230,6 +1289,20 @@ function inlineImages(report) {
   };
 
   /*
+   * 右栏：同一个 id 到底该用哪个目录的图标，只能看文件在不在。
+   *
+   * 音擎频道一个频道里就有两种金：音擎（id 在 items/）和歪出来的角色（id 在 avatars/）。
+   * 邦布也是 items/。所以「按频道选一次目录」必然出错，只能逐个 id 试。
+   * 两个目录都没有时不报缺失警告——占位图本来就是为这种情况准备的。
+   */
+  const iconKeyFor = (id) => {
+    for (const dir of ['avatars', 'items']) {
+      if (existsSync(join(SKILL_DIR, 'assets/report/icons', dir, `${id}.png`))) return encode(dir, id);
+    }
+    return encode('avatars', id);
+  };
+
+  /*
    * 主图头像：数据里只留图标 hash，前端用 ICONS[hash] 还原。
    *
    * 图标目录按频道类型选：代理人头像是圆头像（icons/avatars），
@@ -1253,6 +1326,17 @@ function inlineImages(report) {
         for (const s of row.side ?? []) s.iconKey = encode('items', s.itemId);
       }
     }
+    /*
+     * 右栏角色汇总的图标目录：**先试 avatars，再退回 items**。
+     *
+     * 不能按频道类型一刀切。音擎频道（kind=weapon）里歪出来的金是**角色**，
+     * 它们的 id 只在 avatars 下；而金本身是音擎时 id 只在 items 下。
+     * 同一个频道两种都在，所以按频道选目录一定会让其中一类掉到占位图上
+     * （实测一刀切 items 时 14118 / 14121 报缺失，那两个是角色）。
+     *
+     * `iconKeyFor()` 里已经按「本地有没有这个文件」判断，这里只负责按优先级试。
+     */
+    for (const c of ch.chars ?? []) c.iconKey = iconKeyFor(c.itemId);
   }
   report.icons = Object.fromEntries(byHash);
   return { unique: byHash.size, used: byId.size, missing };
