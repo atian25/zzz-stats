@@ -1087,7 +1087,7 @@ html, body {
   font-weight: 600;
 }
 /*
- * 欧 / 非标记（🌟 / 🌚）。
+ * 欧 / 非标记（🌟 / 💀）。
  *
  * ## 为什么单独设 font-family
  *
@@ -1121,6 +1121,20 @@ html, body {
 }
 .detail-char-pulls { color: var(--ink-dim); }
 .detail-char-lost { color: var(--detail-bad, #ff5f6d); }
+/*
+ * emoji 排在空 `.detail-char-lost` 后面时，要退掉多出来的那一格 gap。
+ *
+ * 那一格是怎么来的：`.detail-char-lost` 对没歪的角色是**空 span 但必须保留**
+ * （占位，见 charts.js 里那段注释），它宽度为 0 却仍是 flex item，
+ * 于是前后各吃一个 `gap: 6px`。它以前是行尾最后一个子元素，后面的 gap 不渲染，看不出来；
+ * emoji 挪到它后面之后，这个空占位就让「emoji 前」变成 6 + 6 = 12px，
+ * 而有「歪 N 次」的行只有 6px——14 个标记横向参差，量出来差整整一格。
+ *
+ * 修法**不动占位本身**（DOM 结构、渲染逻辑一个字都不改），只用相邻选择器把那格退回去：
+ * 空 lost 的紧邻兄弟正好就是 emoji。`-6px` 与 `.detail-char-stats` 的 `gap` 同值，
+ * 改 gap 时这里要一起改。
+ */
+.detail-char-lost:empty + .detail-char-luck { margin-left: -6px; }
 /*
  * 曾经有一条 `.detail-char-lostout`（「被歪出 N 次」）。按用户定的口径，
  * 非 UP 角色**只显示影画**，那个徽标不再渲染，样式一并删掉——

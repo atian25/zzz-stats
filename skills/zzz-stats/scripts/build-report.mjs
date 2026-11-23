@@ -1076,7 +1076,7 @@ function detailRows(channel, merged) {
  * 口径用户已定死（config 的 numbers._luckComment 有完整理由）：
  *   avg = pulls / upRounds（各轮 total 累加 ÷ 当 UP 的轮数）
  *   avg <  baseline × (1 − band)  → euro   🌟
- *   avg >  baseline × (1 + band)  → bad    🌚
+ *   avg >  baseline × (1 + band)  → bad    💀
  *   其余                          → null   不标，保持干净
  *
  * **只对 isUp 判**：非 UP 角色没有抽数（它们是被歪出来的，抽数记在别人头上），
