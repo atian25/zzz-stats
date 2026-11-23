@@ -1797,14 +1797,20 @@
        * 既不用 `margin-left: auto` 推到行最右，也不回行首——每行文字长短不同，
        * emoji 的位置就跟着参差，这正是用户要的效果（他明确否掉了「为了对齐好看」的做法）。
        *
-       * 判定在构建期算好（`build-report.mjs` 的 `luckOf()`，阈值在
-       * `config/report.json` 的 `numbers.luckBaseline` / `luckBand`），
-       * 这里只按 `c.luck` 挑 emoji，**不在前端重算**——两处各算一遍必然漂移。
+       * 判定在构建期算好（`build-report.mjs` 的 `luckOf()`；档位表在
+       * `config/report.json` 的 `numbers.luckTiers`，期望基准是 `numbers.luckExpectPerUp`），
+       * 这里只按 `c.luck` 取那一档的 emoji / 颗数 / 中文名，**不在前端重算**——
+       * 两处各算一遍必然漂移。
+       *
+       * 一个 `span` 里连排 `count` 个 emoji（极欧 3 颗、偏欧 1 颗），**不是 N 个 span**：
+       * 多 span 会各吃一个 `gap: 6px`，3 颗能撑出 12px 额外宽度，把 720 窄档挤折行。
+       * 连排的 emoji 就在一个文本节点里，天然紧挨。
        *
        * 平档（`luck === null`）**不 append 任何东西**：不留空 span、不占位。
        * 用户要的是「干净」，一个空盒子会让行尾多出一段空白。
        *
-       * 无障碍：emoji 是内容不是装饰，所以带 `role="img"` + `aria-label`，读屏能读出「欧」/「非」。
+       * 无障碍：emoji 是内容不是装饰，所以带 `role="img"` + `aria-label`，
+       * 读屏能读出档位中文名（「极欧」「很欧」「偏欧」「偏非」「很非」「极非」）。
        * **不要再加原生 `title`**：整行已经有 `row.dataset.tip`（`buildCharTip`）那套自定义提示，
        * 再加 title 会多出一个浏览器原生 tooltip，悬停时两个提示叠在一起；
        * 而且用户明确说过不要任何解释文字，语义用 aria-label 交代就够了。
@@ -1858,12 +1864,13 @@
        * 注意 `detail-char-lost` 对没歪的角色是**空 span 但必须保留**（见上面那段注释），
        * emoji 排在它之后，不影响那套占位逻辑——空 span 没有内容宽度，emoji 不会因此被推开。
        */
-      const luck = c.luck ? CFG.copy.detailCharLuck?.[c.luck] : null;
-      if (luck) {
-        const mark = el('span', 'detail-char-luck', luck.emoji);
+      const tier = c.luck ? CFG.numbers.luckTiers?.[c.luck] : null;
+      if (tier) {
+        // 一个文本节点里连排 count 颗，不拆 span：拆了每颗各吃一个 gap
+        const mark = el('span', 'detail-char-luck', tier.emoji.repeat(tier.count ?? 1));
         mark.dataset.luck = c.luck;
         mark.setAttribute('role', 'img');
-        mark.setAttribute('aria-label', luck.label);
+        mark.setAttribute('aria-label', tier.label ?? c.luck);
         stats.appendChild(mark);
       }
       main.appendChild(stats);

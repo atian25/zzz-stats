@@ -1071,25 +1071,33 @@ function detailRows(channel, merged) {
  * 不按出现次数排：那样「从没 UP 过但最近刚拿到」的珂蕾妲会压在最新的 UP 角色上面。
  */
 /*
- * 右栏每行的「欧 / 非」标记：每 UP 均抽 vs 理论期望。
+ * 右栏每行的「欧 / 非」标记：**总抽倍率** vs 该角色的期望抽数。
  *
  * 口径用户已定死（config 的 numbers._luckComment 有完整理由）：
- *   avg = pulls / upRounds（各轮 total 累加 ÷ 当 UP 的轮数）
- *   avg <  baseline × (1 − band)  → euro   🌟
- *   avg >  baseline × (1 + band)  → bad    💀
- *   其余                          → null   不标，保持干净
+ *   expect = upRounds × luckExpectPerUp      （upRounds = 这个角色当过几次 UP，每次期望 93.75 抽）
+ *   ratio  = pulls / expect
+ *   再按 numbers.luckTiers 的区间落档（欧档只给 max 不含，非档 min 不含 + max 含）
+ *   谁都落不进 → null，不标，保持干净
+ *
+ * **改前是「每 UP 均抽 = pulls / upRounds」直接比 93.75 ±15%**，二分欧/非。
+ * 换成总抽倍率的原因：19 只里 14 只只抽过 1 只，均抽等于把单次运气当角色属性；
+ * 按总抽算，多只角色有 N × 93.75 的基准（蕾米埃尔 3 只 194 抽 / 期望 281.25 = 0.690 属欧）。
  *
  * **只对 isUp 判**：非 UP 角色没有抽数（它们是被歪出来的，抽数记在别人头上），
- * 给它们判会算出 0 抽 = 欧，纯属胡说。
+ * 给它们判会算出 0 抽 = 极欧，纯属胡说。
  */
 function luckOf(c, numbers) {
   if (!c.isUp || !c.upRounds) return null;
-  const avg = c.pulls / c.upRounds;
-  const base = numbers.luckBaseline;
-  const band = numbers.luckBand;
-  if (!(base > 0) || !(band >= 0)) return null; // 配置写坏了就不标，不猜
-  if (avg < base * (1 - band)) return 'euro';
-  if (avg > base * (1 + band)) return 'bad';
+  const per = numbers.luckExpectPerUp;
+  const tiers = numbers.luckTiers;
+  if (!(per > 0) || !tiers || typeof tiers !== 'object') return null; // 配置写坏了就不标，不猜
+  const ratio = c.pulls / (c.upRounds * per);
+  for (const [key, t] of Object.entries(tiers)) {
+    if (!t || typeof t !== 'object') continue;
+    if (t.min != null && !(ratio > t.min)) continue;
+    if (t.max != null && !(ratio < t.max)) continue;
+    return key;
+  }
   return null;
 }
 
@@ -1206,7 +1214,8 @@ function charSummary() {
       lostOutMain: x.lostOutMain,
       lostOutSide: x.lostOutSide,
       /*
-       * 欧 / 非标记：'euro' | 'bad' | null。渲染层只按这个值挑 emoji，
+       * 欧 / 非标记：档位名（euro3 / euro2 / euro1 / bad1 / bad2 / bad3）或 null。
+       * 渲染层只按这个值去 numbers.luckTiers 里取 emoji/count/label，
        * 不在前端重算——阈值改了要跟着 config 走，两处各算一遍必然漂移。
        */
       luck: luckOf({ isUp: x.upRounds > 0, upRounds: x.upRounds, pulls: x.pulls }, CFG.numbers),
@@ -1822,29 +1831,82 @@ if (!Object.keys(pullsMaxCfg).length) {
 /*
  * 右栏欧非标记断言：防「标记与行内数字互相打脸」。
  *
- * ① **只许 UP 角色有标记。** 非 UP 角色没有抽数，标了就是 0 抽 = 欧的胡说。
- * ② **标记必须与行内均抽自洽。** 逐行用 `pulls / upRounds` 复算一遍，
- *    与 `luck` 对不上说明判定用错了字段（比如拿 pulls 而不是均抽去比阈值）。
- * ③ **阈值必须真从 config 读。** 把 luckBaseline 改成 0 之类会静默让全部角色变「非」，
- *    所以显式检查它是个正数、且区间下界 < 上界。
+ * ① **只许 UP 角色有标记。** 非 UP 角色没有抽数，标了就是 0 抽 = 极欧的胡说。
+ * ② **标记必须与行内数字自洽。** 逐行用 `pulls / (upRounds × luckExpectPerUp)`
+ *    复算倍率、再独立落一次档，与 `luck` 对不上说明判定用错了字段
+ *    （比如还在拿 pulls / upRounds 去比阈值，那是已作废的旧口径）。
+ * ③ **档位表必须真从 config 读、且是一张单调阶梯。** 三个检查：
+ *    a) luckExpectPerUp 是正数；
+ *    b) 每档都有 emoji / 正整数 count / 非空 label（渲染层直接用它，缺了就是空标记）；
+ *    c) 档位覆盖互不重叠、边界严格递增——上界写反（比如 euro1 的 max 也写成 0.6）
+ *       会静默让一整档角色消失，光靠「标记数看起来正常」发现不了。
  */
 {
   const rows = report.charSummary ?? [];
   const num = CFG.numbers;
-  const lo = num.luckBaseline * (1 - num.luckBand);
-  const hi = num.luckBaseline * (1 + num.luckBand);
-  if (!(num.luckBaseline > 0) || !(num.luckBand >= 0) || !(lo < hi)) {
-    fatal.push(`numbers.luckBaseline(${num.luckBaseline}) / luckBand(${num.luckBand}) 配置无效：算不出 [下界, 上界]`);
+  const tiers = num.luckTiers;
+  const per = num.luckExpectPerUp;
+
+  if (!(per > 0)) {
+    fatal.push(`numbers.luckExpectPerUp(${per}) 不是正数：算不出期望抽数`);
+  }
+  if (!tiers || typeof tiers !== 'object' || !Object.keys(tiers).length) {
+    fatal.push('numbers.luckTiers 缺失或为空：右栏标记没有档位可落');
   } else {
+    let edge = -Infinity;
+    for (const [key, t] of Object.entries(tiers)) {
+      if (!t || typeof t !== 'object') {
+        fatal.push(`numbers.luckTiers.${key} 不是对象`);
+        continue;
+      }
+      if (!t.emoji) fatal.push(`numbers.luckTiers.${key} 缺 emoji：渲染层会生成空标记`);
+      if (!(Number.isInteger(t.count) && t.count > 0)) {
+        fatal.push(`numbers.luckTiers.${key}.count(${t.count}) 必须是正整数`);
+      }
+      if (!t.label) fatal.push(`numbers.luckTiers.${key} 缺 label：aria-label 会空`);
+      /*
+       * 区间必须单调递增、**不许重叠**。`min` 缺省表示「从负无穷开始」（只允许第一档），
+       * `max` 缺省表示「到正无穷为止」（只允许最后一档）。
+       *
+       * 注意**允许留空隙**：euro1 上界 0.85 与 bad1 下界 1.15 之间那一段就是刻意留空的平档，
+       * 「不标」正是要的效果。所以这里只拦 `min < 上一档 max`（重叠会让后一档永远落不到），
+       * 不要求首尾相接——第一版断言按「必须相接」写，直接把这份合法配置判成了致命错误。
+       */
+      const lo = t.min ?? -Infinity;
+      const hi = t.max ?? Infinity;
+      if (!(lo < hi)) {
+        fatal.push(`numbers.luckTiers.${key} 区间无效：[${lo}, ${hi})`);
+      } else if (t.min != null && t.min < edge) {
+        fatal.push(
+          `numbers.luckTiers.${key}.min(${t.min}) 小于上一档的上界(${edge})：区间重叠，` +
+          '后一档永远落不到，那一档的角色会静默消失',
+        );
+      }
+      edge = hi;
+    }
+  }
+
+  if (per > 0 && tiers) {
     for (const c of rows) {
       if (!c.isUp && c.luck) {
         fatal.push(`右栏 ${c.name} 不是 UP 角色却有欧非标记 ${c.luck}：非 UP 没有抽数，不该判`);
       }
       if (!c.isUp) continue;
-      const avg = c.pulls / c.upRounds;
-      const want = avg < lo ? 'euro' : (avg > hi ? 'bad' : null);
+      const expect = c.upRounds * per;
+      const ratio = c.pulls / expect;
+      let want = null;
+      for (const [key, t] of Object.entries(tiers)) {
+        if (!t || typeof t !== 'object') continue;
+        if (t.min != null && !(ratio > t.min)) continue;
+        if (t.max != null && !(ratio < t.max)) continue;
+        want = key;
+        break;
+      }
       if (c.luck !== want) {
-        fatal.push(`右栏 ${c.name} 均抽 ${avg.toFixed(1)}（${c.pulls}/${c.upRounds}）应是 ${want ?? '平档'}，实际 ${c.luck ?? '平档'}：判定口径与行内数字不一致`);
+        fatal.push(
+          `右栏 ${c.name} 实抽 ${c.pulls} / 期望 ${expect}（${c.upRounds} 只 × ${per}）` +
+          ` = 倍率 ${ratio.toFixed(3)}，应落 ${want ?? '平档'}，实际 ${c.luck ?? '平档'}：判定口径与行内数字不一致`,
+        );
       }
     }
   }

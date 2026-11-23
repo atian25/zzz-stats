@@ -3,12 +3,20 @@
   "version": "2026-11",
   "_comment": "报表口径与文案的唯一来源。改称号、改阈值、改配色都只改这里，不要改 scripts/ 或 assets/report/。",
   "numbers": {
-    "_comment": "sPityExpect × fiftyFifty = 角色池每 UP 期望抽数（62.5 × 1.5 = 93.75），只在文档和标签文案里用作理论基准；判档一律用账号自己的均值。detailBarDivisor：详情条满格对应的抽数（100 抽 = 满格）。 countsTowardTotals：邦布抽卡用的是邦布币，和调频券不是同一种货币，所以不计入「总抽卡数 / 平均每金」这些跨频道汇总。channels[].pityCap：该频段官方保底抽数（常驻/独家/重映 90，音擎/回响 80，邦布 80，见 references/api.md §5）。luckBaseline / luckBand：右栏每行欧非标记的判据，见下一条 _luckComment。",
+    "_comment": "sPityExpect × fiftyFifty = 角色池每 UP 期望抽数（62.5 × 1.5 = 93.75）；这里的「每 UP 期望」只作理论基准，右栏标记的判据见下一条 _luckComment（按总抽倍率分 6 档，不再是每 UP 均抽）。detailBarDivisor：详情条满格对应的抽数（100 抽 = 满格）。 countsTowardTotals：邦布抽卡用的是邦布币，和调频券不是同一种货币，所以不计入「总抽卡数 / 平均每金」这些跨频道汇总。channels[].pityCap：该频段官方保底抽数（常驻/独家/重映 90，音擎/回响 80，邦布 80，见 references/api.md §5）。luckTiers / luckExpectPerUp：右栏每行欧非标记的判据，见下一条 _luckComment。",
     "sPityExpect": 62.5,
     "fiftyFifty": 1.5,
-    "_luckComment": "右栏欧非标记的判定口径，用户选定，不要改。基准 luckBaseline = 理论期望 sPityExpect × fiftyFifty = 62.5 × 1.5 = 93.75，±luckBand(15%) 为平档：区间 [79.6875, 107.8125]。每 UP 均抽 = pulls / upRounds（该角色各轮 total 累加 ÷ 它当 UP 的轮数），均抽 < 下界记欧（🌟）、> 上界记非（💀）、中间不标。**用理论值而不是账号均值**——账号均值会被账号整体运气拉平，同一只角色在不同账号会得到不同标记；也**不是「歪没歪」**：蕾米埃尔 194 抽听着多，但它 3 只均 64.7 属欧；简 159 抽只 1 只、均 159 才是非。只对 isUp === true 的角色判，非 UP 角色没有抽数据，不标也不占位。",
-    "luckBaseline": 93.75,
-    "luckBand": 0.15,
+    "_luckComment": "右栏欧非标记的判定口径，用户选定，不要改。**改前是「每 UP 均抽 vs 93.75 ±15%」二分（欧/非），已作废——不要和这套并存。** 现在是按**总抽倍率**分 6 档：期望抽数 = 该角色出现次数 upRounds × luckExpectPerUp(93.75)，倍率 ratio = pulls ÷ 期望抽数，再按 luckTiers 里各区间的 max/min 落档（区间为左闭右开，最后一档 bad3 只有 min）。为什么换：19 只里有 14 只只抽过 1 只，用「均抽」等于把单次运气当成角色属性；按总抽算，多只角色有对应的 N × 93.75 基准——蕾米埃尔抽 3 只花 194 抽、期望 281.25、倍率 0.690 是欧（旧口径「均 64.7」结论相同，但 194 这个绝对数看着吓人容易误读），而单抽一只的角色期望就是 93.75，判的是「这么快就出了」还是「抽了多久」。中间档（0.85 ~ 1.15）不标、不占位。只对 isUp === true 的角色判，非 UP 角色没有抽数据，不标也不占位。",
+    "luckExpectPerUp": 93.75,
+    "_luckTiersComment": "6 档按倍率升序排列，**顺序必须是单调阶梯**：euro3 最欧 → euro2 → euro1 →（不标）→ bad1 → bad2 → bad3。写法约定：欧档只给 max（不含），非档给 min（不含）+ max（含），最后一档只有 min。count = 连排几颗 emoji；label 进 aria-label（读屏读得出「极欧」等），不能只有图没有语义。**不要给 emoji 加原生 title**——整行已有 data-tip，两个会叠。平档没有条目，渲染层用 null 表示「不标」。",
+    "luckTiers": {
+      "euro3": { "max": 0.35, "emoji": "🌟", "count": 3, "label": "极欧" },
+      "euro2": { "max": 0.6, "emoji": "🌟", "count": 2, "label": "很欧" },
+      "euro1": { "max": 0.85, "emoji": "🌟", "count": 1, "label": "偏欧" },
+      "bad1": { "min": 1.15, "max": 1.45, "emoji": "💀", "count": 1, "label": "偏非" },
+      "bad2": { "min": 1.45, "max": 1.8, "emoji": "💀", "count": 2, "label": "很非" },
+      "bad3": { "min": 1.8, "emoji": "💀", "count": 3, "label": "极非" }
+    },
     "baselineWinRate": 50,
     "extremePulls": 40,
     "multiGoldSortGap": 9,
@@ -341,11 +349,6 @@
     "detailCharsEmpty": "这个账号还没有角色记录",
     "detailCharPulls": "{n} 抽",
     "detailCharLost": "歪 {n} 次",
-    "_luckLabelComment": "右栏欧非标记的 emoji 与无障碍标签，配套 numbers.luckBaseline / luckBand。euro 用 🌟、bad 用 💀；平档不标（用 null，不要写空字符串占位）。label 会进 aria-label，读屏能读出「欧」/「非」，不能只有图没有语义。不要加 title——整行已有 data-tip 自定义提示，两个会叠。",
-    "detailCharLuck": {
-      "euro": { "emoji": "🌟", "label": "欧" },
-      "bad": { "emoji": "💀", "label": "非" }
-    },
     "mergeToggle": "真实抽数",
     "legend": [
       {

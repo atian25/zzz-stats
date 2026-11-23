@@ -1087,7 +1087,7 @@ html, body {
   font-weight: 600;
 }
 /*
- * 欧 / 非标记（🌟 / 💀）。
+ * 欧 / 非标记（🌟 / 💀，按总抽倍率分 6 档、可连排 1~3 颗）。
  *
  * ## 为什么单独设 font-family
  *
@@ -1095,15 +1095,25 @@ html, body {
  * 会被回退到黑白字形或被压成豆腐块——`DM Mono` / Menlo 都没有彩色 emoji。
  * 所以这里显式把 `Apple Color Emoji` / `Segoe UI Emoji` / `Noto Color Emoji` 排在最前，
  * 让浏览器直接命中彩色字体，后面的 mono 只是兜底。
+ * 实测 `CSS.getPlatformFontsForNode` 对 1/2/3 颗都命中 `Apple Color Emoji`，
+ * `glyphCount` 分别是 1 / 2 / 3——说明连排的每一颗都走了彩色字体，没有一颗掉进 mono。
  *
  * ## 为什么不会撑高 34px 行
  *
  * 行高是硬约束（见 `.detail-char` 上面那段注释，8 × 34 = 272 的最大值依赖它）。
  * 三件事一起保证它不撑高：
- *  ① `font-size: 10px` —— 与 stats 行同量级，emjio 实际字形约 12px 高，低于 14px 的 line-height；
+ *  ① `font-size: 10px` —— 与 stats 行同量级，emoji 实际字形约 12px 高，低于 14px 的 line-height；
  *  ② `line-height: 14px` 显式写死，不让 emoji 字体自带的行高参与计算；
  *  ③ `display: inline-block` + `vertical-align: middle` 去掉基线下沉（emoji 字形底边常低于基线）。
- * 实测 25 行仍是 34px、`.detail-chars-body` 高度不变（1440 480 / 720 272）。
+ * 实测 25 行仍是 34px、`.detail-chars-body` 高度不变（1440/1000/800 = 480、720 = 272）。
+ * **连排多颗也是同一个盒子**：一个 span 内多个字形，高度由 line-height 决定，
+ * 不会随颗数长高——实测 3 颗那行（菲欧妮）行高仍是 34px。
+ *
+ * ## 为什么多颗必须放进同一个文本节点
+ *
+ * 见 charts.js 里那段：拆成 N 个 span 的话，每个都吃一个 `.detail-char-stats` 的 `gap: 6px`，
+ * 3 颗会凭空多出 12px，把 720 窄档挤折行。CSS 这边不做任何 `letter-spacing` 之类的补偿，
+ * 紧挨就是因为它们在同一个文本节点里。
  */
 .detail-char-luck {
   flex: 0 0 auto;
@@ -1114,8 +1124,13 @@ html, body {
   vertical-align: middle;
   /*
    * 去掉 emoji 字形自带的侧边留白：右侧留白现在正好顶在行尾，
-   * 不减掉的话最长那行（「2 影 384 抽 歪 2 次」+ 标记）在 720 窄档更容易贴边。
+   * 不减掉的话最长那行（「0 影 24 抽 歪 1 次」+ 3 颗 🌟）在窄档更容易贴边。
    * 用负 margin 而不是改 gap——gap 是 stats 行所有格位的间距，动它会连带动别的。
+   *
+   * **只退一次，不随颗数叠加**：多颗 emoji 排在同一个文本节点里
+   * （`emoji.repeat(count)`，见 charts.js），整个 span 只有一个「尾巴」，
+   * 中间几颗之间没有间隙可退。实测 1/2/3 颗的宽度是 13 / 26 / 39px，严格等差，
+   * 说明每颗的步进相同、`count` 没有引入额外留白。
    */
   margin-right: -1px;
 }
@@ -1133,6 +1148,9 @@ html, body {
  * 修法**不动占位本身**（DOM 结构、渲染逻辑一个字都不改），只用相邻选择器把那格退回去：
  * 空 lost 的紧邻兄弟正好就是 emoji。`-6px` 与 `.detail-char-stats` 的 `gap` 同值，
  * 改 gap 时这里要一起改。
+ *
+ * 与「连排几颗」无关：emoji 无论 1 颗还是 3 颗，都是**一个** `.detail-char-luck` 元素，
+ * 紧邻选择器只命中一次，所以这一格只退一次、不会随 count 叠加。
  */
 .detail-char-lost:empty + .detail-char-luck { margin-left: -6px; }
 /*
