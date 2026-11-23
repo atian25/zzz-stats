@@ -677,7 +677,7 @@ html, body {
  * 详见 template.html 的注释。这里不再有 `.detail-toolbar` 这个容器，
  * 工具栏的高度也就不再吃列表的 30~47px。
  */
-.detail-tabs { display: flex; gap: 4px; flex-wrap: wrap; min-width: 0; }
+.detail-tabs { display: flex; gap: 4px; flex-wrap: wrap; min-width: 0; padding-right: 5px; border-right: 1px dashed #3a3a45; }
 /*
  * 左栏容器：现在只剩列表（工具栏已经上移到 header）。
  * min-width: 0 不能丢——grid 子项默认 min-width: auto，列表里的定宽轨道
@@ -697,7 +697,7 @@ html, body {
 }
 .detail-tab:hover { color: var(--ink); }
 .detail-tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
-.detail-tools { margin-left: 8px; display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
+.detail-tools { margin-left: 2px; display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
 .merge-toggle { display: inline-flex; align-items: baseline; gap: 5px; font-size: 12px; color: var(--ink-dim); cursor: pointer; }
 .merge-toggle input { accent-color: var(--accent); margin: 0; align-self: center; }
 .merge-toggle[data-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
