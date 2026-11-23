@@ -1083,6 +1083,7 @@ function charSummary() {
         lastTime: 0,
         upRounds: 0,
         lostRounds: 0, // UP 角色的「歪 N 次」
+        gains: [], // 逐次获得明细：{recordTime, version, total, losses[]}，供右栏 tip
         lostOut: 0, // 非 UP 角色的「被歪出 N 次」
         lostOutMain: 0, // 其中：作为轮内非 UP 金被歪掉
         lostOutSide: 0, // 其中：十连里跟在 UP 后面的副金
@@ -1116,6 +1117,33 @@ function charSummary() {
       up.upRounds += 1;
       up.pulls += r.total;
       if (r.off > 0 || r.guar) up.lostRounds += 1;
+      /*
+       * 逐次获得明细：右栏 tip 一行一次获得，按时间正序排。
+       *
+       * `losts` 是这一轮里被歪掉的那几只（每只带自己的 count），
+       * 与 `round.off` 是同一个东西的两种形态：`off` 只给总数，`losts` 给「歪了谁、多少抽」。
+       * tip 必须用 `losts` 而不是 `off`——用户要的是 `77 抽歪「珂蕾妲」` 这种点名写法。
+       *
+       * **只写 `losts`，不写 `side`**（这条踩过）：
+       * `side` 是同一发十连里跟在 UP 后面的非 UP 金，它在轮次模型里表达的是
+       * **「下一轮的 50/50 已经被这一发吃掉了」**（`markGuaranteed` 的 `guar`），
+       * 不是「这一轮歪了」。实测南宫羽那一轮 `losts` 空、`side` 有猫又，
+       * 而 `lostRounds = 0`（它本身直出）；若把 side 写进这一行，tip 会出现
+       * 「45 抽（1 抽歪「猫又」）」，与行内「歪 0 次」直接打脸。
+       * 反过来维琳娜那一轮 `side` 空、`lostRounds = 1`（它的歪来自上一轮猫又那发副金），
+       * tip 这一行没有歪是**对的**——那笔成本记在带出保底的那一发上，不重复计。
+       * 所以 tip 行内的「歪」= 这一轮自己的 `losts`，与行内「歪 N 次」的统计口径
+       * （`off > 0 || guar`）刻意不同：前者回答「这次花了多少、期间歪出谁」，
+       * 后者回答「追它一共歪过几轮」，`guar` 那种轮次没有可点名的歪出记录。
+       */
+      up.gains.push({
+        recordTime: r.recordTime,
+        version: r.version,
+        // sort 只用于同 recordTime 的兜底排序，tip 不显示
+        sort: r.sort,
+        total: r.total,
+        losses: (r.losts ?? []).map((x) => ({ name: x.name, count: x.count })),
+      });
       for (const x of r.losts ?? []) {
         const c = touch(x.itemId, x.name);
         c.lostOut += 1;
@@ -1142,6 +1170,15 @@ function charSummary() {
       isUp: x.upRounds > 0,
       upRounds: x.upRounds,
       lostRounds: x.lostRounds,
+      /*
+       * 逐次获得明细，右栏 tip 用它一行写一次获得（`本体` / `影画1` / `影画2`…）。
+       *
+       * 按 recordTime 正序：readrow tip 从「本体」往下读到最新一只，
+       * 和游戏里看影画顺序一致。并列时用 sort 兜底（同一天两只的极端情况）。
+       */
+      gains: x.gains
+        .slice()
+        .sort((a, b) => a.recordTime - b.recordTime || (a.sort ?? 0) - (b.sort ?? 0)),
       lostOut: x.lostOut,
       lostOutMain: x.lostOutMain,
       lostOutSide: x.lostOutSide,

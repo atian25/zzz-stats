@@ -543,8 +543,19 @@ html, body {
   /*
    * 详情卡在 .screen 之外（第二屏），而 .screen 自带左右 20px 内边距。
    * 这里补同样的外边距，两张卡的左右边界才对得齐（否则详情会顶到视口两边）。
+   *
+   * **限宽 1000 并居中**：用户说「抽卡详情的分栏感觉太宽了」。
+   * 实测原因不是「卡片撑满视口」而是**左栏吃到了内容用不到的宽度**——
+   * 1440 下左栏 1086，但 41 行抽数条最右只到 629（轨道固定 553 是既有设计，不能动），
+   * 右边整整白掉 443px，两栏比例 1086:300 看着就散。
+   * 限到 1000 后左栏 686、右侧只白 43，比例 686:300 与内容贴合。
+   *
+   * 为什么不是 1320：1320 只把空白从 443 降到 363，观感几乎没变（实测过）。
+   * 为什么不是「左栏收到 680 + 两栏居中」：那会让列表内容往卡片中间漂，
+   * 左栏不再贴卡片左边框，读起来像被缩进了一块。
    */
-  margin: 0 20px 10px;
+  max-width: 1000px;
+  margin: 0 auto 10px;
   padding-bottom: 6px;
   /*
    * 两栏的列定义放在这里**只写一份**：`.detail-head`（两个同级栏标题）和
@@ -556,50 +567,72 @@ html, body {
   --detail-gap: 12px;
 }
 /*
- * 头部只放两个**同级**栏标题：左「抽卡详情」、右「角色汇总」，同一行、各贴自己那一列。
+ * 基线对齐，不是 center / start。
  *
- * 频段 tab / 显示真实抽数 / meta 都挪进了左栏第一行（.detail-toolbar）——它们描述的
- * 是左栏那份列表的状态，挂在整卡表头会让人以为对右栏也生效（右栏是跨频段全局汇总，与 tab 无关）。
+ * 两个标题必须落在同一个 y 上（它们是同级栏标题）。但它们不在同一个 flex 行里
+ * ——「角色汇总」是 grid 的独立子项，而「抽卡详情」在 `.detail-head-main` 内部。
+ * center：800 下 head-main 折成两行，右栏标题被居到两行中线，比左栏低 9px（实测 1388 vs 1397）。
+ * start：1440 下 head-main 高 29（tab 撑的），标题在内部居中到 y=1488，
+ *        而右栏标题直接贴顶 y=1484，差 4px（实测）。
+ * baseline：两者同为 15px/700，基线一致即 y 一致，且 800 折行后仍贴第一行基线——两条都过。
  */
 .detail-head {
   display: grid;
   grid-template-columns: var(--detail-cols);
   gap: var(--detail-gap);
   align-items: baseline;
-  padding: 10px 0 6px;
+  padding: 9px 0 6px;
 }
-.detail-title { font-size: 15px; font-weight: 700; }
 /*
- * 右栏标题在头部时，左边距 = 右栏 `border-left` 1px + `padding-left` 11px = 12px，
- * 这样它和下面「角色汇总」列表里第一行头像的左边缘对齐（实测 x 一致）。
+ * 左栏那一组：标题 + 频段 tab + 显示真实抽数 + meta，全在同一行。
+ *
+ * 左内边距 14 = `.detail-list` 自己的 padding，这样标题文字 x=35
+ * 正好等于左栏每行最左的竖括号（bracket）x=35，也就是「标题与内容左边缘对齐」。
+ *
+ * 为什么允许换行：1440 下这一组有 1058（左栏 1086 − 14 内缩），
+ * 标题 60 + tab 332 + tools 220 + 间距 ≈ 640，宽宽松松；
+ * 800 下只有 478 − 14 = 464，标题 60 + tab 332 + 间距 14 = 406 放得下，
+ * 但再加 tools 220 就放不下，于是 tools 整组折到第二行。
+ * 折行而不是缩小字号/裁文字：控件必须「能点、能读」。
+ *
+ * baseline：tab / tools 的文字与标题基线齐平，读起来像同一行的工具条。
+ */
+.detail-head-main {
+  display: flex;
+  align-items: baseline;
+  gap: 0 14px;
+  flex-wrap: wrap;
+  min-width: 0;
+  padding-left: 14px;
+}
+/*
+ * 换成 baseline 后这块的纵向位置由内容基线决定，不再吃 tab 的 29px 高度，
+ * 所以给 title 自己一个行高，让它在 1440 下与 tab 行贴得自然。
+ */
+.detail-title { font-size: 15px; font-weight: 700; flex: 0 0 auto; line-height: 21px; }
+/*
+ * 右栏标题：左内边距 16 = 右栏 border-left 1px + `.detail-chars-fill` 的 11px
+ * + `.detail-char` 行的 4px，正好等于右栏第一个头像的 x（实测 1135）。
  */
 .detail-chars-title {
-  padding-left: 12px;
+  padding-left: 16px;
   font-size: 15px;
   font-weight: 700;
 }
 /*
- * 左栏内部第一行：频段 tab + 显示真实抽数 + meta。
+ * 频段 tab 在头部右侧（跟着标题同行）。
  *
- * 为什么允许换行：1440 的左栏有 1058px，tabs 332 + toggle 87 + meta 123 放得下；
- * 但 800 的左栏只有 478px，三样合计约 564px **必然放不下**。
- * 与其缩小字号或裁掉文字（两者都会让「能点、能读」失效），不如让 tools 折到第二行。
+ * 早先它独占一行（`.detail-toolbar`），用户看过之后要求挪回标题这一行，
+ * 详见 template.html 的注释。这里不再有 `.detail-toolbar` 这个容器，
+ * 工具栏的高度也就不再吃列表的 30~47px。
  */
-.detail-main {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-.detail-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 10px;
-  padding: 0 14px;
-  min-height: 30px;
-  flex: 0 0 auto;
-}
 .detail-tabs { display: flex; gap: 4px; flex-wrap: wrap; min-width: 0; }
+/*
+ * 左栏容器：现在只剩列表（工具栏已经上移到 header）。
+ * min-width: 0 不能丢——grid 子项默认 min-width: auto，列表里的定宽轨道
+ * 会把左栏撑出列宽，窄屏直接横向溢出。
+ */
+.detail-main { min-width: 0; display: flex; flex-direction: column; }
 .detail-tab {
   padding: 4px 10px 6px;
   border: 0;
@@ -945,7 +978,6 @@ html, body {
 }
 .detail-char-pulls { color: var(--ink-dim); }
 .detail-char-lost { color: var(--detail-bad, #ff5f6d); }
-.detail-char-nolost { color: var(--ink-faint); }
 /*
  * 曾经有一条 `.detail-char-lostout`（「被歪出 N 次」）。按用户定的口径，
  * 非 UP 角色**只显示影画**，那个徽标不再渲染，样式一并删掉——

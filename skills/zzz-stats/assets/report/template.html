@@ -64,29 +64,32 @@
 <!-- 第二屏：抽卡详情 -->
 <section class="panel detail-panel">
   <!--
-    头部只留两个**同级**栏标题：「抽卡详情」(左栏) …… 「角色汇总」(右栏)。
-    它们必须落在同一行、各自贴住自己那一列的左边缘，读起来才像两个平级的栏标题。
+    头部是两个**同级**栏标题 + 左栏的控件：「抽卡详情 · tab · 显示真实抽数 · meta」……「角色汇总」。
 
-    频段 tab / #merge / #detail-meta 全部挪进左栏内部的第一行（.detail-toolbar）。
-    为什么：它们描述的都是「左栏这块列表」的状态，挂在整张卡的表头会让人以为
-    它们对右栏也生效——而右栏是跨频段全局汇总，跟 tab 无关。
+    频段 tab 与「抽卡详情」同一行（用户看过上一版后要的：「还是放到跟它同行试试」）。
+    #merge / #detail-meta 也一起收进这一行：1440 下左栏扣掉内边距还有 1058，
+    标题 60 + tab 332 + tools 220 放得下；800 下放不下时整组换行（.detail-head-main 允许 wrap），
+    不缩字号、不裁文字——「能点、能读」优先于「一行」。
+
+    左内边距 14 让标题/控件和 `.detail-list` 的内容盒起点对齐（都是 35），
+    右栏标题靠自己的 12px 对齐右栏内容。两个 grid 列仍与 `.detail-body` 完全一致。
   -->
   <div class="detail-head">
-    <span class="detail-title">/*__COPY_DETAIL_TITLE__*/</span>
+    <div class="detail-head-main">
+      <span class="detail-title">/*__COPY_DETAIL_TITLE__*/</span>
+      <div class="detail-tabs" id="detail-tabs" role="tablist"></div>
+      <div class="detail-tools">
+        <label class="merge-toggle">
+          <input type="checkbox" id="merge">
+          <span>/*__COPY_MERGE_TOGGLE__*/</span>
+        </label>
+        <span class="detail-meta" id="detail-meta"></span>
+      </div>
+    </div>
     <span class="detail-chars-title" id="detail-chars-title">/*__COPY_DETAIL_CHARS_TITLE__*/</span>
   </div>
   <div class="detail-body">
     <div class="detail-main">
-      <div class="detail-toolbar">
-        <div class="detail-tabs" id="detail-tabs" role="tablist"></div>
-        <div class="detail-tools">
-          <label class="merge-toggle">
-            <input type="checkbox" id="merge">
-            <span>/*__COPY_MERGE_TOGGLE__*/</span>
-          </label>
-          <span class="detail-meta" id="detail-meta"></span>
-        </div>
-      </div>
       <div class="detail-list" id="detail-list"></div>
     </div>
     <aside class="detail-chars" id="detail-chars"><div class="detail-chars-fill" id="detail-chars-fill"></div></aside>

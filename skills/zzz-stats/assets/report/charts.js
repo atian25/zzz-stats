@@ -28,6 +28,18 @@
   const fill = (tpl, vars) => String(tpl == null ? '' : tpl).replace(/\{(\w+)\}/g, (_, k) => (vars[k] == null ? '' : String(vars[k])));
   const pad2 = (n) => String(n).padStart(2, '0');
 
+  /**
+   * 角色名加引号，名字本身已带「」/『』的不再套一层。
+   *
+   * 游戏里有「11号」「席德」这类自带引号的名字，无脑套会变成「「11号」」。
+   * 主图 tip 与右栏 tip 共用这一份判断——两处各写一遍必然漂移，
+   * 而漂移的症状只是「有的地方双层引号」，很难被当成 bug 报上来。
+   */
+  function quoteName(name) {
+    const s = String(name ?? '');
+    return /[「『]/.test(s) ? s : `「${s}」`;
+  }
+
   /** 本地时区 MM-DD HH:MM */
   function fmtTime(sec) {
     if (!sec) return '';
@@ -390,9 +402,7 @@
       lines.push(fill(T.guaranteed, { total: round.total, from: round.guarFrom }));
     } else {
       // 名字本身已带「」的（如「11号」）不再套一层，否则会出现「「11号」」
-      const rawNames = round.lossNames || '';
-      const names = /[「『]/.test(rawNames) ? rawNames : `「${rawNames}」`;
-      lines.push(fill(T.lost, { total: round.total, off: round.off, names }));
+      lines.push(fill(T.lost, { total: round.total, off: round.off, names: quoteName(round.lossNames || '') }));
     }
     lines.push(fill(T.winRate, { rate: cumRate }));
     return lines.filter(Boolean).join('\n');
@@ -1795,11 +1805,19 @@
          * 构建期有断言拦着（见 build-report.mjs 的抽数闭合断言）。
          */
         stats.appendChild(el('span', 'detail-char-pulls', fill(CFG.copy.detailCharPulls ?? '{n} 抽', { n: c.pulls })));
-        if (c.lostRounds > 0) {
-          stats.appendChild(el('span', 'detail-char-lost', fill(CFG.copy.detailCharLost ?? '歪 {n} 次', { n: c.lostRounds })));
-        } else {
-          stats.appendChild(el('span', 'detail-char-nolost', CFG.copy.detailCharNoLost ?? '未歪'));
-        }
+        /*
+         * 「歪」这一格：歪了写「歪 N 次」，**没歪就整格留空**。
+         *
+         * 用户原话：「未歪不用写」。所以这里不渲染任何文本节点——
+         * 不是写个空 span 再用 CSS 藏起来，是根本不 append 文本。
+         *
+         * 但**占位元素还是要 append**：`.detail-char-stats` 是一行 flex，
+         * 少一个子项会让后面那格左移，25 行里歪和没歪的行就错开了。
+         * 给一个零宽占位 + `aria-hidden`，宁可它有盒子、没有字。
+         */
+        stats.appendChild(el('span', 'detail-char-lost', c.lostRounds > 0
+          ? fill(CFG.copy.detailCharLost ?? '歪 {n} 次', { n: c.lostRounds })
+          : ''));
       }
       /*
        * 非 UP 角色**只显示影画**（B）。
@@ -1822,27 +1840,64 @@
     box.appendChild(note);
   }
 
+  /*
+   * 右栏 tip：**每次获得一行**，用户定的紧凑写法。
+   *
+   *  本体：152 抽（77 抽歪「珂蕾妲」） · v1.4 · 2024-12-18
+   *  影画1：154 抽（77 抽歪「丽娜」） · v1.4 · 2025-01-03
+   *  影画2：78 抽 · v2.1 · 2025-07-16
+   *
+   * 几条硬规则（来自用户原话，别自作主张加回来）：
+   *  - 第一只叫「本体」，之后「影画1」「影画2」……（影画 N 对应第 N+1 只）
+   *  - **不要再有汇总行**：「全部频段合计出现 N 次」「一共 N 抽」「追它共 N 轮」这些
+   *    用户明确嫌啰嗦——行内已经有「N 影 / N 抽 / 歪 N 次」了。
+   *  - **直出不写括号**，一个字都不写（「直出」「没歪」这类词用户嫌啰嗦）。
+   *  - 多条歪出用顿号并列，不拆行。
+   *  - 分隔符就是 ` · `（空格 + 中点 + 空格）。
+   */
   function buildCharTip(c) {
-    const lines = [
-      `${c.name}`,
-      `全部频段合计出现 ${c.appearances} 次 → ${c.portraits} 影（第 1 只 0 影）`,
-    ];
-    if (c.isUp) {
-      lines.push(
-        // 该角色各轮 total 累加，含期间歪出的抽（大保底那只把前面歪掉的算进成本）
-        `一共 ${c.pulls} 抽（追它各轮的总抽数之和，含期间歪出的）`,
-        c.lostRounds > 0
-          ? `追它共 ${c.upRounds} 轮，其中 ${c.lostRounds} 轮歪了 50/50`
-          : `追它共 ${c.upRounds} 轮，50/50 一次没歪`,
-      );
-    } else {
-      /*
-       * 非 UP 角色：界面只给影画（B）。tip 是补充说明，不重复展示被刻意省掉的数字，
-       * 只解释「为什么这里没有抽数和歪」——否则读者会以为是漏了。
-       */
-      lines.push('没有当过 UP，所以不统计抽数与歪次数');
+    /*
+     * 非 UP 角色只显示影画，没有抽数与歪，也不必逐次列。
+     * 用户要求「同样保持简短，一行说明即可，别堆字」——所以只写它是什么。
+     *
+     * 措辞必须是「没当过 UP」，**不能写「常驻角色」**：
+     * 数据里这 6 个并不都出现在常驻频段（实测 baseline：丽娜 / 格莉丝 / 「11号」
+     * 只在独家出现过，莱卡恩只在常驻，珂蕾妲 / 猫又在两处都有）。
+     * 写「常驻角色」会和左栏那个「常驻」tab 撞车，等于凭空给它们安了个来源。
+     * 真正成立的事实只有一条：它们在 50/50 频道里从来没当过 UP。
+     */
+    if (!c.isUp) {
+      return `${c.name} · ${c.portraits} 影 · 没当过 UP`;
     }
+    const lines = (c.gains ?? []).map((g, i) => {
+      /*
+       * 歪出明细：`77 抽歪「珂蕾妲」`。
+       * 名字用「」包住（中文引号），和用户样例一致；多条用顿号。
+       *
+       * 名字本身已带引号的不再套一层：游戏里有「11号」「席德」这种名字，
+       * 直接套会变成 `「「11号」」`。与主图 tip 的处理保持一致（见 tipLines）。
+       */
+      const losses = (g.losses ?? [])
+        .map((x) => `${x.count} 抽歪${quoteName(x.name)}`)
+        .join('、');
+      const label = i === 0 ? '本体' : `影画${i}`;
+      // 直出：整个括号省略，不留空括号
+      const cost = losses ? `${g.total} 抽（${losses}）` : `${g.total} 抽`;
+      return `${label}：${cost} · v${g.version} · ${fmtDate(g.recordTime)}`;
+    });
+    /*
+     * 一行都没有（数据异常 / 老数据集没有 gains）时退回摘要，
+     * 不能返回空串——空 tip 会让 hover 出一个空气泡。
+     */
+    if (!lines.length) return `${c.name} · ${c.portraits} 影 · ${c.pulls} 抽`;
     return lines.join('\n');
+  }
+
+  /** 日期（只要年月日）：tip 里写 `2024-12-18`，不要时分。 */
+  function fmtDate(sec) {
+    if (!sec) return '';
+    const d = new Date(sec * 1000);
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   }
 
   function buildPityRow(pity) {
