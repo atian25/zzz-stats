@@ -348,6 +348,7 @@
     "detailCharsTitle": "角色汇总",
     "detailCharsEmpty": "这个账号还没有角色记录",
     "detailCharPulls": "{n} 抽",
+    "detailCharLost": "歪 {n} 次",
     "mergeToggle": "真实抽数",
     "legend": [
       {

@@ -1136,19 +1136,52 @@ html, body {
 }
 .detail-char-pulls { color: var(--ink-dim); }
 /*
- * 曾经有一条 `.detail-char-lost`（行内的「歪 N 次」）和配套的
- * `.detail-char-lost:empty + .detail-char-luck { margin-left: -6px }`。
+ * 行内的「歪 N 次」（`.detail-char-stats` 里排在「N 抽」之后、emoji 之前）。
  *
- * 那条 `-6px` 原本是为了退掉「空 lost span 仍占一格 flex gap」的补偿——
- * 没歪的行 lost 是空 span，却仍吃 `gap: 6px`，于是 emoji 前比有歪的行多 6px。
+ * ## 只有歪过才存在
  *
- * 用户后来把「歪 N 次」整体挪进 tip（原话「歪 N 次 这个放 Tip 吧」），
- * **行内不再渲染 lost**，所有 UP 行的结构变成「影画 → 抽数 → [emoji]」完全同构，
- * 补偿的前提消失了，所以两条规则一并删除。
+ * 没歪的角色**根本不生成这个元素**（见 charts.js 里的 `if (c.lostRounds > 0)`），
+ * 不再像早先那样留一个空 span 占位。原因：emoji 是「紧跟文字、位置参差」的口径，
+ * 行尾后面没有要对齐的列；而空占位会白吃一格 `gap`，逼出过一条 `-6px` 补偿。
+ * 既然不占位，**那条补偿也一并删除，别加回来**（选择器 `:empty +` 已无命中可能，是死代码）。
  *
- * **别再往这里加回来**：现在 emoji 前只有 `.detail-char-stats` 自己那一个 `gap: 6px`，
- * 全体 25 行单值。若哪天有人给行内加回一个「有时空、有时有字」的格子，记得同样要补偿。
+ * ## 默认红色，但算欧的不加红
+ *
+ * 用户原话「歪 N 次也放外面吧，不过如果是算欧的，就不要加红色」。
+ * 默认 `--detail-bad` 红（「歪了」这件事的告警色，与非 UP 侧同一套语义），
+ * 而 `[data-luck^="euro"]` 压成 `--ink-dim`，与同一行的「N 抽」同色——
+ * 欧档角色本来就歪得少，给它标红会和它的结论拧着。
+ *
+ * **平档仍是红**：平档 `luck === null`，charts.js 不挂 `data-luck`，落回默认色。
+ * 用户只排除了「算欧的」，平档不在排除范围里，按字面照做。
+ * 若将来用户说平档也别红，**改这里、别改 JS**。
+ *
+ * 用属性选择器而不是在 JS 里拼 class / 写内联 style：
+ * 档位键本来就挂在 `data-luck` 上（emoji 那颗也用同一个属性），一处数据两处用，不会漂移。
  */
+.detail-char-lost { color: var(--detail-bad, #ff5f6d); }
+.detail-char-lost[data-luck^="euro"] { color: var(--ink-dim); }
+/*
+ * emoji 排在空 `.detail-char-lost` 后面时，要退掉多出来的那一格 gap。
+ *
+ * 那一格怎么来的：`.detail-char-lost` 对没歪的角色是**空 span 但必须保留**
+ * （占位，见 charts.js 里那段注释），宽度为 0 却仍是 flex item，前后各吃一个 `gap: 6px`。
+ * 于是没歪的行「emoji 到最后一个有文字的兄弟」是 6 + 6 = 12px，有「歪 N 次」的行只有 6px，
+ * 8 个没歪的标记会比 6 个有歪的右移整整一格。
+ *
+ * 修法**不动占位本身**（DOM 结构一个字不改），只用相邻选择器把那格退回去：
+ * 空 lost 的紧邻兄弟正好就是 emoji。`-6px` 与 `.detail-char-stats` 的 `gap` 同值，
+ * 改 `gap` 时这里要一起改。
+ *
+ * 与「连排几颗」无关：emoji 无论 1 颗还是 3 颗都是**一个** `.detail-char-luck` 元素，
+ * 紧邻选择器只命中一次，这一格只退一次、不随 count 叠加。
+ *
+ * **成对约束**：前提是「没歪也有空 lost span」。若有人把 charts.js 改成
+ * 「只在歪过时才创建 lost」，这条会变成永不命中的死代码，同时 UP 行会裂成 3 种结构。
+ *
+ * 实测（四档全量）：间距集合单值 `[6]`、`marginLeft` 有歪 `0px` / 没歪 `-6px`、空 lost 宽 0。
+ */
+.detail-char-lost:empty + .detail-char-luck { margin-left: -6px; }
 /*
  * 曾经有一条 `.detail-char-lostout`（「被歪出 N 次」）。按用户定的口径，
  * 非 UP 角色**只显示影画**，那个徽标不再渲染，样式一并删掉——

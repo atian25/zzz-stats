@@ -1836,6 +1836,40 @@
          * 构建期有断言拦着（见 build-report.mjs 的抽数闭合断言）。
          */
         stats.appendChild(el('span', 'detail-char-pulls', fill(CFG.copy.detailCharPulls ?? '{n} 抽', { n: c.pulls })));
+        /*
+         * 「歪 N 次」：歪了写「歪 N 次」，**没歪就整格留空**（空 span 占位，不是不创建）。
+         *
+         * 用户原话「歪 N 次也放外面吧，不过如果是算欧的，就不要加红色」——
+         * 先是「放外面」（行内，相对 tip 而言），再是「算欧的不标红」。
+         *
+         * ## 为什么没歪也要 append 空 span（这条被改错过，别再反过来）
+         *
+         * `.detail-char-stats` 是一行 flex。**不留占位会让有歪 / 没歪变成两种 DOM 结构**，
+         * 实测对比：
+         *   - 不留占位：lost 元素 **11** 个，UP 行裂成 **3 种**结构
+         *     （有歪+emoji / 没歪无 lost / 有歪无 emoji），有歪与没歪不同构；
+         *   - 留空占位：lost 元素 **19** 个（19 只 UP 全有），UP 行只有 **2 种**结构
+         *     （差的就是那颗 emoji），**有歪没歪同构**。
+         * 用户要的是「25 行格子对得齐」，所以必须留占位。
+         *
+         * 代价是空 span 宽 0 但仍是 flex item，前后各吃一个 `gap: 6px`，于是没歪的行
+         * 「emoji 到最后一个有文字的兄弟」变 12px、有歪的 6px——由 CSS 的
+         * `.detail-char-lost:empty + .detail-char-luck { margin-left: -6px }` 退掉。
+         * **两者成对**，删任一个没歪的 8 行 emoji 都会右移一格。
+         *
+         * ## 配色
+         *
+         * 只挂 `data-luck`（档位键），**颜色全在 charts.css**，别在这里写内联 style：
+         *   `luck` 以 `euro` 开头（euro1/2/3）→ CSS 压成 `--ink-dim`，与「N 抽」同色，不标红；
+         *   其余（bad1/2/3 与平档 `luck === null`）→ 保持 `--detail-bad` 红。
+         * 平档仍红是照字面执行——用户只说了「算欧的不要红色」。
+         */
+        const lost = el('span', 'detail-char-lost', c.lostRounds > 0
+          ? fill(CFG.copy.detailCharLost ?? '歪 {n} 次', { n: c.lostRounds })
+          : '');
+        // 只在有档位时挂；平档（null）不挂，CSS 的兜底色就是红
+        if (c.luck) lost.dataset.luck = c.luck;
+        stats.appendChild(lost);
       }
       /*
        * 非 UP 角色**只显示影画**（B）。
@@ -1847,11 +1881,13 @@
        * 数据层仍保留 `pulls` / `lostOut` 供 tip 与将来使用，但**界面不渲染**。
        */
       /*
-       * emoji 追加在 stats 行**最后**：此时「影画 / 抽数」两个 span 已就位（非 UP 只有影画）。
+       * emoji 追加在 stats 行**最后**：此时「影画 / 抽数 /（有歪才有）歪 N 次」已就位。
        *
-       * **行内不再有「歪 N 次」**（用户原话「歪 N 次 这个放 Tip 吧」）：
-       * 它挪进了 `buildCharTip` 的均抽行。所以 UP 行结构固定为
-       * `影画 → 抽数 → [emoji]`，有歪没歪完全同构，不再需要「空 span 占位」那套补偿。
+       * **不需要任何补偿**：没歪的行根本没有 `.detail-char-lost` 元素，emoji 的前一兄弟
+       * 就是「N 抽」；有歪的前一兄弟是那个 lost span。两种情况下 emoji 到前一兄弟都是
+       * `gap: 6px`——gap 是相邻项之间的距离，与中间隔了几个元素无关。
+       * **别把 `.detail-char-lost:empty + .detail-char-luck { margin-left: -6px }` 加回来**：
+       * 它的前提（存在空 lost span）在新写法下永远不成立，是死代码。
        */
       const tier = c.luck ? CFG.numbers.luckTiers?.[c.luck] : null;
       if (tier) {
