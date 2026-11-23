@@ -1742,6 +1742,44 @@ if (!Object.keys(pullsMaxCfg).length) {
 }
 
 /*
+ * 右栏 tip 明细断言（`gains`）：防的是「tip 与行内数字互相打脸」。
+ *
+ * 两条独立校验：
+ *
+ * ① **`Σgains[].total` 必须等于行内 `pulls`。**
+ *    tip 一次获得一行，全部加起来就是行内那个总数；不等说明有获得漏进/漏出了 gains
+ *    （比如 side 被当成了独立一轮，或某轮的 total 被重复计）。
+ *
+ * ② **`losses` 里不许出现「十连副金」造成的歪。**
+ *    判定方法：某轮 `losses` 有理，但该轮其实是 `guar`（歪来自上一轮带出的保底）而不是
+ *    `off > 0`（本轮自己歪），就会出现「tip 说歪了、行内 lostRounds 却没算它」。
+ *    实测反例：南宫羽 `side` 有猫又但 `off = 0`、`lostRounds = 0`；
+ *    若把 side 掺进 losses，tip 会写「45 抽（1 抽歪「猫又」）」而行内那一格是空的。
+ *    这里用「同一角色 Σ(有 losses 的轮数) ≤ lostRounds」来兜：
+ *    `guar` 轮自己没有任何 losts，所以只要有人把 side 掺进来，这个不等式立刻被打破。
+ */
+{
+  for (const c of report.charSummary ?? []) {
+    if (!c.isUp) continue;
+    const gains = c.gains ?? [];
+    const sum = gains.reduce((s, g) => s + (g.total ?? 0), 0);
+    if (sum !== c.pulls) {
+      fatal.push(
+        `右栏 ${c.name} 的 tip 明细合计 ${sum} 抽 ≠ 行内 ${c.pulls} 抽：` +
+        `gains 有遗漏或重复（每次获得必须恰好一条，且 total 之和等于 pulls）`,
+      );
+    }
+    const withLoss = gains.filter((g) => (g.losses ?? []).length > 0).length;
+    if (withLoss > c.lostRounds) {
+      fatal.push(
+        `右栏 ${c.name} 有 ${withLoss} 次获得在 tip 里写了歪出明细，但它只有 ${c.lostRounds} 轮歪：` +
+        `疑似把十连副金（round.side）混进了 losses——side 的语义是「下一轮的保底已被吃掉」，不是这一轮歪`,
+      );
+    }
+  }
+}
+
+/*
  * fatal 优先：**不写产物、直接退出 1**。
  *
  * 顺序很关键：文件写出必须放在校验之后。早先 writeFileSync 在校验之前，

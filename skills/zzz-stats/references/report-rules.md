@@ -771,11 +771,36 @@ baseline = `GACHA_TYPE_CHARACTER_UP` 2372 + `GACHA_TYPE_CHARACTER_RETURN`(90−1
 | 日期 | `recordTime` 转本地时区的年月日，不要时分 |
 
 数据在 `charSummary()` 的 `gains` 字段里（每次获得的 `recordTime / version / total / losses[]`），
-按 `recordTime` 正序。`losses` 同时收 `round.losts`（轮内歪掉的金）与 `round.side`（十连副金）——
-后者也是这一轮歪掉的证据，漏了会把那一轮误判成直出。
+按 `recordTime` 正序。`losses` **只收 `round.losts`**（轮内歪掉的金）。
+
+**`round.side`（十连副金）不能收进来**（这条写错过一次）：`side` 在轮次模型里的含义是
+**「下一轮的 50/50 已经被这一发吃掉了」**（`markGuaranteed` 的 `guar`），不是「这一轮歪了」。
+实测 `fixtures/baseline` 的南宫羽：`losts` 空、`side` 有猫又（同秒 `sort` 差 1），
+它自己的 `lostRounds = 0`；若把 side 写进这一行，tip 会出现「45 抽（1 抽歪「猫又」）」，
+与行内「歪 0 次」直接打脸。反过来维琳娜那一轮 `side` 空、`lostRounds = 1`
+（它的歪来自上一轮猫又那发副金），tip 这一行没有歪是**对的**——那笔成本记在带出保底的那一发上。
+
+所以两个「歪」的统计范围刻意不同，**这不是 bug**：
+
+| | 口径 | 回答的问题 |
+|---|---|---|
+| 行内 `歪 N 次` | `round.off > 0 \|\| round.guar` 的轮数 | 追它一共歪过几轮 |
+| tip 行内括号 | 该轮自己的 `round.losts` | 这一次花了多少抽、期间歪出了谁 |
+
+`guar` 那种轮次（歪来自上一轮带出的保底）没有可点名的歪出记录，所以 tip 那一行不写括号——
+硬要写就得重复计上一轮的成本。
 
 **自检**：每个 UP 角色 `Σgains[].total` 必须等于行内显示的 `pulls`（实测 19/19 全等）。
-这条已写进验证脚本，改动这块后照跑。
+这条已写进构建期断言（`build-report.mjs` 末尾的 gains 校验），不等就退 1、不写产物。
+
+同一处还有第二条断言：**「tip 里写了歪出明细的获得次数」不许超过行内 `lostRounds`**。
+它专门拦「把 `round.side` 混进 `losses`」这个错——`guar` 轮自身没有任何 `losts`，
+一旦把 side 掺进来，这个不等式立刻被打破。实测注入 side 后构建立刻失败并点名：
+
+```
+✖ 右栏 南宫羽 有 1 次获得在 tip 里写了歪出明细，但它只有 0 轮歪：
+  疑似把十连副金（round.side）混进了 losses——side 的语义是「下一轮的保底已被吃掉」，不是这一轮歪
+```
 
 **歪的语义踩坑（写错过一次）**：早先用「`has5050` 频道里 `is_up === false` 的记录条数」当歪次数，
 结果非 UP 角色全被标成「歪 N 次」。正确做法是走已有的轮次模型（`buildRounds` / `markGuaranteed`，
@@ -1275,7 +1300,8 @@ node skills/zzz-stats/scripts/build-report.mjs --data fixtures/baseline   # 坐�
   ⑥排序是 **UP 在前、非 UP 在后，各组按最后获得时间倒序**，不是按出现次数；
   ⑦**不歪就整格留空，不写「未歪」**（用户原话「未歪不用写」）——真不渲染文本，但保留占位元素防错列。
   右栏只收 `ItemType_Avatar`，图标走 `iconKeyFor()` 逐个试目录，别改回「按频道选一次目录」。
-  构建末尾有三条防回归断言：按频道分算影画 / 非角色混入右栏 / **UP 抽数合计不等于官方已抽数**。
+  构建末尾有四条防回归断言：按频道分算影画 / 非角色混入右栏 / **UP 抽数合计不等于官方已抽数** /
+  **tip 明细合计 ≠ pulls，或 tip 写了歪但 lostRounds 没算**（后两条详见 §6.1 的 gains 校验）。
   第 ④ 条被改错两次，闭合断言就是为它加的——**改口径时先想「加起来还等于 2448 吗」**。
 - 改**右栏 tip 的格式** → `charts.js` 的 `buildCharTip()`，数据在 `charSummary()` 的 `gains`。
   **紧凑格式是用户定的，别加回汇总行、别写「直出/没歪」**，详见 §6.1。

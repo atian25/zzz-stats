@@ -555,6 +555,13 @@ html, body {
    * 左栏不再贴卡片左边框，读起来像被缩进了一块。
    */
   max-width: 1000px;
+  /*
+   * 用 width 而不是 margin：只写 `margin: 0 auto` 不会产生左右留白——
+   * 块级元素的 width 仍是 auto（撑满容器），1000 的 max-width 只会让它贴住视口左边
+   * （实测 1000 宽视口下 card.x=0、左右边距各 0，卡片直接顶到屏幕边缘）。
+   * `calc(100% - 40px)` 同时保住「窄屏左右各 20 的呼吸」，和改前的 `margin: 0 20px` 等价。
+   */
+  width: calc(100% - 40px);
   margin: 0 auto 10px;
   padding-bottom: 6px;
   /*
