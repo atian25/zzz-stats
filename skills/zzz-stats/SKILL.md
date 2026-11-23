@@ -783,9 +783,8 @@ checkbox 自己用 `align-self: center` 居、不参与基线计算，勾选框�
 
 **行内有「歪 N 次」**，位置是 `N 影 → N 抽 → 歪 N 次 → [emoji]`。
 用户原话「歪 N 次也放外面吧，不过如果是算欧的，就不要加红色」。
-**只有 `lostRounds > 0` 才 append 这个 span，没歪就不产生元素**（不留空占位）。
-不占位 → 不需要 `-6px` 补偿：实测 emoji 到前一兄弟的间距四档全为单值 **6px**，`marginLeft` 恒 `0px`
-（gap 是相邻项之间的距离，中间隔几个元素都是 6px）。
+**没歪的行也 append 一个空 span 占位，然后配 `-6px` 补偿**（详见下面「空占位与 -6px」那段，
+两件事必须成对，只做一半 emoji 就会横向错位一格）。
 
 **颜色按档位分**（`data-luck` 属性选择器，不在 JS 里写内联色值）：
 `euro1/2/3` → `var(--ink-dim)` `#9a9aa6`（与同行的「N 抽」同色，不标红）；
@@ -793,9 +792,10 @@ checkbox 自己用 `align-self: center` 居、不参与基线计算，勾选框�
 平档仍红是照字面执行——用户只说了「算欧的不要红色」。
 
 **tip 末行均抽里那截 ` · 歪 N 次` 照旧保留**，与行内重复是用户接受的，**不要删任何一处**。
-实测 25 行三种 UP 结构：有标记 6 行 `portraits > pulls > lost > luck`、平档 5 行
-`portraits > pulls > lost`、没歪有标记 8 行 `portraits > pulls > luck`；非 UP 6 行只有 `portraits`。
-`fixtures/baseline` 实测有「歪」的 UP 角色 **11 只**（合计 14 轮）。
+实测 25 行只有两种 UP 结构：有标记 14 行 `portraits > pulls > lost > luck`、
+平档 5 行 `portraits > pulls > lost`——**有歪没歪是同一种**（差别只在那颗 emoji）；
+非 UP 6 行只有 `portraits`。`fixtures/baseline` 里有「歪 N 次」文字的 UP 角色 **11 只**（合计 14 轮），
+另外 8 只没歪、lost 是空 span。
 
 判据是**总抽倍率分 6 档**（不是「每 UP 均抽」，那套已作废，见下）：
 `期望抽数 = upRounds × luckExpectPerUp`（`luckExpectPerUp` = 93.75 = `sPityExpect` 62.5 ×
@@ -835,7 +835,8 @@ emoji 单独设 `Apple Color Emoji` 字体栈（mono 里会掉成黑白），并
 别再拿它当理由去换字符。**不许用 CSS filter / 阴影去补救**（会让 emoji 变形），
 要换只能换字符本身。
 **行内的「歪 N 次」**排在抽数之后、emoji 之前。**没歪的行也 append 一个空 span 占位**——
-不是可省的东西：少了它，有歪 / 没歪就变成两种 DOM 结构（实测 UP 行会裂成 3 种模式而非 2 种）。
+不是可省的东西：少了它，19 只 UP 里会裂成 3 种 DOM 结构（有歪+emoji / 没歪无 lost / 有歪无 emoji），
+有了空占位只剩 2 种（差的就是那颗 emoji）。
 代价是空 span 宽 0 但仍是 flex item，前后各吃一个 `gap: 6px`，所以必须配
 `.detail-char-lost:empty + .detail-char-luck { margin-left: -6px }` 退掉一格；
 **两者成对，删任一个没歪的 8 行 emoji 就右移一格**。实测间距集合四档全为单值 `6px`。

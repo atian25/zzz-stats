@@ -1881,13 +1881,16 @@
        * 数据层仍保留 `pulls` / `lostOut` 供 tip 与将来使用，但**界面不渲染**。
        */
       /*
-       * emoji 追加在 stats 行**最后**：此时「影画 / 抽数 /（有歪才有）歪 N 次」已就位。
+       * emoji 追加在 stats 行**最后**：此时「影画 / 抽数 /（有歪才有字）歪 N 次」已就位。
        *
-       * **不需要任何补偿**：没歪的行根本没有 `.detail-char-lost` 元素，emoji 的前一兄弟
-       * 就是「N 抽」；有歪的前一兄弟是那个 lost span。两种情况下 emoji 到前一兄弟都是
-       * `gap: 6px`——gap 是相邻项之间的距离，与中间隔了几个元素无关。
-       * **别把 `.detail-char-lost:empty + .detail-char-luck { margin-left: -6px }` 加回来**：
-       * 它的前提（存在空 lost span）在新写法下永远不成立，是死代码。
+       * **没歪的行同样有这个 lost span**（空 span 占位，见上面那段），所以 emoji 的前一兄弟
+       * 永远是 `.detail-char-lost`，不是「N 抽」。
+       *
+       * 空 span 宽 0 却仍是 flex item，前后各吃一个 `gap: 6px`：没歪的行 emoji 前实际是
+       * 6 + 6 = 12px，有歪的行是 6px。由 CSS 的
+       * `.detail-char-lost:empty + .detail-char-luck { margin-left: -6px }` 退掉那一格。
+       * **两者成对**：删任一个，没歪的 8 行 emoji 立刻右移一格。
+       * 实测四档间距集合单值 `[6]`、`marginLeft` 有歪 `0px` / 没歪 `-6px`。
        */
       const tier = c.luck ? CFG.numbers.luckTiers?.[c.luck] : null;
       if (tier) {
