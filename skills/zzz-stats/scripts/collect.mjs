@@ -138,7 +138,7 @@ const API = argOf('api', EP.api);
  *   中途失败时临时目录要额外清理，而 mv 失败或跨设备复制还会留下半个目录。
  *   内存里攒着写，最坏情况是「进程挂了、一个文件都没写」——这比半个目录好收拾得多。
  *
- * `--data` 显式指定时照旧直写那个目录（开发本仓库时用 --data fixtures/tianzhu 之外的场景）。
+ * `--data` 显式指定时照旧直写那个目录（开发本仓库时用 --data fixtures/baseline 之外的场景）。
  * 采集是「覆盖写」——同一个目录跑第二次会用新数据覆盖旧文件。
  */
 const EXPLICIT_DATA = argOf('data', null);

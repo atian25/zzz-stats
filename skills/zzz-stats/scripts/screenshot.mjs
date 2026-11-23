@@ -11,7 +11,7 @@
  * 用法：
  *   node skills/zzz-stats/scripts/screenshot.mjs                       # 两档尺寸，输出到 docs/shots/
  *   node skills/zzz-stats/scripts/screenshot.mjs --width 1440 --height 900
- *   node skills/zzz-stats/scripts/screenshot.mjs --out-dir /tmp/shots --html output/tianzhu/report.html
+ *   node skills/zzz-stats/scripts/screenshot.mjs --out-dir /tmp/shots --html output/<账号名>/report.html
  *   node skills/zzz-stats/scripts/screenshot.mjs --privacy 2           # 截图前先点全打码（对外用）
  *   node skills/zzz-stats/scripts/screenshot.mjs --preview             # README 预览图 → docs/preview.png（整页 2x，强制打码）
  *   node skills/zzz-stats/scripts/screenshot.mjs --chart 音擎 --filter 2

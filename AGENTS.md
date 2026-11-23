@@ -35,10 +35,10 @@
   这个坑真实发生过——「窄屏过滤条被裁」一度被当成 CSS bug，其实是假视口造成的。
 - **产物是「一个账号一个目录」：`output/<账号名>/{data/,report.html}`。**
   不传 `--out` 时产物落在**数据集目录的上一级**、名字固定 `report.html`。
-  运行期数据集目录是 `output/<账号名>/data/`，所以 `--data output/天猪/data` → `output/天猪/report.html`。
+  运行期数据集目录是 `output/<账号名>/data/`，所以 `--data output/<账号名>/data` → `output/<账号名>/report.html`。
   用户拿走 `output/<账号名>/` 这一个目录就能直接部署（数据 + 报表在一起），不用自己判断哪些文件配哪份报表。
   名字**不再带数据集后缀**（`report-<数据集名>.html` 已废弃），因为账号目录已经区分开了。
-- **`--data fixtures/tianzhu` 时也不能往 `fixtures/` 里写产物。** 那种数据集不在 `output/` 结构里，
+- **`--data fixtures/baseline` 时也不能往 `fixtures/` 里写产物。** 那种数据集不在 `output/` 结构里，
   改取该数据集 `meta.json` 的昵称，落到 `output/<昵称>/report.html`（昵称拿不到就用目录名）。
   过时的写法（`output/report.html`、`output/report-<数据集名>.html`）都不要再回来。
 - 不要为了截图去 `session_search` 追截图里的外部链接或部署环境，与本次改动无关。
@@ -48,9 +48,9 @@
 `data/` 和 `output/` 是**用户运行期**的落点，落在用户自己的工作目录；仓库自己开发期的
 测试数据在 `fixtures/`，跟 skill 本体分开。用户原话：「开发期，对我们来说就是一个 fixtures 目录的测试」。
 
-- `fixtures/<数据集名>/` 一份数据集一个目录，`fixtures/tianzhu/` 与 `fixtures/joker/` 平级，
+- `fixtures/<数据集名>/` 一份数据集一个目录，`fixtures/baseline/` 与 `fixtures/multigold/` 平级，
   **这两个目录入库**（它们是开发基线，不是运行期产物）。
-- 出图与采集都用 `--data` 显式指定：`--data fixtures/tianzhu`。
+- 出图与采集都用 `--data` 显式指定：`--data fixtures/baseline`。
 - **运行期兜底只认 `output/<账号名>/data/`，绝不认旧 `data/`，也绝不认 `fixtures/`。**
   不传 `--data` 时脚本只扫 `output/*/data/index.json`：恰好一份就用它，多份报错退出，
   没有就报「找不到数据集」。
@@ -62,10 +62,10 @@
   collect / save-in-page-json 用它决定**往哪写**，build-report / sync-icons / screenshot 用它决定**去哪读**。
   五处各写一遍必然漂移，而漂移的后果不是报错，是「写得进去、读不出来」。
 - **fixtures 里的数据必须脱敏后再入库。** 这是公开仓库：`meta.json` 的 `uid` 是假值
-  （`10000001` / `10000002`），昵称沿用「天猪 / joker」。真实 UID 永不入库——
+  （`10000001` / `10000002`），昵称也用**中性占位名**（「玩家A / 玩家B」，不要写真实昵称）。真实 UID 永不入库——
   采集脚本写出的原始 `data/` 带真 UID，那整份目录在 `.gitignore` 里。
-- **天猪是对外展示基线，joker 是测试数据。** README 头图（`docs/preview.png`）、发布说明、
-  任何人看得到的图一律用 `fixtures/tianzhu` 出；`fixtures/joker` 只用来验证多金分档（双金 + 三金，
+- **`baseline` 是对外展示基线，`multigold` 是测试数据。** README 头图（`docs/preview.png`）、发布说明、
+  任何人看得到的图一律用 `fixtures/baseline` 出；`fixtures/multigold` 只用来验证多金分档（双金 + 三金，
   见 `report-rules.md` §8.1），**不拿来截图对外**。它的数字不好看是正常的，不代表报表有问题。
 - **开发期验证一律在仓库外跑，不要把运行期产物落在仓库里。**
   实跑扫码、出报表这类验证要在仓库之外的临时目录（`--cwd /tmp/xxx`）做；

@@ -566,9 +566,9 @@ sum(cur_records[].count) + type_stats[].next_s_cur_times == type_stats[].total_c
 # 不传 --data 时只看 output/<账号名>/data/，只有一份就直接用；有多份或没有都会报错退出，不猜
 node skills/zzz-stats/scripts/build-report.mjs
 # 多份时明确指定；产物默认 output/<账号名>/report.html
-node skills/zzz-stats/scripts/build-report.mjs --data output/天猪/data
+node skills/zzz-stats/scripts/build-report.mjs --data output/<账号名>/data
 # 指定落点（相对 WORK_DIR，或写绝对路径）
-node skills/zzz-stats/scripts/build-report.mjs --data output/天猪/data --out output/my.html
+node skills/zzz-stats/scripts/build-report.mjs --data output/<账号名>/data --out output/my.html
 ```
 
 > **参数两种写法都支持**：`--out output/x.html`（空格）和 `--out=output/x.html`（等号）。
@@ -583,7 +583,7 @@ node skills/zzz-stats/scripts/build-report.mjs --data output/天猪/data --out o
 数据和报表在**同一个账号目录里**，用户拿走 `output/<账号名>/` 这一个目录就能直接部署，不用自己判断
 哪些文件配哪份报表。名字不再带数据集后缀（`report-<数据集名>.html` 已废弃），因为账号目录已经区分开了。
 
-显式 `--data fixtures/tianzhu`（开发期）时，数据集不在 `output/` 结构里，这时**不会**往 `fixtures/`
+显式 `--data fixtures/baseline`（开发期）时，数据集不在 `output/` 结构里，这时**不会**往 `fixtures/`
 里写产物——改取该数据集 `meta.json` 的昵称，落到 `output/<昵称>/report.html`，昵称拿不到就用目录名。
 **真正的单文件**——数据、ECharts、以及用到的图标全部内嵌，
 可以直接发给别人、单独打开，不需要附带 `assets/` 目录。

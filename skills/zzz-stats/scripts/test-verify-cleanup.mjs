@@ -42,9 +42,9 @@ function setup({ withAccount = true, withBystander = true } = {}) {
   writeFileSync(join(dir, 'sms-code.txt'), '123456');
   writeFileSync(join(dir, 'qr-refresh'), '');
   if (withAccount) {
-    mkdirSync(join(dir, '天猪', 'data'), { recursive: true });
-    writeFileSync(join(dir, '天猪', 'data', 'meta.json'), '{"uid":"10000001"}');
-    writeFileSync(join(dir, '天猪', 'report.html'), '<html></html>');
+    mkdirSync(join(dir, '玩家A', 'data'), { recursive: true });
+    writeFileSync(join(dir, '玩家A', 'data', 'meta.json'), '{"uid":"10000001"}');
+    writeFileSync(join(dir, '玩家A', 'report.html'), '<html></html>');
   }
   if (withBystander) writeFileSync(join(dir, 'diagnostics.log'), 'not a credential');
   return dir;
@@ -63,8 +63,8 @@ rmSync(ROOT, { recursive: true, force: true });
   check('login-qr.png 删了', !existsSync(join(dir, 'login-qr.png')));
   check('sms-code.txt 删了', !existsSync(join(dir, 'sms-code.txt')));
   check('qr-refresh 删了', !existsSync(join(dir, 'qr-refresh')));
-  check('账号数据目录还在', existsSync(join(dir, '天猪', 'data', 'meta.json')));
-  check('账号报表还在', existsSync(join(dir, '天猪', 'report.html')));
+  check('账号数据目录还在', existsSync(join(dir, '玩家A', 'data', 'meta.json')));
+  check('账号报表还在', existsSync(join(dir, '玩家A', 'report.html')));
   check('无关文件保留', existsSync(join(dir, 'diagnostics.log')));
   check('output/ 目录本身保留', existsSync(dir));
   check('无失败项', r.failed.length === 0);

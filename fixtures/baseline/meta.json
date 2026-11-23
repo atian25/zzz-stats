@@ -3,7 +3,7 @@
   "server": "cn",
   "uid": "10000001",
   "region": "prod_gf_cn",
-  "nickname": "天猪",
+  "nickname": "玩家A",
   "fetched_at": "2026-11-20T12:15:56.742Z",
   "versions": "1.0 → 3.3",
   "source": "https://act-api-takumi.mihoyo.com/event/nap_gacha_record/api/zzz",

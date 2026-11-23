@@ -66,19 +66,19 @@ DeepSeek Harness、Codex、Trae、豆包工作，以及任意支持 Agent Skill 
 node skills/zzz-stats/scripts/collect.mjs
 
 # 2) 出图
-node skills/zzz-stats/scripts/build-report.mjs --data output/天猪/data   # → output/天猪/report.html
+node skills/zzz-stats/scripts/build-report.mjs --data output/<账号名>/data   # → output/<账号名>/report.html
 ```
 
 **一个账号一个目录，数据与报表在同一个目录里。** 采集完成后产物长这样：
 
 ```
-output/天猪/
+output/<账号名>/
 ├── data/            # meta.json / index.json / *_pool_stat_*.json
 └── report.html      # 自包含单文件报表
 ```
 
 目录名取**昵称**（登录后从页面读；读不到就退回 UID），做文件系统安全化后使用。
-同账号重跑 = 覆盖同一个目录。**用户拿走 `output/天猪/` 这一个目录就能直接部署**，不用自己配对。
+同账号重跑 = 覆盖同一个目录。**用户拿走 `output/<账号名>/` 这一个目录就能直接部署**，不用自己配对。
 `output/` 下有多份且没写 `--data` 时构建会报错退出（不猜，猜错只会生成一份「数字属于别人」的报表）。
 
 **数据落在你的项目目录，不落在 skill 目录。** 脚本把两个根目录分开：`SKILL_DIR` 是 skill 本体
@@ -87,8 +87,8 @@ output/天猪/
 `output/` 就长在自己项目下——不会被 skill 升级覆盖，也不会误提交进 skill 仓库。
 
 仓库自己开发期的测试数据在 `fixtures/`，所以克隆下来直接跑
-`node skills/zzz-stats/scripts/build-report.mjs --data fixtures/tianzhu` 就能出基线报表
-（产物仍落 `output/天猪/report.html`，不会往 `fixtures/` 里写）。
+`node skills/zzz-stats/scripts/build-report.mjs --data fixtures/baseline` 就能出基线报表
+（产物仍落 `output/<数据集昵称>/report.html`，不会往 `fixtures/` 里写）。
 
 改完代码要验收时，两档尺寸的截图一条命令出齐（复用本机 Chrome，不需要 Playwright）：
 
@@ -98,7 +98,7 @@ node skills/zzz-stats/scripts/screenshot.mjs --privacy 2                       #
 node skills/zzz-stats/scripts/screenshot.mjs --chart 音擎                       # 截频段 tab 切过去之后
 node skills/zzz-stats/scripts/screenshot.mjs --filter 2                        # 截版本过滤生效之后
 node skills/zzz-stats/scripts/screenshot.mjs --html p.html --out-dir /tmp/x     # 指定产物与输出位置
-node skills/zzz-stats/scripts/screenshot.mjs --preview --html output/天猪/report.html   # → docs/preview.png（顶部头图，整页 2x）
+node skills/zzz-stats/scripts/screenshot.mjs --preview --html output/<账号名>/report.html   # → docs/preview.png（顶部头图，整页 2x）
 ```
 
 `--html` 不传时会在 `output/*/report.html` 里找唯一的那个；有多份会报错退出，不猜（截错账号的图比失败更糟）。
@@ -107,7 +107,7 @@ node skills/zzz-stats/scripts/screenshot.mjs --preview --html output/天猪/repo
 1440 逻辑宽、DPR 2、整页，所以是 `2880×2838` 这样的长图（高度跟内容走，不固定）。这张图以前是手工截的，
 代码改了它不会跟着变，README 上就挂着一张和实际产物对不上的截图，现在统一由脚本出，别手截。
 
-数据集之间完全平级：`fixtures/tianzhu/` 与 `fixtures/joker/` 各是一套完整数据，
+数据集之间完全平级：`fixtures/baseline/` 与 `fixtures/multigold/` 各是一套完整数据，
 出图时用 `--data` 切换，不需要重新登录采集也能验证生成环节。
 
 短信登录把手机号当参数传，验证码在短信到达后写入约定文件：
@@ -161,8 +161,8 @@ skills/zzz-stats/assets/report/icons/      # 图标唯一一套 64px（avatars/ 
 skills/zzz-stats/assets/vendor/echarts.min.js # ECharts 5.6.0（随仓库分发，不用 CDN）
 skills/zzz-stats/references/api.md         # 接口与字段说明（含十连多金判定、完整性等式）
 skills/zzz-stats/references/report-rules.md # 报表口径与呈现约定（规范层，维护者读）
-fixtures/tianzhu/           # 开发期基线数据集（对外展示用这份，UID 已脱敏）
-fixtures/joker/             # 开发期测试数据集（双金 + 三金分档用，不对外截图）
+fixtures/baseline/          # 开发期基线数据集（对外展示用这份，UID 与昵称均已脱敏）
+fixtures/multigold/         # 开发期测试数据集（双金 + 三金分档用，不对外截图）
 AGENTS.md                   # 开发期铁律：改哪类东西要同步什么、哪些口径不许动
 ```
 

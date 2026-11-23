@@ -53,7 +53,7 @@ if (wantsHelp()) {
       WORK_DIR_NOTE,
       '图标写进 skill 的 assets/report/icons/（随 skill 发布），这是本脚本唯一写 skill 目录的地方。',
       '需要 Pillow：python3 -m pip install pillow',
-      '开发本仓库时用 --data fixtures/tianzhu（fixtures/ 不进运行期兜底）。',
+      '开发本仓库时用 --data fixtures/baseline（fixtures/ 不进运行期兜底）。',
     ],
   });
 }
@@ -108,12 +108,12 @@ function resolveDataDirs() {
    *
    * 不要扩大到 `data/`（旧结构）或 `fixtures/`（开发期概念）：
    * 用户项目里这两个名字都很常见（前端尤其），算进来就会去读别人项目里的测试数据。
-   * 本仓库开发时用 `--data fixtures/tianzhu` 显式指定。
+   * 本仓库开发时用 `--data fixtures/baseline` 显式指定。
    */
   const found = listOutputDatasets(WORK_DIR);
   if (found.length) return found;
   console.error(`在 ${outputRoot(WORK_DIR)}/ 下没找到数据集（需要 <账号名>/data/index.json），先跑采集。`);
-  console.error('  → 开发本仓库时用 --data fixtures/tianzhu 显式指定。');
+  console.error('  → 开发本仓库时用 --data fixtures/baseline 显式指定。');
   process.exit(1);
 }
 
