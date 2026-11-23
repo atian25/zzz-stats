@@ -19,8 +19,10 @@
   **不要**按 SKILL.md §0 的浏览器优先级去现拼 Chrome 命令行——那是采集期「找能扫码登录的浏览器」的语义，
   跟「截一张本地 HTML 的图」是两件事。`--user-data-dir` 脚本里已焊死，别再踩。
 - **README 预览图走 `node skills/zzz-stats/scripts/screenshot.mjs --preview`，不要手截。**
-  出的是 `docs/preview.png`：1440 逻辑宽、DPR 2、整页（当前实测 `2880×2838`，高度跟内容走），并强制打码到 2、
-  截图前断言 `eye=2` 且昵称/UID 含 `*`（不通过就中止、不写文件）。
+  出的是 `docs/preview.png`：1440 逻辑宽、DPR 2、整页（当前实测 `2880×2840`，高度跟内容走）。
+  隐私按数据集来源分流：产物里 `meta.synthetic === true`（`fixtures/` 里的模拟数据）**不打码**，
+  截图前反向断言昵称/UID **不含** `*`；其余一切**强制打码到 2**，断言 `eye=2` 且昵称/UID 含 `*`。
+  **没有标记一律当真实数据**（fail-safe），两条分支断言不过都中止、不写文件。
   以前这张图是手工截好随仓库带的，代码一路改而图停在旧版——很长一段时间里 README 上那张
   还是黄色折线、带「黄线＝累计不歪率」尾注、右轴 60% 的旧版本，没有任何东西会提醒你它过期了。
 - **`SKILL.md` 里引用这张预览图必须用绝对 URL，不能用 `docs/preview.png` 这种相对路径。**
@@ -193,7 +195,13 @@ ReferenceError，语法合法），而我当时手写的仿真 harness 又只模
 node skills/zzz-stats/scripts/test-verify-cleanup.mjs   # 27 项，不需要浏览器、不联网
 node skills/zzz-stats/scripts/test-image-server.mjs      # 25 项，只起一个 127.0.0.1 临时端口
 node skills/zzz-stats/scripts/test-qr-wait.mjs           # 75 项，刷新通道 + 真实等待循环
+node skills/zzz-stats/scripts/test-preview-privacy.mjs   # 53 项，--preview 的隐私分流（见下）
 ```
+
+**`--preview` 的隐私分流也是安全相关的**：`synthetic: true` 的数据集不打码、其余强制打码。
+判错一次就是把真名截进公开仓库，所以判定逻辑单独在 `preview-privacy.mjs` 里，用例
+`test-preview-privacy.mjs` 对着假数据逐条断言（含 `"true"` 字符串、`1`、缺失等坏写法
+一律往安全那边倒）。**改这段先跑用例**。
 
 用例文件在 `skills/zzz-stats/scripts/`，**新增清理范围或改了白名单就照它们的形状补一条**，不要只靠肉眼。
 
