@@ -342,7 +342,6 @@
     "detailCharsNote": "影画按全部频段合并计算；抽数为该角色各轮的总抽数（含期间歪出的）。「歪 N 次」＝追它时歪过几轮",
     "detailCharPulls": "{n} 抽",
     "detailCharLost": "歪 {n} 次",
-    "detailCharNoLost": "未歪",
     "mergeToggle": "显示真实抽数",
     "legend": [
       {
