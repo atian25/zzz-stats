@@ -1135,24 +1135,20 @@ html, body {
   margin-right: -1px;
 }
 .detail-char-pulls { color: var(--ink-dim); }
-.detail-char-lost { color: var(--detail-bad, #ff5f6d); }
 /*
- * emoji 排在空 `.detail-char-lost` 后面时，要退掉多出来的那一格 gap。
+ * 曾经有一条 `.detail-char-lost`（行内的「歪 N 次」）和配套的
+ * `.detail-char-lost:empty + .detail-char-luck { margin-left: -6px }`。
  *
- * 那一格是怎么来的：`.detail-char-lost` 对没歪的角色是**空 span 但必须保留**
- * （占位，见 charts.js 里那段注释），它宽度为 0 却仍是 flex item，
- * 于是前后各吃一个 `gap: 6px`。它以前是行尾最后一个子元素，后面的 gap 不渲染，看不出来；
- * emoji 挪到它后面之后，这个空占位就让「emoji 前」变成 6 + 6 = 12px，
- * 而有「歪 N 次」的行只有 6px——14 个标记横向参差，量出来差整整一格。
+ * 那条 `-6px` 原本是为了退掉「空 lost span 仍占一格 flex gap」的补偿——
+ * 没歪的行 lost 是空 span，却仍吃 `gap: 6px`，于是 emoji 前比有歪的行多 6px。
  *
- * 修法**不动占位本身**（DOM 结构、渲染逻辑一个字都不改），只用相邻选择器把那格退回去：
- * 空 lost 的紧邻兄弟正好就是 emoji。`-6px` 与 `.detail-char-stats` 的 `gap` 同值，
- * 改 gap 时这里要一起改。
+ * 用户后来把「歪 N 次」整体挪进 tip（原话「歪 N 次 这个放 Tip 吧」），
+ * **行内不再渲染 lost**，所有 UP 行的结构变成「影画 → 抽数 → [emoji]」完全同构，
+ * 补偿的前提消失了，所以两条规则一并删除。
  *
- * 与「连排几颗」无关：emoji 无论 1 颗还是 3 颗，都是**一个** `.detail-char-luck` 元素，
- * 紧邻选择器只命中一次，所以这一格只退一次、不会随 count 叠加。
+ * **别再往这里加回来**：现在 emoji 前只有 `.detail-char-stats` 自己那一个 `gap: 6px`，
+ * 全体 25 行单值。若哪天有人给行内加回一个「有时空、有时有字」的格子，记得同样要补偿。
  */
-.detail-char-lost:empty + .detail-char-luck { margin-left: -6px; }
 /*
  * 曾经有一条 `.detail-char-lostout`（「被歪出 N 次」）。按用户定的口径，
  * 非 UP 角色**只显示影画**，那个徽标不再渲染，样式一并删掉——

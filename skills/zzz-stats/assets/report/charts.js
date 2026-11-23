@@ -1836,19 +1836,6 @@
          * 构建期有断言拦着（见 build-report.mjs 的抽数闭合断言）。
          */
         stats.appendChild(el('span', 'detail-char-pulls', fill(CFG.copy.detailCharPulls ?? '{n} 抽', { n: c.pulls })));
-        /*
-         * 「歪」这一格：歪了写「歪 N 次」，**没歪就整格留空**。
-         *
-         * 用户原话是这个字不能出现（他要的是留空）。所以这里不渲染任何文本——
-         * 不是写个占位字再用 CSS 藏起来，是**根本不产生文本节点**。
-         *
-         * 但**占位元素还是要 append**：`.detail-char-stats` 是一行 flex，
-         * 少一个子项会让后面那格左移，25 行里有歪的和没歪的就错开了。
-         * 宁可它有盒子、没有字；盒子留空不占宽度（没有文字就没有内容宽度）。
-         */
-        stats.appendChild(el('span', 'detail-char-lost', c.lostRounds > 0
-          ? fill(CFG.copy.detailCharLost ?? '歪 {n} 次', { n: c.lostRounds })
-          : ''));
       }
       /*
        * 非 UP 角色**只显示影画**（B）。
@@ -1860,9 +1847,11 @@
        * 数据层仍保留 `pulls` / `lostOut` 供 tip 与将来使用，但**界面不渲染**。
        */
       /*
-       * emoji 追加在 stats 行**最后**：此时「影画 / 抽数 / 歪 N 次」三个 span 已就位。
-       * 注意 `detail-char-lost` 对没歪的角色是**空 span 但必须保留**（见上面那段注释），
-       * emoji 排在它之后，不影响那套占位逻辑——空 span 没有内容宽度，emoji 不会因此被推开。
+       * emoji 追加在 stats 行**最后**：此时「影画 / 抽数」两个 span 已就位（非 UP 只有影画）。
+       *
+       * **行内不再有「歪 N 次」**（用户原话「歪 N 次 这个放 Tip 吧」）：
+       * 它挪进了 `buildCharTip` 的均抽行。所以 UP 行结构固定为
+       * `影画 → 抽数 → [emoji]`，有歪没歪完全同构，不再需要「空 span 占位」那套补偿。
        */
       const tier = c.luck ? CFG.numbers.luckTiers?.[c.luck] : null;
       if (tier) {
@@ -1891,11 +1880,19 @@
    *
    * 几条硬规则（来自用户原话，别自作主张加回来）：
    *  - 第一只叫「本体」，之后「影画1」「影画2」……（影画 N 对应第 N+1 只）
-   *  - **不要再有汇总行**：「全部频段合计出现 N 次」「一共 N 抽」「追它共 N 轮」这些
-   *    用户明确嫌啰嗦——行内已经有「N 影 / N 抽 / 歪 N 次」了。
+   *  - **不再有「汇总行」**：「全部频段合计出现 N 次」「一共 N 抽」「追它共 N 轮」这些
+   *    用户明确嫌啰嗦，**仍不许加**（行内只有「N 影 / N 抽」）。
+   *    唯一例外是最后那行均抽——**用户这次明确要的**（原话「Tip 再加一行显示均抽」），
+   *    所以它不违反上面这条禁令，但**别再顺手加第二行摘要**。
    *  - **直出不写括号**，一个字都不写（「直出」「没歪」这类词用户嫌啰嗦）。
    *  - 多条歪出用顿号并列，不拆行。
    *  - 分隔符就是 ` · `（空格 + 中点 + 空格）。
+   *
+   * ## 「歪 N 次」为什么在 tip 里
+   *
+   * 用户原话「歪 N 次 这个放 Tip 吧，然后 Tip 再加一行显示均抽」——
+   * 行内那一格删掉了（用户要行内更干净），歪数挪到最后一行的均抽后面。
+   * 所以**行内不许再出现「歪」字**，也别把均抽加回行内。
    */
   function buildCharTip(c) {
     /*
@@ -1931,8 +1928,30 @@
      * 一行都没有（数据异常 / 老数据集没有 gains）时退回摘要，
      * 不能返回空串——空 tip 会让 hover 出一个空气泡。
      */
-    if (!lines.length) return `${c.name} · ${c.portraits} 影 · ${c.pulls} 抽`;
-    return lines.join('\n');
+    /*
+     * 均抽那一行（用户原话「Tip 再加一行显示均抽」），**加在所有逐次明细之后**，不插中间。
+     *
+     * 格式由用户定死，逐字符照抄，别自己美化：
+     *   均抽：64.7 抽（3 只 / 194 抽） · 歪 1 次
+     *   └┬┘ └──┬──┘ └┬┘ └─┬─┘   └─┬──┘   └──┬──┘
+     *  全角冒号  1 位小数  upRounds  pulls    没歪就不写这一节
+     *
+     * 「均抽」= pulls / upRounds：**按「每只」平均**，和行内那个「194 抽」（总数）不是一回事，
+     * 两个数都写出来正是用户要的对比。保留 1 位小数，用 toFixed(1) 而不是四舍五入到整数。
+     *
+     * 没歪（lostRounds === 0）**整节省略**，不写「歪 0 次」——与「直出不写括号」同一条规则。
+     */
+    const per = c.upRounds > 0 ? (c.pulls / c.upRounds) : null;
+    const avgLine = per == null
+      ? null
+      : `均抽：${per.toFixed(1)} 抽（${c.upRounds} 只 / ${c.pulls} 抽）`
+        + (c.lostRounds > 0 ? ` · 歪 ${c.lostRounds} 次` : '');
+    if (!lines.length) {
+      return avgLine
+        ? `${c.name} · ${c.portraits} 影 · ${c.pulls} 抽\n${avgLine}`
+        : `${c.name} · ${c.portraits} 影 · ${c.pulls} 抽`;
+    }
+    return avgLine ? lines.join('\n') + '\n' + avgLine : lines.join('\n');
   }
 
   /** 日期（只要年月日）：tip 里写 `2024-12-18`，不要时分。 */
