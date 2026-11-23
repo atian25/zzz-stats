@@ -1753,7 +1753,7 @@
 
     /*
      * 标题不在这里画：它在 `.detail-head` 里和「抽卡详情」并排、由模板直接输出，
-     * 这样两个标题天然同一行、各贴自己那一列。这里只负责列表与口径小字。
+     * 这样两个标题天然同一行、各贴自己那一列。这里只负责列表。
      */
     const chars = R.charSummary ?? [];
     if (!chars.length) {
@@ -1841,9 +1841,6 @@
       body.appendChild(row);
     }
     box.appendChild(body);
-
-    const note = el('div', 'detail-chars-note', CFG.copy.detailCharsNote ?? '');
-    box.appendChild(note);
   }
 
   /*

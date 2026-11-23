@@ -984,8 +984,8 @@ html, body {
   scrollbar-width: thin;
   scrollbar-color: #3a3a45 transparent;
   /*
-   * 底部留一个整行的内边距：滚到最底时，最后一行和 `.detail-chars-note`
-   * 的那条分隔线之间还有 34px 的空档，行不会被「贴到线上」看起来像被切。
+   * 底部留一个整行的内边距：滚到最底时，最后一行下面还有 34px 的空档，
+   * 不会紧贴容器下沿、看起来像被切掉。
    *
    * 为什么用**整行**而不是随手 6px：这一层的滚动位置是按内容算的，
    * 留非整数（比如 6px）会让人滚到底也只看到「大半行 + 一条缝」，
@@ -998,15 +998,6 @@ html, body {
 .detail-chars-body::-webkit-scrollbar-thumb { background: #3a3a45; border-radius: 4px; }
 .detail-chars-body::-webkit-scrollbar-track { background: transparent; }
 .detail-chars-empty { font-size: 11.5px; color: var(--ink-faint); padding: 8px 0; }
-.detail-chars-note {
-  flex: 0 0 auto;
-  padding-top: 6px;
-  margin-top: 4px;
-  border-top: 1px solid #26262e;
-  font-size: 10px;
-  line-height: 1.5;
-  color: var(--ink-faint);
-}
 
 /*
  * 右栏每一行：**高度写死成一个整数**，不是为了好看，是为了「不被切成半行」。

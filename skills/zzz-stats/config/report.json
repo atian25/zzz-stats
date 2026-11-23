@@ -336,8 +336,6 @@
     "detailEmpty": "这个频段还没有 S 级记录",
     "detailCharsTitle": "角色汇总",
     "detailCharsEmpty": "这个账号还没有角色记录",
-    "_detailCharsNote": "右栏口径小字，只有一行、会被折行，别写长。必须说清三件事：①影画是**跨全部频段合并**算的（独家能歪出常驻角色，分开算会少算），不是当前 tab；②影画＝记录中出现次数 − 1，是反推值、不是游戏内等级；③「歪 N 次」是**追它时歪过的轮数**（`buildRounds` 里 `off > 0 || guar` 的轮数），不是 `is_up === false` 的条数——后者表示「它是被歪出来的」，语义正好反。非 UP 角色行内只显示影画、无抽数无歪，所以这里不必解释它们的歪。UP 的抽数＝**它各轮 total 累加**（含期间歪出的抽；雅 = 152+154+78 = 384，不是 230），19 个 UP 合计须闭合到官方 2448，构建期有断言。tip 是「每次获得一行」的紧凑格式（`本体` / `影画1` / …），规则见 charts.js 的 buildCharTip 与 references/report-rules.md §6.1。",
-    "detailCharsNote": "影画按全部频段合并计算；抽数为该角色各轮的总抽数（含期间歪出的）。「歪 N 次」＝追它时歪过几轮",
     "detailCharPulls": "{n} 抽",
     "detailCharLost": "歪 {n} 次",
     "mergeToggle": "真实抽数",
