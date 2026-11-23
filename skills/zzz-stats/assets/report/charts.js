@@ -1744,8 +1744,9 @@
    */
   function renderDetailChars() {
     /*
-     * 真正的容器是 `.detail-chars-fill`（绝对定位铺满右栏，不参与行高计算）。
-     * 父级 `#detail-chars` 只负责被 grid 拉成与左栏等高，见 charts.css 的说明。
+     * 真正的容器是 `.detail-chars-fill`（正常流，`padding-left: 11px` 提供悬挂缩进）。
+     * 它现在是右栏高度的唯一来源——详情区不定高之后，不再有「绝对定位铺满、
+     * 让父级被 grid 拉成与左栏等高」那套，见 charts.css 的 `.detail-chars-fill` 说明。
      */
     const box = $('#detail-chars-fill') || $('#detail-chars');
     if (!box) return;

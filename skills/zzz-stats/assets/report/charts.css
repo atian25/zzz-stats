@@ -710,35 +710,33 @@ html, body {
  */
 
 /*
- * 详情区固定高度 + 内部滚动。
+ * 详情区**不定高、不内部滚动**：内容多就往下长，整页可以截长图。
  *
- * 各频道行数差异极大（独家 41 行、音擎回响 0 行）。随内容自适应会让页面高度
- * 剧烈变化，滚动条被浏览器收回，详情卡在视口里跳动几百像素；
- * 按最大频道锁定高度又会在空频道留下一大片空白。
- * 固定一个适中高度并允许内部滚动，两个问题都没有了。
+ * ## 改前 vs 改后
+ *
+ * 改前：`height: 480px` + `overflow-y: auto`。当时这么写是为了「切频道不跳」——
+ * 各频道行数差异极大（独家 41 行、音擎回响 0 行），随内容自适应会让页面高度
+ * 剧烈变化、详情卡在视口里跳几百像素。
+ *
+ * 改后：把定高整个去掉。用户原话「不要定高吧，抽卡详情多的话就直接在页面下面，
+ * 方便滚动截图」。代价是切频道时页面高度会变（这是流式布局的必然结果），
+ * 换来的是「不用在卡片内部滚、整页截图能一次拍全」。
+ *
+ * 现在左栏 41 行时内容高约 1231px（改前被压在 480 里内部滚），页面总高跟着它长。
  *
  * 注意：不要给 #detail-list 加 display:flex —— 内部 .detail-group 已用 flex 布局，
  * 外层再改 flex 会把图标和轨道挤变形（踩过）。
  */
 .detail-list {
   padding: 6px 14px 4px;
-  height: 480px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: #3a3a45 transparent;
 }
-.detail-list::-webkit-scrollbar { width: 8px; }
-.detail-list::-webkit-scrollbar-thumb { background: #3a3a45; border-radius: 4px; }
-.detail-list::-webkit-scrollbar-thumb:hover { background: #4a4a57; }
-.detail-list::-webkit-scrollbar-track { background: transparent; }
 
-/* 空状态在剩余空间里居中，避免一大片死白 */
+/* 空状态：不再有固定高度可以「在剩余空间里居中」，改成上下留白 */
 .detail-list .detail-empty {
-  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 40px 0;
 }
 
 .detail-group { display: flex; gap: 7px; margin-bottom: 5px; }
@@ -937,66 +935,98 @@ html, body {
    */
   padding: 0 0 4px;
   /*
-   * 两栏等高，且**高度只由左栏决定**。
+   * 两栏**各自按内容高**，是 `start` 不是 `stretch`。
    *
-   * 为什么不能写死：左栏第一行（工具栏）会随宽度折行——1440/1000/900 是一行 30px，
-   * 800/760 折成两行 47px。写死 510 会让 800 下右栏短 17px。
+   * ## 改前 vs 改后
    *
-   * 做法：右栏的**在流内容为空**（真正的列表放进绝对定位的 `.detail-chars-fill`），
-   * 所以它不参与行高计算，行高 = 左栏的自然高度（工具栏 + 480 = 510 或 527）；
-   * `align-items: stretch` 再把这个高度给右栏，绝对定位的 fill 用 `inset: 0` 铺满，
-   * 内部的 `.detail-chars-body`（flex:1 + overflow-y:auto）自己滚。
+   * 改前：`stretch`，但左栏写死 480，行高恒等于 480+工具栏；右栏在流内容为空
+   * （绝对定位的 `.detail-chars-fill`），靠 stretch 拿到左栏那 480，fill 用 `inset: 0` 铺满。
    *
-   * 试过两条都不行：①`align-items: stretch` + 右栏在流内容 → 右栏 25 行把行高撑到 1141，
-   * 左栏跟着变高；②左栏加 `contain: size` → 左栏高度直接变 0（实测）。
+   * 改后：左栏不定高，`stretch` 会把**较矮的右栏拉到左栏高度**，底下留一大片空白。
+   *
+   * ## 为什么必须是 `start`（这条是实测否掉 `stretch` 的）
+   *
+   * 验收指标是「右栏最后一行下边缘 → `.detail-chars` 底边的距离」，
+   * **> 一个行高（34px）就说明右栏还是被拉长了**。两版对比（1440 独家，左 41 行 / 右 25 行）：
+   *
+   * | 写法 | `.detail-chars` 高 | 最后一行 → 底边 | 判定 |
+   * |---|---|---|---|
+   * | `stretch` | 1231 | **381px = 11.2 个行高** | ✗ 仍被拉长 |
+   * | **`start`（现在）** | **854** | **4px** | ✅ |
+   *
+   * 四档（1440 / 1000 / 800 / 720）`start` 下都是 **4px**，就是 `.detail-chars-body`
+   * 的 `padding-bottom`，不是布局漏白。
+   *
+   * 有一种说法是「`start` 会让 `border-left` 只画到 854、竖线悬在半空，不如画到底」。
+   * **空白量两版完全一样**（854 以下都空着），但 `stretch` 是把那块空白算进右栏盒子、
+   * 变成 381px 的填充；`start` 是让右栏在内容处就结束。竖线停在自己内容末尾读起来是
+   * 「右栏到此为止」，不是断框——右栏本来就只有左边一条与左栏分隔的线，没有右/下边框。
+   * **判据是 34px 那条线，不是观感**：381 > 34，所以 `stretch` 不合格。
+   *
+   * 试过不行的一条：①左栏加 `contain: size` → 左栏高度直接变 0（实测）。
    */
-  align-items: stretch;
+  align-items: start;
 }
 
 .detail-chars {
   position: relative;
-  overflow: hidden;
+  /*
+   * ## 改前 vs 改后：`overflow: hidden` 去掉了
+   *
+   * 改前是 `overflow: hidden`，配合绝对定位的 `.detail-chars-fill` 把内容剪在
+   * 480px 的盒子里。现在右栏回正常流、内部也不滚了，再留着 `hidden` 只会
+   * 在某种窄档下把超出部分拦腰切掉。这里改成 `visible`：
+   * 内容多就长出去，整页跟着变高。
+   */
+  overflow: visible;
   border-left: 1px solid #2c2c35;
   min-width: 0;
   /*
-   * 右栏一行的**唯一真源**：`.detail-char` 自己用它（兜底 34px），
-   * 一列模式的可视高度用 `calc()` 取它的整数倍。两处必须是同一个值，
-   * 分开写两份必然漂移——一漂就是「最后一行被切一半」。
+   * 右栏一行的**唯一真源**：`.detail-char` 自己用它（兜底 34px）。
+   * 改前还有「一列模式的可视高度取它的整数倍」（8 × 34 = 272），
+   * 那个上限随内部滚动一起去掉了，现在这个变量**只**给 `.detail-char` 定行高。
    */
   --detail-char-h: 34px;
 }
 /*
- * 右栏真正的容器：绝对定位铺满 `.detail-chars`，因此不参与行高计算。
- * 内边距放在这里而不是父级——绝对定位的包含块是父级的 padding box，
+ * 右栏内容的容器。
+ *
+ * ## 改前 vs 改后
+ *
+ * 改前：`position: absolute; inset: 0` —— 绝对定位让右栏的**在流内容为空**，
+ * 于是它不参与 grid 行高计算，行高由左栏的 480 决定，它只是「铺满」那 480。
+ * 内边距也放在这里：绝对定位的包含块是父级的 padding box，
  * 父级加 padding-left 会让 fill 从 padding 外沿开始，视觉上丢掉那 11px。
+ *
+ * 改后：`position: static`，回到正常流。它现在是右栏的**唯一高度来源**，
+ * 右栏多高由它（25 行 × 34 + 内边距）决定。`padding-left: 11px` 照旧生效，
+ * 因为不再有绝对定位那层包含块的讲究。
  */
 .detail-chars-fill {
-  position: absolute;
-  inset: 0;
+  position: static;
   padding-left: 11px;
   display: flex;
   flex-direction: column;
 }
 .detail-chars-body {
-  flex: 1 1 auto;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  /*
+   * 改前：`flex: 1 1 auto; overflow-y: auto` —— 在 480 的盒子里自己滚。
+   * 改后：两个都去掉，按内容撑开。`flex: 1 1 auto` 在这里已经无意义
+   * （父级 fill 的高度就是它自己的内容高，flex-grow 没有多余空间可吃）。
+   */
   scrollbar-width: thin;
   scrollbar-color: #3a3a45 transparent;
   /*
-   * 底部留一个整行的内边距：滚到最底时，最后一行下面还有 34px 的空档，
-   * 不会紧贴容器下沿、看起来像被切掉。
+   * 改前底部留一个整行的内边距（`var(--detail-char-h)` = 34px）：滚到最底时最后一行
+   * 下面还有 34px 空档，不会紧贴容器下沿。那是**为滚动服务的**——
+   * 保证任何滚动停点都对得上行边界（早先留 6px 时用户报「大半行 + 一条缝」）。
    *
-   * 为什么用**整行**而不是随手 6px：这一层的滚动位置是按内容算的，
-   * 留非整数（比如 6px）会让人滚到底也只看到「大半行 + 一条缝」，
-   * 用户报的就是这个观感。整行的内边距保证任何滚动停点都对得上行边界。
+   * 现在没有内部滚动了，那个理由**不存在**。但底部留白还是要有一点，
+   * 否则最后一行会紧贴 `.detail-chars` 的下沿。所以从「一整行 34px」降到 4px，
+   * 与左栏 `.detail-list` 的 `padding-bottom: 4px` 同量级——两栏收尾留白一致。
    */
-  padding-bottom: var(--detail-char-h, 34px);
-  scroll-padding-bottom: 0;
+  padding-bottom: 4px;
 }
-.detail-chars-body::-webkit-scrollbar { width: 8px; }
-.detail-chars-body::-webkit-scrollbar-thumb { background: #3a3a45; border-radius: 4px; }
-.detail-chars-body::-webkit-scrollbar-track { background: transparent; }
 .detail-chars-empty { font-size: 11.5px; color: var(--ink-faint); padding: 8px 0; }
 
 /*
@@ -1352,15 +1382,14 @@ html, body {
      * 这里必须写成显式的 0 —— 两列模式下 `.detail-chars` 有 `border-left`，
      * 塌成一列后那条竖线要撤掉；同时**绝不能补一条 border-top**，
      * 否则「标题上方一条线 + 标题下方一条线」两条叠着，比原来更乱。
-     * 这不是可有可无的兜底：本文件里后面还有一条 `.detail-chars` 规则（管
-     * `max-height` / `position`），两条会合并计算，谁写 border-top 谁就生效。
+     *
+     * `position` / `overflow` 不用再写：两列模式的基线上它们已经是
+     * `static` / `visible`（改前要从 `relative`+`absolute` 那套里拽回来，
+     * 现在基线本身就没有绝对定位层了）。
      */
     border-left: 0;
     border-top: 0;
     padding-top: 0;
-    position: static;
-    overflow: visible;
-    max-height: none;
   }
   /*
    * `.detail-head` 改成 `display: contents` 后它自己的 `padding: 9px 0 6px` 跟着失效
@@ -1373,35 +1402,29 @@ html, body {
     padding-bottom: 6px;
   }
   /*
-   * 塌成一列后不再跟左栏等高：`.detail-body` 默认的 stretch 会让右栏被拉成
-   * 左栏那么高（510 以上），底下留一大片空滚动区。这里回到 start，右栏按自身内容 + 上限走。
+   * 塌成一列后两栏竖着排，各自占满一整行、按自己内容定高，
+   * `stretch` / `start` 在这里结果完全相同——写 `start` 只是明确表态。
+   *
+   * 改前这里写 `start` 是必须的：那时两列用 `stretch`，塌成一列后会把右栏
+   * 拉成左栏的 480，底下留一大片空滚动区。现在两栏都回正常流了，
+   * 而且两列模式本身也已经是 `start`（见 `.detail-body` 那条），
+   * 所以这里不再承担「纠正 stretch」的职责。
    */
   .detail-body { align-items: start; }
   /*
-   * 塌成一列后右栏不再跟左栏等高，改回按内容走，否则底下留一大片空滚动区。
+   * 一列模式右栏的内缩：
    *
-   * ## 可视高度必须直接管在**滚动容器**身上
+   * 改前 `.detail-chars-fill` 在这里要从 `absolute` 拽回 `static`，
+   * 并且把 `max-height: 8 × 34 = 272` 这类上限清掉；`.detail-chars-body` 那条
+   * `max-height: calc(var(--detail-char-h) * 8)` 是「窄屏只显示 8 行、其余内部滚」。
    *
-   * 这里原来写死 `max-height: 320px`。320 ÷ 44 = 7.27 —— 第 8 行被切掉 12px，
-   * 看着就是「最后一行只露出半截」。
-   *
-   * 行高换成 34 之后第一版把上限改成 `8 × 34 = 272` 挂在外层 `.detail-chars`
-   * 和 `.detail-chars-fill` 上，**实测仍然是 246px = 7×34 + 8** —— 因为
-   * `.detail-chars` 自己的 `padding-top: 8px` 和 1px 上边框先吃掉了 9px，
-   * 外层容器无论给什么值，落到内层滚动区上都会少一截，永远除不尽。
-   *
-   * 所以上限只给 `.detail-chars-body`（真正滚动的那个盒子），
-   * 外层两个容器一律 `max-height: none`、只留分隔线。
-   * 这样可视高度就是**精确的 8 行**，停在任何位置都看不到半行。
-   * 倍数可以调，写成除不尽的数不行。
+   * 现在**两列模式就已经是 static + 不定高**，一列模式只剩「内缩归零」这一件事
+   * ——塌成一列后右栏占满整行宽度，11px 的悬挂缩进会让角色名和上面
+   * 「角色汇总」标题（左内边距 14）对不齐。
+   * 8 行的上限随内部滚动一起去掉了：窄屏也是整页往下长，方便截长图。
    */
   .detail-chars-fill {
-    position: static;
     padding-left: 0;
-    max-height: none;
-  }
-  .detail-chars-body {
-    max-height: calc(var(--detail-char-h, 34px) * 8);
   }
 }
 
