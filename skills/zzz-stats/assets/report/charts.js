@@ -1601,7 +1601,6 @@
 
     const list = $('#detail-list');
     list.innerHTML = '';
-    renderDetailChars(d);
     if (!rows.length) {
       /*
        * 空频段也要画垫抽行：音擎回响正是「垫了 12 抽、一金未出」的典型，
@@ -1717,14 +1716,17 @@
    * 右栏：角色维度汇总。每个角色一行，三个数：
    *   出现 N 次 → 影画（N−1）、一共用了多少抽、歪了几次。
    *
-   * 全部是**当前频道**的聚合（跟着左上角 tab 走），不跨频道混；
-   * 合并模式（勾「显示真实抽数」）不改变这里的口径 —— 它只影响左栏怎么分行，
-   * 拿到的还是同一批金，所以右栏保持全量。
+   * **它是左边那栏的独立分栏，不跟着 tab 变。** 数据是跨所有频段的全局聚合：
+   * 独家能歪出常驻角色，同一个角色的重复获取会散在不同频道里——
+   * 按频道分开算影画必然少算（实测珂蕾妲 独家 4 + 常驻 2，分开算 3 影 + 1 影，
+   * 实际 5 影）。所以这份数据只有一份，挂在 R.charSummary 上。
    *
-   * 数据在构建期已经算好（build-report.mjs 的 charSummary），这里只画。
+   * 合并模式（勾「显示真实抽数」）也不影响这里 —— 它只影响左栏怎么分行。
+   *
+   * 数据在构建期已经算好（build-report.mjs 的 charSummary()），这里只画。
    * **不要在渲染层重新聚合**：那会让「左栏和右栏对不上」这类问题变成两处口径各写一遍。
    */
-  function renderDetailChars(d) {
+  function renderDetailChars() {
     const box = $('#detail-chars');
     if (!box) return;
     box.innerHTML = '';
@@ -1733,9 +1735,9 @@
     head.appendChild(el('span', 'detail-chars-title', CFG.copy.detailCharsTitle ?? '角色汇总'));
     box.appendChild(head);
 
-    const chars = d.chars ?? [];
+    const chars = R.charSummary ?? [];
     if (!chars.length) {
-      box.appendChild(el('div', 'detail-chars-empty', CFG.copy.detailCharsEmpty ?? '这个频段还没有角色记录'));
+      box.appendChild(el('div', 'detail-chars-empty', CFG.copy.detailCharsEmpty ?? '这个账号还没有角色记录'));
       return;
     }
 
@@ -1772,7 +1774,7 @@
       // 影画徽标
       const badge = el('span', 'detail-char-portraits');
       badge.textContent = `${c.portraits} 影`;
-      badge.dataset.tip = `${c.name} 在记录中出现 ${c.appearances} 次；第 1 只给 0 影，之后每只 +1 影`;
+      badge.dataset.tip = `${c.name} 在全部频段的记录中出现 ${c.appearances} 次；第 1 只给 0 影，之后每只 +1 影`;
 
       stats.appendChild(badge);
       stats.appendChild(el('span', 'detail-char-pulls', fill(CFG.copy.detailCharPulls ?? '{n} 抽', { n: c.pulls })));
@@ -1800,10 +1802,14 @@
   function buildCharTip(c) {
     const lines = [
       `${c.name}`,
-      `记录中出现 ${c.appearances} 次 → ${c.portraits} 影（第 1 只 0 影）`,
+      `全部频段合计出现 ${c.appearances} 次 → ${c.portraits} 影（第 1 只 0 影）`,
       `一共 ${c.pulls} 抽（含歪出的记录）`,
     ];
-    if (c.lostApplicable) lines.push(c.lost > 0 ? `其中歪出 ${c.lost} 次` : '没有歪过');
+    /*
+     * 歪的语义是「50/50 输了」，只对有 50/50 的频段成立。
+     * 常驻 / 邦布抽到的角色不算歪，所以这里只在出现过 50/50 记录时才写这一行。
+     */
+    if (c.lostApplicable) lines.push(c.lost > 0 ? `其中 50/50 歪出 ${c.lost} 次` : '50/50 没有歪过');
     return lines.join('\n');
   }
 
@@ -1929,6 +1935,12 @@
     renderChartFilters();
     renderLegend();
     renderChart();
+    /*
+     * 右栏只画一次：它的数据是全局的，不随 tab / 合并模式变。
+     * 放在 renderDetail() 里画也不是不行，但那样每次切 tab 都会重建一遍 DOM——
+     * 白费工，还会把右栏的滚动位置重置掉（用户刚滚到某个角色，切一下 tab 就跳回顶部）。
+     */
+    renderDetailChars();
     renderDetail();
     setupTip();
 

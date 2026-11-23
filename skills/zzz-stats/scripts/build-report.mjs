@@ -1010,37 +1010,63 @@ function detailRows(channel, merged) {
 /*
  * 右栏：角色维度汇总。
  *
- * ## 三个指标的口径（全部按「当前频道」算，不跨频道混）
+ * ## 为什么是**跨全部频段**聚合，而不是跟着左边 tab 走
  *
- * - **出现次数**：该角色在当前频道的金记录里出现几条。每出现一次就是「拿到了一个」。
+ * 影画必须全局算。独家频段能歪出常驻角色，同一个角色的重复获取会散落在不同频道里：
+ * 实测 fixtures/baseline 的珂蕾妲在独家 4 次 + 常驻 2 次，按频道分开算得到 3 影 + 1 影，
+ * 而正确影画是 5 影；猫又同样（独家 2 + 常驻 2，分开算各 1 影，实际 3 影）。
+ * 共享池就是这样，分频道算必然少算。
+ *
+ * 右栏是对面左边的独立分栏，**不随 tab 变化**：左栏回答「这 41 金怎么来的」，
+ * 右栏回答「这个号一共拿到过哪些角色、各几只」。
+ *
+ * ## 只统计角色（`item_type === 'ItemType_Avatar'`）
+ *
+ * 音擎和邦布**没有影画概念**。音擎频段里两种金混在一起（音擎 + 歪出的角色），
+ * 邦布整列都是邦布，一律不进右栏。常驻频段里抽到的角色照常计入（它们是角色）。
+ *
+ * ## 三个指标的口径
+ *
+ * - **出现次数**：该角色在**所有频段**的金记录里出现几条。每出现一次就是「拿到了一个」。
  * - **影画** = 出现次数 − 1。第 1 只给 0 影画，第 2 只给 1 影画（游戏里升 1 影需要 2 只）。
  *   注意这是**按记录次数反推**的，不是游戏里读到的影画等级：超过 7 只（6 影后继续抽）
  *   的情况照实显示 6 以上，所以前端要注明口径，不能写成确定结论。
  * - **总抽数** = 该角色所有记录的 `count` 之和。`count` 是「距上一金抽数」，
  *   所以这个和就是「为了拿到这些只，一共花了多少抽」。**歪出来的记录也计入**——
  *   它同样是这个角色的获取成本，排除掉会低估。
- * - **歪了几次**：该角色 `is_up === false` 的记录条数。
+ * - **歪了几次**：只数**有 50/50 的频段**里 `is_up === false` 的记录条数。
+ *   歪的语义是「50/50 输了」，只对独家 / 独家重映成立；常驻和邦布没有 50/50，
+ *   角色在常驻被抽到**不算歪**，否则会把常驻记录全算成歪。
  *
  * 排序：先按出现次数降序（影画高的更有信息量），再按总抽数降序，最后按 itemId 稳定排序。
  * 不用名字排——中文名排序对读者没有意义。
  */
-function charSummary(channel) {
+function charSummary() {
   const byId = new Map();
-  for (const g of channel.golds) {
-    const k = g.itemId;
-    const cur = byId.get(k) || {
-      itemId: g.itemId,
-      name: g.name,
-      appearances: 0,
-      pulls: 0,
-      lost: 0,
-      // 音擎频道没有「歪」的语义（is_up 恒为 true），前端据此决定要不要画歪次数
-      lostApplicable: channel.has5050,
-    };
-    cur.appearances += 1;
-    cur.pulls += g.count;
-    if (g.isUp !== true) cur.lost += 1;
-    byId.set(k, cur);
+  for (const channel of channelReports) {
+    for (const g of channel.golds) {
+      if (g.itemType !== 'ItemType_Avatar') continue;
+      const k = g.itemId;
+      const cur = byId.get(k) || {
+        itemId: g.itemId,
+        name: g.name,
+        appearances: 0,
+        pulls: 0,
+        lost: 0,
+        lostApplicable: false,
+      };
+      cur.appearances += 1;
+      cur.pulls += g.count;
+      /*
+       * 歪只认 50/50 频道。`has5050` 为假的频道（常驻 / 邦布）即使 `is_up` 是 false
+       * 也不是「歪」——那里根本没有 50/50 可输。
+       */
+      if (channel.has5050) {
+        cur.lostApplicable = true;
+        if (g.isUp !== true) cur.lost += 1;
+      }
+      byId.set(k, cur);
+    }
   }
   return [...byId.values()]
     .map((x) => ({
@@ -1058,6 +1084,12 @@ function charSummary(channel) {
       || String(a.itemId).localeCompare(String(b.itemId)));
 }
 
+/*
+ * 右栏是全局的，所以挂在 `report.charSummary` 上，不放进 `details[频道]`。
+ * 放进 details 会诱使人以为它该跟着频道变。
+ */
+const charSummaryRows = charSummary();
+
 const details = Object.fromEntries(
   CFG.channels.map((ch) => {
     const c = channelReports.find((x) => x.id === ch.id);
@@ -1066,9 +1098,6 @@ const details = Object.fromEntries(
       merged: detailRows(c, true),
       perGold: c.perGold,
       has5050: ch.has5050,
-      // 图标去重要按频道类型选目录（音擎/邦布只有 items），所以把 kind 一并带下去
-      kind: ch.kind,
-      chars: charSummary(c),
     }];
   }),
 );
@@ -1217,6 +1246,12 @@ const report = {
     },
   })),
   details,
+  /*
+   * 右栏：角色维度汇总，**跨全部频段**（不跟 tab 走），只含角色。
+   * 放在顶层而不是 details[频道] 里，是因为它是全局口径——
+   * 放在频道下会诱使人以为它该跟着 tab 变。
+   */
+  charSummary: charSummaryRows,
   kpi: [
     { key: 'winRate', label: '角色池不歪', value: finalWinRate == null ? '—' : `${finalWinRate}%`, unit: '' },
     { key: 'pullsPerUp', label: '每 UP 角色', value: metrics.pullsPerUp ?? '—', unit: '抽' },
@@ -1326,18 +1361,20 @@ function inlineImages(report) {
         for (const s of row.side ?? []) s.iconKey = encode('items', s.itemId);
       }
     }
-    /*
-     * 右栏角色汇总的图标目录：**先试 avatars，再退回 items**。
-     *
-     * 不能按频道类型一刀切。音擎频道（kind=weapon）里歪出来的金是**角色**，
-     * 它们的 id 只在 avatars 下；而金本身是音擎时 id 只在 items 下。
-     * 同一个频道两种都在，所以按频道选目录一定会让其中一类掉到占位图上
-     * （实测一刀切 items 时 14118 / 14121 报缺失，那两个是角色）。
-     *
-     * `iconKeyFor()` 里已经按「本地有没有这个文件」判断，这里只负责按优先级试。
-     */
-    for (const c of ch.chars ?? []) c.iconKey = iconKeyFor(c.itemId);
   }
+  /*
+   * 右栏角色汇总的图标：**先试 avatars，再退回 items**。
+   *
+   * 右栏现在只收 `ItemType_Avatar`，理论上全在 avatars/ 下，直接 encode('avatars')
+   * 就够。但仍然走 `iconKeyFor()` 逐个判断文件在不在，理由有两条：
+   *   1) 某些头像可能只同步到了 items/（sync-icons 按接口给的 icon URL 分类，
+   *      分类依据是 item_type，历史上出过 item_type 缺字段的记录）；
+   *   2) 反过来，将来右栏如果重新收别的类型，这里不用再改一次。
+   * 早先的坑是「按频道类型一刀切目录」：音擎频道里音擎走 items、歪出的角色走 avatars，
+   * 一刀切必然让其中一类整列掉占位图（实测 14118 / 14121 报缺失）。
+   * 所以这里**不按频道判断，只按单个 id 的文件是否存在**。
+   */
+  for (const c of report.charSummary ?? []) c.iconKey = iconKeyFor(c.itemId);
   report.icons = Object.fromEntries(byHash);
   return { unique: byHash.size, used: byId.size, missing };
 }
@@ -1512,6 +1549,45 @@ if (!Object.keys(pullsMaxCfg).length) {
         fatal.push(`${c.label}: 最高柱 ${tallest} 抽 > 固定上限 ${pullsMaxCfg[c.key]}，柱子会被截断`);
       }
     }
+  }
+}
+
+/*
+ * 右栏口径的防回归断言。
+ *
+ * 右栏的影画**必须**跨全部频段算：独家能歪出常驻角色，按频道分开算会少算。
+ * 这条被写错一次（右栏一度跟着 tab 走），症状很隐蔽——每个 tab 单独看着都对，
+ * 只有把同一个角色在两个频道的记录加起来才能发现珂蕾妲少 1 影。
+ *
+ * 所以断言两件事：
+ *   1) 右栏里没有「一半在 50/50 频道、一半在常驻」的角色按频道分算的痕迹：
+ *      凡是在常驻出现过的角色，它的 appearances 必须 > 它在任何单个频道的出现次数。
+ *      （等价于「合并过了」，比直接检查代码更靠近结果。）
+ *   2) 右栏只有角色：音擎 / 邦布一条都不许进。
+ */
+{
+  const perChannelAppear = new Map();
+  for (const channel of channelReports) {
+    for (const g of channel.golds) {
+      if (g.itemType !== 'ItemType_Avatar') continue;
+      const k = `${g.itemId}@${channel.id}`;
+      perChannelAppear.set(k, (perChannelAppear.get(k) ?? 0) + 1);
+    }
+  }
+  for (const c of report.charSummary ?? []) {
+    const perChannel = channelReports
+      .map((ch) => perChannelAppear.get(`${c.itemId}@${ch.id}`) ?? 0);
+    const maxOne = Math.max(0, ...perChannel);
+    if (perChannel.filter((n) => n > 0).length > 1 && c.appearances <= maxOne) {
+      fatal.push(`右栏 ${c.name} 出现 ${c.appearances} 次，但单频道最多就有 ${maxOne} 次：影画疑似按频道分开算了（必须跨全部频段合并）`);
+    }
+  }
+  const nonAvatar = (report.charSummary ?? []).filter((c) => {
+    const g = channelReports.flatMap((ch) => ch.golds).find((x) => x.itemId === c.itemId);
+    return g && g.itemType !== 'ItemType_Avatar';
+  });
+  for (const c of nonAvatar) {
+    fatal.push(`右栏含非角色条目 ${c.name}(${c.itemId})：音擎 / 邦布没有影画概念，不该进右栏`);
   }
 }
 
