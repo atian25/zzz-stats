@@ -1533,7 +1533,7 @@ const textSubs = (() => {
     '/*__COPY_DETAIL_TITLE__*/': CFG.copy.detailTitle ?? '抽卡详情',
     // 右栏标题和「抽卡详情」并列在头部，由模板输出（不是 charts.js 画的）
     '/*__COPY_DETAIL_CHARS_TITLE__*/': CFG.copy.detailCharsTitle ?? '角色汇总',
-    '/*__COPY_MERGE_TOGGLE__*/': CFG.copy.mergeToggle ?? '显示真实抽数',
+    '/*__COPY_MERGE_TOGGLE__*/': CFG.copy.mergeToggle ?? '真实抽数',
   };
   return map;
 })();

@@ -627,7 +627,7 @@ html, body {
   padding: 9px 0 6px;
 }
 /*
- * 左栏那一组：标题 + 频段 tab + 显示真实抽数，全在同一行。
+ * 左栏那一组：标题 + 频段 tab + 真实抽数，全在同一行。
  *
  * 左内边距 14 = `.detail-list` 自己的 padding，这样标题文字 x=35
  * 正好等于左栏每行最左的竖括号（bracket）x=35，也就是「标题与内容左边缘对齐」。
@@ -697,13 +697,14 @@ html, body {
 }
 .detail-tab:hover { color: var(--ink); }
 .detail-tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
-.detail-tools { margin-left: auto; display: flex; align-items: center; gap: 10px; white-space: nowrap; }
-.merge-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--ink-dim); cursor: pointer; }
-.merge-toggle input { accent-color: var(--accent); margin: 0; }
+.detail-tools { margin-left: auto; display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
+.merge-toggle { display: inline-flex; align-items: baseline; gap: 5px; font-size: 12px; color: var(--ink-dim); cursor: pointer; }
+.merge-toggle input { accent-color: var(--accent); margin: 0; align-self: center; }
 .merge-toggle[data-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
 /*
  * 曾经有 `.detail-meta`（「41 金 · 每金 57.9 抽」）。用户要求把它去掉
- * （原话：「显示真实抽数换行了，可以考虑把后面的总结全局去掉」），
+ * （原话：「显示真实抽数换行了，可以考虑把后面的总结全局去掉」——
+ *  引的是当时的按钮名，按钮现已简称「真实抽数」），
  * 元素、渲染逻辑、配置键 `copy.detailMetaAll` / `copy.detailMetaMerged` 一并删了。
  * 不要为了「留个位置」再加回来——它是 800 下这一行折行的直接原因（宽 123px）。
  */
