@@ -77,6 +77,14 @@
 
     左内边距 14 让标题/控件和 `.detail-list` 的内容盒起点对齐（都是 35），
     右栏标题靠自己的 12px 对齐右栏内容。两个 grid 列仍与 `.detail-body` 完全一致。
+
+    ## 改前 vs 改后：尾巴上多了版本过滤
+
+    改前这行的内容到「真实抽数」就结束了，想只看某个大版本只能自己数版本组。
+    改后「真实抽数」右边多一个 `.detail-filter-group`（1.x / 2.x / 3.x），**只筛左栏的行**。
+    右栏「代理人汇总」一行都不过滤——它是跨全部频段的全局聚合，筛了会让影画编号和抽数对不上。
+    折行策略是用户拍板的 A：**同行优先，放不下才整组折到下一行、左对齐**；
+    1440 / 1000 一行到底，900 及以下整组折下去（详见 charts.css 的 `.detail-filter-group`）。
   -->
   <div class="detail-head">
     <div class="detail-head-main">
@@ -88,6 +96,17 @@
           <span>/*__COPY_MERGE_TOGGLE__*/</span>
         </label>
       </div>
+      <!--
+        版本过滤（1.x / 2.x / 3.x），形态照抄主图那排 —— 同一套 chip 结构与图标。
+
+        **整组当一个整体折行**：这层 `.detail-filter-group` 是 flex 的单个子项
+        （`flex: 0 0 auto`，不给自己 wrap），所以窄屏放不下时整组掉到下一行、左对齐，
+        而不是在 chip 中间断开。这一点靠 CSS 保证，不靠流式布局碰巧成立。
+
+        为什么只管左栏：右栏「代理人汇总」是跨全部频段的全局聚合，
+        过滤它会让影画编号和抽数对不上——那栏一行都不许筛。
+      -->
+      <div class="detail-filter-group" id="detail-filters" role="group" aria-label="版本筛选"></div>
     </div>
     <span class="detail-chars-title" id="detail-chars-title">/*__COPY_DETAIL_CHARS_TITLE__*/</span>
   </div>

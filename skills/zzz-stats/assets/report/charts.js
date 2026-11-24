@@ -1580,6 +1580,71 @@
 
   const detailState = { channel: CFG.channels[0].id, merged: false };
 
+  /*
+   * 详情左栏的版本过滤状态。
+   *
+   * **与主图那排是两个独立的 Set，不许合并**：主图过滤只影响柱子，详情过滤只影响左栏行。
+   * 共用一个 Set 会变成「勾了 2.x 结果主图和详情一起变」——用户没要求这个联动，
+   * 而且两个控件一个在抽卡总览、一个在抽卡详情，共用一个状态时用户在 A 处的操作
+   * 会在 B 处产生看不见来源的变化。
+   *
+   * 默认全选（= 不筛）。全部取消时回到全显示，与主图 `visibleIndices()` 的约定一致：
+   * 空集合绝不画成空列表。
+   */
+  const detailFilterState = { majors: new Set(R.versionFilters ?? []) };
+
+  /**
+   * 详情某一行在不在当前筛选里。
+   *
+   * 只认 `version` 的大版本号（`3.1` → `3`），与主图 `visibleIndices()` 同一套算法。
+   * 全选 / 全不选 = 不过滤。
+   */
+  function detailRowVisible(row) {
+    const all = R.versionFilters ?? [];
+    if (!detailFilterState.majors.size) return true;
+    if (all.length && detailFilterState.majors.size >= all.length) return true;
+    return detailFilterState.majors.has(String(row.version ?? '').split('.')[0]);
+  }
+
+  /**
+   * 画「真实抽数」后面那排版本过滤。
+   *
+   * 形态与主图那排**完全一致**（同一套 chip / chip-box / chip-label 与两个图标常量），
+   * 所以两处看起来是同一个控件。即使某档位在该频段没有数据也照样画：
+   * 按频段动态增删 chip 会让切 tab 时这排宽度跳变。
+   */
+  function renderDetailFilters() {
+    const box = $('#detail-filters');
+    if (!box) return;
+    box.innerHTML = '';
+    const majors = R.versionFilters ?? [];
+    if (majors.length < 2) return;   // 只有一个版本档位时过滤没有意义
+
+    const icon = el('span', 'filter-icon');
+    icon.innerHTML = FILTER_ICON;
+    icon.setAttribute('aria-hidden', 'true');
+    box.appendChild(icon);
+
+    for (const major of majors) {
+      const on = detailFilterState.majors.has(major);
+      const b = el('button', 'chip');
+      b.type = 'button';
+      b.dataset.major = major;
+      b.setAttribute('aria-pressed', String(on));
+      const box2 = el('span', 'chip-box');
+      box2.innerHTML = on ? CHECK_ICON : DASH_ICON;
+      b.appendChild(box2);
+      b.appendChild(el('span', 'chip-label', `${major}.x`));
+      b.addEventListener('click', () => {
+        if (detailFilterState.majors.has(major)) detailFilterState.majors.delete(major);
+        else detailFilterState.majors.add(major);
+        renderDetailFilters();
+        renderDetail();
+      });
+      box.appendChild(b);
+    }
+  }
+
   function renderDetail() {
     const tabs = $('#detail-tabs');
     tabs.innerHTML = '';
@@ -1642,9 +1707,32 @@
       return;
     }
 
+    /*
+     * 按版本过滤（只挑「显示哪些行」，一行判定数字都不碰）。
+     *
+     * 过滤放在这一层、**在分组之前**：分组是按版本分的，先筛掉整组再分组，
+     * 天然就是「该版本组被筛掉 → 整组连括号一起消失」，
+     * 垫抽行因为挂在 `groups[0]` 上，也会跟着它所属的组一起走（组没了它就没地方挂）。
+     *
+     * `row.pulls` / `divisor` / 条长 / 分组口径全部不动——筛的是可见性，不是数据。
+     */
+    const visibleRows = rows.filter(detailRowVisible);
+
+    /*
+     * 筛空与「频段本来就没有记录」是两件事，**文案必须分开**。
+     *
+     * 沿用 `detailEmpty`（「这个频段还没有 S 级记录」）在这个状态下是假话：
+     * 频段里明明有记录，只是被当前勾选筛掉了。
+     */
+    if (!visibleRows.length) {
+      const empty = el('div', 'detail-empty', CFG.copy.detailFilterEmpty);
+      list.appendChild(empty);
+      return;
+    }
+
     // 按版本分组（已是时间倒序）
     const groups = [];
-    for (const row of rows) {
+    for (const row of visibleRows) {
       const last = groups[groups.length - 1];
       if (last && last.version === row.version) last.rows.push(row);
       else groups.push({ version: row.version, rows: [row] });
@@ -1656,9 +1744,19 @@
      * 原因纯排版：外面那一层没有版本括号的缩进（1px 括号 + 7px gap + 版本号宽度），
      * 放外面会比下面的头像整体左移 42px，一眼就能看出没对齐。
      * 放进去后问号块和头像、绿条和红条都落在同一列。
+     *
+     * **它归属的是「筛前最新的那个版本组」，不是「筛后第一个组」**。
+     * 垫抽行代表「在新版本里已经垫了 N 抽、还没出金」，所以它的家是数据里最新的那个
+     * 版本组（`rows[0].version`，rows 是筛前的完整视图）。那一组被筛掉时，
+     * 垫抽行跟着不显示——不能因为筛掉了 3.x 就把它挂到 1.x 组里，
+     * 那等于把「最新版本的垫抽」伪装成「1.x 的垫抽」。
      */
     const pityRow = buildPityRow(ch.pity);
-    if (pityRow && groups.length) groups[0].rows.unshift({ __pity: true });
+    const newestVersion = rows.length ? rows[0].version : null;
+    if (pityRow && newestVersion != null) {
+      const home = groups.find((g) => g.version === newestVersion);
+      if (home) home.rows.unshift({ __pity: true });
+    }
 
     for (const g of groups) {
       const wrap = el('div', 'detail-group');
@@ -2227,6 +2325,7 @@
      * 白费工，还会把右栏的滚动位置重置掉（用户刚滚到某个角色，切一下 tab 就跳回顶部）。
      */
     renderDetailChars();
+    renderDetailFilters();
     renderDetail();
     setupTip();
 

@@ -698,6 +698,36 @@ html, body {
 .detail-tab:hover { color: var(--ink); }
 .detail-tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
 .detail-tools { margin-left: 2px; display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
+/*
+ * 版本过滤组（「真实抽数」后面那排 1.x / 2.x / 3.x）。
+ *
+ * ## 折行策略：整组当一个整体，不允许组内断
+ *
+ * `.detail-head-main` 是 `flex-wrap: wrap`，所以窄屏放不下时**总会**有东西折行；
+ * 要控制的是「折的是什么」。这里给它 `flex: 0 0 auto`（不参与伸缩、不参与分配），
+ * 并**不**给自己 `flex-wrap`——于是这一整组是不可分割的单个 flex 子项：
+ * 放不下时它整个掉到下一行、从左边缘（与标题同一条左线）开始，chip 之间不会断开。
+ * 若这里加 `flex-wrap: wrap`，它就变成「组内可折」，会出现「3.x 独占第二行」那种半折，
+ * 正是用户否掉的方案。
+ *
+ * 用 `.chip` 那套样式**原样复用**：中性灰、不碰 --accent、选中是勾、未选是短横。
+ * 唯一的区别是字号/间距不动——主图那排与这排视觉上必须像同一个控件。
+ */
+.detail-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+/* 组里的漏斗图标与主图同款，只作说明，不参与点击 */
+.detail-filter-group .filter-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink-faint);
+  margin-right: 2px;
+  flex: none;
+}
 .merge-toggle { display: inline-flex; align-items: baseline; gap: 5px; font-size: 12px; color: var(--ink-dim); cursor: pointer; }
 .merge-toggle input { accent-color: var(--accent); margin: 0; align-self: center; }
 .merge-toggle[data-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
@@ -1268,6 +1298,21 @@ html, body {
  */
 @media (max-width: 840px) {
   .detail-panel { --detail-head-gap: 6px; }
+  /*
+   * 761~840 这一档：标题 + tab 已经占满第一行，`.detail-tools`（真实抽数）
+   * 会被挤到第二行。这时过滤组如果继续跟着 flex 排，就会**黏在「真实抽数」右边**
+   * 变成「[真实抽数][1.x 2.x 3.x]」——而它本该和标题左对齐单独起一行。
+   *
+   * 实测（绳匠A）：这一档 tools 折到 x=37，过滤组落在 x=109；
+   * 而 800 档 tools 还在一行时，过滤组单独占第二行、x=35 正好与标题对齐。
+   * 差别就在「tools 有没有折」。所以给过滤组 `flex-basis: 100%`：
+   * 它强制占满一行 —— 一行放得下时它留在本行末尾（1440/1000），
+   * 放不下时**整组换行并撑满**，于是永远从容器左边缘起算，与标题同一条左线。
+   *
+   * 这一条只在 ≤840 生效：1440 / 1000 的 tools 不折行，
+   * 不能用 `100%` 把过滤组顶到第二行去（那会白白多出一行空白）。
+   */
+  .detail-filter-group { flex-basis: 100%; }
 }
 
 @media (max-width: 1320px) {

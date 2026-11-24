@@ -1833,6 +1833,15 @@ const textSubs = (() => {
     // 右栏标题和「抽卡详情」并列在头部，由模板输出（不是 charts.js 画的）
     '/*__COPY_DETAIL_CHARS_TITLE__*/': CFG.copy.detailCharsTitle ?? '代理人汇总',
     '/*__COPY_MERGE_TOGGLE__*/': CFG.copy.mergeToggle ?? '真实抽数',
+    /*
+     * 详情左栏被版本过滤筛空时的说明。
+     *
+     * 不能沿用 `detailEmpty`（「这个频段还没有 S 级记录」）——那句话在这个状态下是**假的**：
+     * 频段里明明有记录，只是被当前勾选筛掉了。两句话说的是两件事，所以是两个键。
+     * 文案里不带数字：勾了哪几档、筛掉多少行，界面上那些 chip 和行本身已经说明，
+     * 再报一遍数字属于重复。
+     */
+    '/*__COPY_DETAIL_FILTER_EMPTY__*/': CFG.copy.detailFilterEmpty ?? '当前版本筛选下没有记录',
   };
   return map;
 })();
