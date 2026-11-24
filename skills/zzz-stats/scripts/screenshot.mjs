@@ -53,7 +53,7 @@ if (wantsHelp()) {
       { flag: '--chart <名>', desc: '切到指定主图频段 tab（如 音擎）' },
       { flag: '--filter <档>', desc: '只留指定版本档位（如 2；多个用 1,2）' },
       { flag: '--detail <名>', desc: '切底部详情面板的频段 tab（如 独家重映）' },
-      { flag: '--preview-height <n>', desc: '预览图的固定高度（逻辑 px，默认 1200）；自动下移到不切半行的位置' },
+      { flag: '--preview-height <n>', desc: '预览图的固定高度（逻辑 px，默认 1200）；自动吸附到离它最近的不切半行位置' },
       { flag: '--collapse', desc: '收起主图，让详情面板进首屏' },
       { flag: '--preview', desc: '出 README 头图：固定高度 2x；真实数据强制打码到 2 并断言，meta.synthetic 为 true 的数据集不打码' },
       { flag: '--out-file <file>', desc: '配合 --preview 指定输出，默认 docs/preview.png' },
@@ -191,7 +191,7 @@ const PREVIEW_DPR = 2;
  * 用户早前明确说过「不要定高吧，抽卡详情多的话就直接在页面下面，方便滚动截图」，
  * 所以**只改截图范围，不动 `.detail-body` / `.detail-list` 的 CSS**。
  *
- * ## 自动下移到「不切半行」的位置
+ * ## 自动吸附到「不切半行」的位置（上下都试）
  *
  * 硬切在某个像素上很可能把一行切成两半（截图里出现只有上半截的字）。
  * 所以实际高度会在名义高度之上找最近的一个**安全切口**：
@@ -329,7 +329,7 @@ if (PREVIEW) {
 if (PREVIEW) {
   console.log(`预览图高度：名义 ${PREVIEW_HEIGHT} 逻辑 px`
     + `${PREVIEW_HEIGHT_RAW == null ? '（默认）' : '（显式 --preview-height）'}`
-    + '，两栏共用同一高度；实际值会下移到不切半行的位置');
+    + '，两栏共用同一高度；实际值会吸附到离它最近的不切半行位置（上下都试）');
 }
 writeFileSync(pageFile, withState(readFileSync(HTML, 'utf8'), {
   privacy: EFFECTIVE_PRIVACY,
@@ -586,7 +586,10 @@ try {
          *
          * 所以先向下、再向上各找一遍，取距离更近的；距离相同优先取小的
          * （宁可少显示一点，也别让图比用户要的高）。
-         * 向上不超过 `ceiling`——名义高度就是上限，不擅自截得比用户要的多。
+         * **向上不设 ceiling 上限**：`--preview-height 1400` 实测最近的安全值是 1429
+         * （向下最远只能到 1191、差 209px，向上 1429 只差 29px）。
+         * 名义值只是「离它最近的参考点」，不是硬上限——否则显式传 1400 会得到 1191，
+         * 用户以为参数没生效。差多少由下面的组底边优先级再收敛一次。
          */
         let down = Math.floor(ceiling);
         while (down > 0 && !safeAt(down)) down -= 1;
@@ -602,9 +605,12 @@ try {
         else pickH = Math.floor(ceiling);
 
         /*
-         * 版本组底边优先：在上一步的安全值之上找最近的组底边
-         * （组结束处最自然，图末不会像「组没结束」），但它同样必须两栏不跨行、
-         * 且不能超过 ceiling。
+         * 版本组底边优先：找离 ceiling 最近、且两栏不跨行的组底边。
+         *
+         * 组底边是**左栏**的组边界，天然落在左栏行间；关键是它也必须不跨右栏的行。
+         * 候选只取 `<= ceiling` 的：组底边是「更自然但更矮」的选项，让它越过名义值去
+         * 和向上吸附抢位置没有意义（那会为了一个组边界把图拉得比安全间隙更长）。
+         * 只有它**不比 pickH 更远**时才采用——即组底边足够接近名义值，才值得为观感让步。
          */
         let bestGroup = null;
         for (const gb of g.groupBottoms) {
