@@ -2514,10 +2514,11 @@ node skills/zzz-stats/scripts/screenshot.mjs --preview --preview-height 1400 --h
 **判据是行盒**（`getBoundingClientRect` 的整行），当前落盘实现就是这套。
 
 > 曾有一版把判据改成「墨迹信封」（量文本 `Range.getClientRects()` + `img` + 有背景/边框的块），
-> 并把这套说法写进了 AGENTS / README / SKILL / 本文档。**那条实现没有落盘**——
-> `git log` 里没有对应 commit，`screenshot.mjs` 里也搜不到 `envelope`。
-> 所以文档一度与代码不符（文档说 1192、墨迹、81 个安全点；代码实际是 1191、行盒、92 个）。
-> 现在文档已按代码改回。**别再照着「墨迹」那套改代码**，要改先落实现、再改文档。
+> 并把这套说法写进了 AGENTS / README / SKILL / 本文档。那条实现**没有合进 master**，
+> 只存在于分支 `backup/ink-envelope-176a153`（提交 `176a153`），`screenshot.mjs` 的 master 版里搜不到 `envelope`。
+> 那一版实测 1192 / 图 `2880×2384` / 墨迹安全点 81，与行盒版的 1191 / `2880×2382` / 92 个**只差 1px，两版都是零半行**。
+> 切换判据的顺序是：先 cherry-pick 实现、重出预览图，再改四份文档——反过来就会出现「文档描述了一个 master 上没有的实现」。
+> **别在只改文档的情况下把数字写成墨迹那套。**
 
 **为什么交集为空却仍有干净切点**：左栏相邻行之间有 **3px / 5px** 间隙
 （41 行里 3px 25 处、5px 15 处），右栏间隙恒 0、步长恒 34，
