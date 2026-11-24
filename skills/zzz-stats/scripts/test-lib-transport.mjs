@@ -144,6 +144,60 @@ console.log('5. 入口自检：缺参数就抛，不静默');
   ok('collectViaBrowser 缺 drv 抛错', e3 !== null && /drv/.test(e3.message));
 }
 
+console.log('6. buildReport 收 Map 与收普通对象，产出必须相同');
+{
+  /*
+   * 这条钉的是一个**静默** bug：`buildReport()` 文档说「Map 与普通对象都收」，
+   * 但内嵌原始 JSON 时用的是入参 `files`，而 `JSON.stringify(map)` 是 `{}`。
+   *
+   * 症状不对称，所以最容易漏：构建日志一切正常、没有 fatal、Node 侧口径也全对，
+   * **只有打开产物才崩** —— `statsOf()` 拿到 null，抛
+   * `Cannot read properties of null (reading 'type_stats')`，页面白屏。
+   *
+   * CLI 一直传普通对象，所以从拆分那天起这条路径就没被走到过；
+   * 是 `serve.mjs` 的浏览器验收（真 chrome 打开 /report）抓到的。
+   * 只测了对象那条，就等于只测了承诺的一半 —— 所以这里两条都跑。
+   */
+  const build = await import('../lib/build.mjs');
+  const REPO_DIR = resolve(SKILL_DIR, '..', '..');
+  const FIX = join(REPO_DIR, 'fixtures/baseline');
+  const CFG = JSON.parse(readFileSync(join(SKILL_DIR, 'config/report.json'), 'utf8'));
+
+  const map = new Map();
+  const put = (name) => {
+    try { map.set(name, JSON.parse(readFileSync(join(FIX, name), 'utf8'))); } catch { /* 该频道无记录 */ }
+  };
+  put('index.json');
+  put('meta.json');
+  for (const ch of CFG.channels) {
+    put(`cur_pool_stat_${ch.id}.json`);
+    put(`hist_pool_stat_${ch.id}.json`);
+  }
+  ok('fixtures/baseline 能读成 14 个键的 Map', map.size === 14, `${map.size} 个`);
+
+  const quiet = { logWarn: () => {} };
+  const fromMap = build.buildReport({ files: map, cfg: CFG, ...quiet });
+  const fromObj = build.buildReport({ files: Object.fromEntries(map), cfg: CFG, ...quiet });
+  ok('Map 入参无 fatal', fromMap.fatal.length === 0, fromMap.fatal.join('; '));
+
+  const payloadOf = (html) => {
+    const m = html.match(/<script type="application\/json" id="[^"]*">([\s\S]*?)<\/script>/);
+    return m ? m[1] : null;
+  };
+  const pMap = payloadOf(fromMap.html);
+  ok('Map 入参的产物里内嵌 JSON 不是空的', Boolean(pMap) && pMap.trim().length > 1000,
+    pMap ? `${pMap.length} 字符` : '没找到 payload');
+
+  /*
+   * 归一化 generatedAt 之后逐字节比。它是构建时刻，两次调用必然差几毫秒，
+   * 除此之外**一个字节都不许差** —— 差一个字节就说明两条入参路径没有被同等地摊平。
+   */
+  const norm = (s) => s.replace(/20\d{2}-\d{2}-\d{2}T[\d:.]+Z/g, '<T>');
+  ok('Map 与对象的产物归一化后逐字节相同',
+    norm(fromMap.html) === norm(fromObj.html),
+    `Map ${norm(fromMap.html).length} / 对象 ${norm(fromObj.html).length}`);
+}
+
 console.log('');
 console.log(fail === 0 ? `结果：通过 ${pass} / 失败 0` : `结果：通过 ${pass} / 失败 ${fail}`);
 process.exit(fail === 0 ? 0 : 1);

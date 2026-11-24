@@ -210,7 +210,15 @@ export function buildReport({ files, cfg, logWarn = (m) => console.warn(m) } = {
     .replace('/*__CONFIG_CSS_VARS__*/', () => cssVarBlockText)
     .replace('/*__CHARTS_CSS__*/', () => chartsCss)
     .replace('/*__ECHARTS__*/', () => echartsJs)
-    .replace('/*__PAYLOAD_JSON__*/', () => escapeJsonForScript(JSON.stringify(files)))
+    /*
+     * 内嵌的必须是 `fileMap`，**不能是入参 `files` 本身**。
+     *
+     * 入参可能是 Map（SDK 的 `collectData()` 就返回 Map），而 `JSON.stringify(map)`
+     * 是 `{}` —— 不会报错，产物里那段原始 JSON 会静默变成空对象，浏览器现算时
+     * `statsOf()` 拿到 null 就抛 `Cannot read properties of null (reading 'type_stats')`。
+     * 构建日志一切正常、Node 侧口径也对，只有打开产物才白屏。
+     */
+    .replace('/*__PAYLOAD_JSON__*/', () => escapeJsonForScript(JSON.stringify(fileMap)))
     .replace('/*__CORE_PLUS_BOOT__*/', () => corePlusBoot)
     .replace('/*__CHARTS_JS__*/', () => chartsJs);
   for (const [token, text] of Object.entries(textSubsMap)) {

@@ -991,6 +991,7 @@ UP 抽数是该角色**各轮 total 累加**（含期间歪出的）、非 UP �
 | **口径内核** | `assets/report/core.js` | 轮次模型、不歪率、称号、标签、详情行、右栏汇总、分母。**纯 JS，Node 与浏览器跑的是同一份源码**（产物里是它的构建期转换版）。改这层要同步 `report-rules.md` |
 | **逻辑 SDK** | `lib/` | `collectData()` / `buildReport()`。登录、采集、出报表的**纯逻辑**：只返回数据，不写盘、不读参数、不调 `process.exit` |
 | **两个外壳** | `scripts/collect.mjs` / `scripts/build-report.mjs` | 算参数、读盘、调 SDK、写文件、打日志、退出码。**口径不许写在外壳里** |
+| **本地 Web 服务** | `scripts/serve.mjs` | 浏览器里走完整流程（扫码 → 取数 → 出报表）。单文件、只用 `node:http`、前端内联；**只调 SDK，不改 SDK**；走纯 Node 路且**不降级** |
 | **资源** | `assets/report/icons/` | 里面是 `avatars/`（圆头像）与 `items/`（方图标）两套，**都只有 64px 一套**。**构建时内嵌进 HTML 用的就是它**，没有第二份 96px 原图了。缺图**不要手动找**，跑 `scripts/sync-icons.mjs` |
 | **规范** | `references/report-rules.md` | 记录「为什么这样算、为什么这样画」以及踩过的坑。**不要为了改行为去改它**；它是给维护者看的 |
 
@@ -1030,6 +1031,46 @@ lib/template-tokens.mjs  CSS 变量块 / 文案表 / HTML 转义
 `index.json` / `meta.json` / `cur_pool_stat_<id>.json` / `hist_pool_stat_<id>.json`
 （id = 1,2,3,5,102,103）。用 `Map` 是为了保留插入顺序（index 在前、然后按频道顺序），
 写出来的目录列出来和以前一样。
+
+#### 浏览器里跑完整流程：`scripts/serve.mjs`
+
+**改前**：只有命令行。扫码要用户自己在终端里找到 `output/login-qr.png`、或者在另一个窗口打开图片服务地址，
+进度只能从终端日志里回头看。
+
+**改后**：另有一个**本地 Web 服务**，把「扫码 → 取数 → 出报表」做成一个页面：
+
+```bash
+node skills/zzz-stats/scripts/serve.mjs          # 默认 0.0.0.0:3000
+node skills/zzz-stats/scripts/serve.mjs --port 8080 --cwd /tmp/x
+```
+
+打开 `http://127.0.0.1:3000/`（手机用局域网 IP），点「开始」→ 二维码直接出现在页面上 →
+扫码确认后 SSE 实时推进度 → 取完数自动构建 → 自动跳到 `/report` 看报表。
+页面上有「重新出码」和「再来一次」，**不用重启服务**。
+
+| 能力 | 说明 |
+|---|---|
+| `--port <n>` | 默认 3000 |
+| `--host <h>` | 默认 `0.0.0.0`（为了手机走局域网 IP）。**只在本机用就传 `127.0.0.1`** |
+| `--cwd <dir>` | 用户工作目录，`output/` 相对它算，与两个 CLI 同一个语义 |
+
+**它只用纯 Node 那条路，服务里不降级。** `transport` 固定 `node`；失败就把**真实错误**
+原样显示在页面上（同时进控制台），不偷偷换成浏览器。降级策略本来就只在 `scripts/collect.mjs` 里。
+
+**凭据不进日志。** 二维码 ticket、Cookie、set-cookie 一律不打到控制台、也不进 SSE；
+页面上只出现一张二维码图片（它本身就是登录码，显示在用户自己的屏幕上才是目的）。
+代码里还有一层 `redact()` 兜底，即使 SDK 以后的日志带了 cookie 也会被替换掉。
+
+**落盘与两个 CLI 一致**：先按 `output/<账号名>/data/` 写 14 个原始响应，
+再构建 `output/<账号名>/report.html`（**校验通过之后才写产物**，与 `build-report.mjs` 同序）。
+所以服务跑过一次之后，仍可以拿 `build-report.mjs --data output/<账号名>/data` 重出报表。
+
+**边界**：单文件、只用 `node:http`、前端 HTML 全内联、不加任何 npm 依赖；
+**不改 `lib/` 的接口**，只调用 `collectData()` / `buildReport()`。
+它不替代 `collect.mjs` —— 短信登录、`--data` 指定目录、`--keep-verify` 这些仍然只有 CLI 有。
+
+⚠️ **监听 `0.0.0.0` 的含义**：同一局域网内任何人都能打开这个页面并发起一次登录流程。
+启动横幅会打一行提醒；用完关掉，别在公共 WiFi 下长期开着。
 
 #### 两条取数路径：纯 Node 与浏览器
 

@@ -2321,13 +2321,65 @@ SDK 暴露四个并列函数，各管各的、只抛错：
 不降级。把策略写进 SDK，等于替所有调用方做了决定，而且调用方**再也没法知道**
 「node 这条路其实失败了」（它只会看到成功）。
 
-`test-lib-transport.mjs`（15 项）把这条钉成断言，其中关键一条是
+`test-lib-transport.mjs`（19 项）把这条钉成断言，其中关键一条是
 「`transport=node` 失败时浏览器的扫码回调一次都不许被调到」。反向验证过：
 在 SDK 的 node 分支里注入一个 `catch` 后改走 browser，用例立刻 14/15、exit 1。
 
 CLI 的判据是「用户有没有显式传 `--transport`」。注意 `argOf()` 的默认值会掩盖这件事
 （`argOf('transport','node')` 对「没传」和「传了 node」返回同一个字符串），
 所以实现里取默认值 null、再自己补 `'node'`。
+
+### 第四轮：本地 Web 服务 `scripts/serve.mjs`（2026-11-24）
+
+前三轮都在命令行与产物内部。这一轮加一个**本地 Web 服务**，让用户能亲手在浏览器里走完
+「扫码 → 取数 → 出报表」——命令行那条路要自己在终端里找二维码文件，体验不到这条链路。
+
+| | 改前 | 改后 |
+|---|---|---|
+| 入口 | `collect.mjs` → `build-report.mjs`，两条命令 | 另有 `node scripts/serve.mjs`，浏览器里一条流程走完（两个 CLI 都保留） |
+| 二维码怎么给 | 落 `output/login-qr.png`，靠图片服务 URL 给出去 | 直接 `<img src="data:image/png;base64,…">` 显示在页面上 |
+| 进度 | 终端日志 | SSE 实时推到页面（申请二维码 / 已登录并查到角色 / 开始取数 / 采集完成 / 构建报表） |
+| 取数路径 | 默认 node，失败降级 browser | **固定 node，服务里不降级**；失败把真实错误显示在页面上 |
+| 重来 | 重跑命令 | 页面上的「重新出码」/「再来一次」，**不重启服务** |
+
+设计上的几条硬约束（写进 `AGENTS.md` 与 `SKILL.md`）：
+
+- **单文件、只用 `node:http`、前端 HTML 全内联、零 npm 依赖**。它是「让人亲手试一次」，
+  不是产品化服务端：装依赖、拆静态目录都会带来安装步骤与版本漂移。
+- **只调 SDK，不改 SDK。** 用现成的 `collectData({ transport:'node' })` / `buildReport({ files })`。
+- **服务里不做降级**。降级策略仍然只在 `scripts/collect.mjs`（判据是「有没有显式传 `--transport`」）。
+- **凭据不进日志、不进 SSE**：ticket / Cookie / set-cookie 一律不打印，页面上只出现二维码图片本身。
+  代码里还有一层 `redact()` 兜底（已知 cookie 名、`ticket=`、`data:image/...;base64,` 都替换掉）。
+- **落盘顺序与两个 CLI 一致**：先写 14 个原始响应到 `output/<账号名>/data/`，
+  再构建；**校验通过之后才写 `report.html`**（与 `build-report.mjs` 同序，坏产物不落盘）。
+- **改码要能杀掉旧的登录轮询**：`/api/start` 会先 `abort` 上一次运行。否则旧二维码继续轮询，
+  万一有人扫了它，就会在后台静默登录成功并开始取数，用户完全不知道。
+
+#### 这一轮抓到的真 bug：`JSON.stringify(Map)` 是 `{}`
+
+`lib/build.mjs` 内嵌原始 JSON 时用的是**入参** `files`：
+
+```js
+.replace('/*__PAYLOAD_JSON__*/', () => escapeJsonForScript(JSON.stringify(files)))
+```
+
+而 `buildReport()` 的文档说「Map 与普通对象都收」，SDK 的 `collectData()` 返回的正是 Map。
+`JSON.stringify(map)` **不报错、返回 `{}`** —— 于是：
+
+- 构建日志一切正常、没有任何 `fatal`；
+- Node 侧口径全对（`computeReport` 收到的是摊平后的 `fileMap`）；
+- **只有打开产物才崩**：`statsOf()` 拿到 `null`，抛
+  `Cannot read properties of null (reading 'type_stats')`，页面白屏。
+
+CLI 一直传普通对象，所以这条路径从拆分那天起就没被走到过。是 `serve.mjs` 的浏览器验收
+（真 chrome 打开 `/report`、收集 `Runtime.exceptionThrown`）抓到的。
+
+修法一行：`JSON.stringify(fileMap)`。验法是**同一批 fixtures 分别用 Map 和普通对象构建**，
+归一化 `generatedAt` 后两份 HTML 必须完全相同（实测 2,228,416 字符，逐字节相同）。
+
+> 教训：SDK 声称「两种入参都收」时，**两条路都要有用例跑一遍**。
+> 只测了对象那条，就等于只测了一半的承诺；而坏的那一半不会在构建期报错，
+> 只在最终用户打开文件时显形。
 
 ### 结构
 

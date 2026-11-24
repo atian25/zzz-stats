@@ -158,6 +158,20 @@
 - 改 `lib/login-node.mjs` / `lib/transport-node.mjs` → 那是**私有接口的逆向结论**
   （`x-rpc-app_id` / cookie 名 / `game_biz`）。改了会静默失败（回业务错误码，不是「接口不存在」）。
   出问题按这个顺序怀疑：app_id → cookie 名 → game_biz。别先怀疑网络。
+- **`scripts/serve.mjs` 是「第三个外壳」，规则同上：只调 SDK、不改 SDK。**
+  本地 Web 服务（`node skills/zzz-stats/scripts/serve.mjs`，默认 `0.0.0.0:3000`），
+  浏览器里走完「扫码 → 取数 → 出报表」，产物仍落 `output/<账号名>/{data/,report.html}`。
+  五条约束，改之前先看：
+  - **单文件、只用 `node:http`、前端 HTML 全内联、不加任何 npm 依赖**——它是「让人亲手试一次」，
+    不是产品化服务端，装依赖/拆静态目录都会带来安装步骤与版本漂移；
+  - **走纯 Node 路（`transport: 'node'`）且服务里不降级**，失败把真实错误显示在页面上；
+    降级策略仍然只在 `scripts/collect.mjs`；
+  - **凭据不进日志、不进 SSE**（ticket / Cookie / set-cookie），页面上只出现二维码图片本身；
+  - **落盘顺序与两个 CLI 一致**：先写 14 个原始响应，再构建；**校验通过之后才写 `report.html`**；
+  - **`lib/build.mjs` 内嵌的原始 JSON 必须用 `fileMap`，不能用入参 `files`。**
+    入参可能是 Map，而 `JSON.stringify(map)` 是 `{}` —— 构建全绿、Node 口径也对，
+    只有打开产物才崩（`Cannot read properties of null (reading 'type_stats')`）。
+    CLI 一直传对象，所以这个 bug 只在服务/用例传 Map 时显形，是 `serve.mjs` 的浏览器验收抓到的。
 - 任何改动后跑 §8 回归基线与 §9.3 验收，确认控制台数字与截图。
 
 ## 改完必须回填文档与模板
@@ -252,7 +266,7 @@ node skills/zzz-stats/scripts/test-verify-cleanup.mjs   # 27 项，不需要浏�
 node skills/zzz-stats/scripts/test-image-server.mjs      # 25 项，只起一个 127.0.0.1 临时端口
 node skills/zzz-stats/scripts/test-qr-wait.mjs           # 75 项，刷新通道 + 真实等待循环
 node skills/zzz-stats/scripts/test-preview-privacy.mjs   # 53 项（output/ 在场时 55 项），--preview 的隐私分流（见下）
-node skills/zzz-stats/scripts/test-lib-transport.mjs    # 15 项，lib/ 四个并列入口 + 「降级只在 CLI」纪律
+node skills/zzz-stats/scripts/test-lib-transport.mjs    # 19 项，lib/ 四个并列入口 + 「降级只在 CLI」纪律 + Map/对象两种入参产物一致
 node skills/zzz-stats/scripts/test-core-pure.mjs         # 47 项，core.js 纯度 + 转换规则 + 面板已删 + 图标资产
 node skills/zzz-stats/scripts/test-report-browser.mjs    # 30 项，需要 chrome；产物现算的 __REPORT__ 与 Node 口径逐字段相同
 ```
