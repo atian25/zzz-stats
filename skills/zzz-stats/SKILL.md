@@ -1012,7 +1012,7 @@ scripts/build-report.mjs                   产物里的第 ② 段脚本
 
 `core.js` 的约束是硬性的：**不许出现 `node:` import、`process`、`Buffer`、`fs`、`__dirname`、`import.meta`**。
 一旦出现，Node 端照样跑得通、只有浏览器端白屏——最难定位的一类。
-`scripts/test-core-pure.mjs` 用 grep 把这条钉成断言（63 项）。
+`scripts/test-core-pure.mjs` 用 grep 把这条钉成断言（47 项）。
 
 入口是 `computeReport({ files, cfg, icons, generatedAt })`：
 

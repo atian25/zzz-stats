@@ -2323,7 +2323,7 @@ Node 外壳：读盘 → sha1 内嵌图标 → 拼模板 → 校验 → 写 HTML
 `core.js` 里**不许出现** `node:` import、`process`、`Buffer`、`require(`、`__dirname`、`__filename`、
 `import.meta`，以及裸的 `readFileSync` / `writeFileSync` / `existsSync` / `readdirSync` / `createHash`。
 
-`scripts/test-core-pure.mjs`（63 项）先**剥掉注释再 grep** 这些词：
+`scripts/test-core-pure.mjs`（47 项）先**剥掉注释再 grep** 这些词：
 不剥注释的话，文件头那句「不许出现 `node:` import」会把自己的断言判红（实测过一次）。
 
 `cssVarBlock` / `textSubs` / `escapeHtml` 已从 core **搬回构建期**（`scripts/template-tokens.mjs`）。
@@ -2816,7 +2816,7 @@ node skills/zzz-stats/scripts/build-report.mjs --data fixtures/baseline   # 坐�
 - 改**称号 / 标签阈值 / 配色 / 文案 / 频道定义** → 只改 `config/report.json`。
 - 改**计算口径** → 改 `assets/report/core.js`（纯 JS，Node 与产物里的浏览器同源），并同步本文件 §1。
   **不要写进 `build-report.mjs`** —— 那是唯一的外壳，写进去就只在构建期生效，产物里现算的那份没有。
-  改完跑 `test-core-pure.mjs`（63 项），它会 grep 掉 Node 专属符号并断言转换规则与面板已删。
+  改完跑 `test-core-pure.mjs`（47 项），它会 grep 掉 Node 专属符号并断言转换规则与面板已删。
   **改完必须重跑 `test-report-browser.mjs`**：产物里跑的是 core 的构建期转换版，
   转换环节坏了 Node 端毫无反应、浏览器端白屏或算错。
 - 改**视觉** → 改 `assets/report/charts.css` / `charts.js`，并同步本文件 §2–§6。

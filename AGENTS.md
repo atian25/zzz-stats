@@ -235,7 +235,7 @@ node skills/zzz-stats/scripts/test-verify-cleanup.mjs   # 27 项，不需要浏�
 node skills/zzz-stats/scripts/test-image-server.mjs      # 25 项，只起一个 127.0.0.1 临时端口
 node skills/zzz-stats/scripts/test-qr-wait.mjs           # 75 项，刷新通道 + 真实等待循环
 node skills/zzz-stats/scripts/test-preview-privacy.mjs   # 53 项（output/ 在场时 55 项），--preview 的隐私分流（见下）
-node skills/zzz-stats/scripts/test-core-pure.mjs         # 63 项，core.js 纯度 + 转换规则 + 面板已删 + 图标资产
+node skills/zzz-stats/scripts/test-core-pure.mjs         # 47 项，core.js 纯度 + 转换规则 + 面板已删 + 图标资产
 node skills/zzz-stats/scripts/test-report-browser.mjs    # 30 项，需要 chrome；产物现算的 __REPORT__ 与 Node 口径逐字段相同
 ```
 

@@ -69,51 +69,6 @@
  * 只会让静态页莫名其妙白屏。core 只负责算，判由外壳判。
  */
 
-/** 把 fetch-in-page.js 的输出摊成 core 认识的虚拟文件系统。
- *
- * 浏览器外壳用它；Node 外壳读磁盘得到同样的键。
- * `channels` 是 `{ [id]: { curPoolStat, histPoolStat } }`。
- */
-export function filesFromInPage(payload) {
-  const files = {};
-  if (payload == null) return files;
-  if (payload.index !== undefined) files['index.json'] = payload.index;
-  for (const [id, ch] of Object.entries(payload.channels ?? {})) {
-    if (ch?.curPoolStat !== undefined) files[`cur_pool_stat_${id}.json`] = ch.curPoolStat;
-    if (ch?.histPoolStat !== undefined) files[`hist_pool_stat_${id}.json`] = ch.histPoolStat;
-  }
-  return files;
-}
-
-/** 从 fetch-in-page.js 的 payload 里推出 meta.json 的内容。
- *
- * 页内脚本的返回值里没有 `meta.json`（那是 `save-in-page-json.mjs` 落盘时补的），
- * 但 `uid` / `region` / `server` / `fetchedAt` 就在 payload 顶层。浏览器端不补这一步的话，
- * UID 会显示成空、区服会退回默认值 —— 和 Node 端同一份数据算出不同的 meta。
- */
-export function metaFromInPage(payload) {
-  const idx = payload?.index?.data ?? payload?.index ?? {};
-  const versions = (idx.type_stats ?? []).flatMap((t) => t.has_data_vers ?? []);
-  const uniq = [...new Set(versions)].sort((a, b) => {
-    const pa = String(a).split('.').map(Number);
-    const pb = String(b).split('.').map(Number);
-    return pb[0] - pa[0] || (pb[1] ?? 0) - (pa[1] ?? 0);
-  });
-  const region = payload?.region ?? 'prod_gf_cn';
-  return {
-    schema: 'zzz-stats/v1',
-    server: payload?.server ?? (/^prod_gf_cn$/.test(String(region)) ? 'cn' : 'os'),
-    uid: String(payload?.uid ?? ''),
-    region,
-    nickname: payload?.nickname ?? null,
-    fetched_at: payload?.fetchedAt ?? new Date().toISOString(),
-    versions: uniq.length ? `${uniq[uniq.length - 1]} → ${uniq[0]}` : null,
-    total_gacha_count: Number(idx.total_gacha_count ?? 0),
-    total_s_count: Number(idx.total_s_count ?? 0),
-    total_counts_exclude_bangboo: true,
-  };
-}
-
 /**
  * 算一份报表数据。
  * 见文件头 §入口 / §返回。所有入参必填项只有 `files` 与 `cfg`。

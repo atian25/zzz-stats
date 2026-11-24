@@ -29,7 +29,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { computeReport, filesFromInPage, metaFromInPage } from '../assets/report/core.js';
+import { computeReport } from '../assets/report/core.js';
 import { cssVarBlock, textSubs } from './template-tokens.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -75,7 +75,7 @@ for (const api of ['readFileSync', 'writeFileSync', 'existsSync', 'readdirSync',
 
 console.log('2. 导出的入口齐全');
 for (const [name, fn] of [['computeReport', computeReport], ['cssVarBlock', cssVarBlock],
-  ['textSubs', textSubs], ['filesFromInPage', filesFromInPage], ['metaFromInPage', metaFromInPage]]) {
+  ['textSubs', textSubs]]) {
   ok(`${name} 是函数`, typeof fn === 'function');
 }
 
@@ -204,40 +204,9 @@ ok('core.js 不引用 charts.js', !code.includes('charts.js'));
 ok('core.js 不碰 document', !/\bdocument\s*\./.test(code));
 ok('core.js 不碰 window.', !/\bwindow\s*\./.test(code));
 
-// ---------------------------------------------------------------- 7. 虚拟文件系统的摊平
+// ------------------------------------------ 7. 产物内嵌用的转换（core-inline.mjs）
 
-console.log('7. filesFromInPage 摊平');
-const flat = filesFromInPage({
-  index: { a: 1 },
-  channels: { 2: { curPoolStat: { x: 1 }, histPoolStat: { y: 2 } }, 3: { curPoolStat: { z: 3 } } },
-});
-ok("index.json 在", JSON.stringify(flat['index.json']) === '{"a":1}');
-ok("cur_pool_stat_2.json 在", JSON.stringify(flat['cur_pool_stat_2.json']) === '{"x":1}');
-ok("hist_pool_stat_2.json 在", JSON.stringify(flat['hist_pool_stat_2.json']) === '{"y":2}');
-ok("cur_pool_stat_3.json 在", JSON.stringify(flat['cur_pool_stat_3.json']) === '{"z":3}');
-ok("缺 hist 时不伪造键", !('hist_pool_stat_3.json' in flat));
-ok('空 payload 返回空对象', JSON.stringify(filesFromInPage(null)) === '{}');
-
-// ---------------------------------------------------------------- 8. meta 推导
-
-console.log('8. metaFromInPage 与落盘口径一致');
-const derived = metaFromInPage({
-  uid: '10000001', region: 'prod_gf_us', server: 'os', nickname: 'X',
-  fetchedAt: '2026-01-01T00:00:00.000Z',
-  index: { data: { type_stats: [{ has_data_vers: ['1.0', '2.1', '2.0'] }], total_gacha_count: 5, total_s_count: 1 } },
-});
-ok('uid 透传', derived.uid === '10000001');
-ok('region 透传', derived.region === 'prod_gf_us');
-ok('server 透传', derived.server === 'os');
-ok('昵称透传', derived.nickname === 'X');
-ok('采集时间透传', derived.fetched_at === '2026-01-01T00:00:00.000Z');
-ok('版本区间按降序写「低 → 高」', derived.versions === '1.0 → 2.1', String(derived.versions));
-ok('总抽数透传', derived.total_gacha_count === 5);
-ok('总金数透传', derived.total_s_count === 1);
-
-// ------------------------------------------ 9. 产物内嵌用的转换（core-inline.mjs）
-
-console.log('9. core-inline：ESM → 经典同步脚本的转换');
+console.log('7. core-inline：ESM → 经典同步脚本的转换');
 /*
  * 这段转换是产物的命门：转错了，产物里那段脚本要么语法错误、要么把 `export` 留在里面
  * （浏览器按经典脚本解析 → SyntaxError → 全白），而 Node 端 `import core.js` 一切正常。
