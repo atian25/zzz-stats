@@ -17,6 +17,9 @@
  *                                                                      # 真实数据强制打码；meta.synthetic === true 的数据集不打码
  *   node skills/zzz-stats/scripts/screenshot.mjs --chart 音擎 --filter 2
  *   node skills/zzz-stats/scripts/screenshot.mjs --detail 独家重映     # 切底部详情面板的频段
+ *   node skills/zzz-stats/scripts/screenshot.mjs --preview --detail-versions 2
+ *                                                                      # 详情列表只留 2 个版本组
+ *                                                                      # （--preview 不传时默认就是 2）
  *
  * 只依赖本机 Chrome，不需要 Playwright，不联网。
  * 浏览器查找复用 drivers.mjs 的 findChrome()，与采集期同一份候选列表。
@@ -51,6 +54,7 @@ if (wantsHelp()) {
       { flag: '--chart <名>', desc: '切到指定主图频段 tab（如 音擎）' },
       { flag: '--filter <档>', desc: '只留指定版本档位（如 2；多个用 1,2）' },
       { flag: '--detail <名>', desc: '切底部详情面板的频段 tab（如 独家重映）' },
+      { flag: '--detail-versions <n>', desc: '详情列表只保留前 N 个版本组（其余隐藏）；--preview 默认 2' },
       { flag: '--collapse', desc: '收起主图，让详情面板进首屏' },
       { flag: '--preview', desc: '出 README 头图：整页 2x；真实数据强制打码到 2 并断言，meta.synthetic 为 true 的数据集不打码' },
       { flag: '--out-file <file>', desc: '配合 --preview 指定输出，默认 docs/preview.png' },
@@ -169,6 +173,37 @@ const OUT_FILE = abs(argOf('out-file', 'docs/preview.png'));
 const PREVIEW_WIDTH = 1440;
 const PREVIEW_DPR = 2;
 
+/*
+ * --detail-versions <n>   详情列表只保留**前 N 个 `.detail-group`**，其余隐藏。
+ *
+ * 用户原话：「README 的截图，抽卡详情那部分不要截太长，2 个版本够了」。
+ * 整页图里详情列表会列出十几金的十几个版本组、把图拉到 4300+ 像素高，
+ * README 上摊开就是一条细长的东西，读者根本看不完。截前两个版本组刚好能说明
+ * 「这里逐金列出来、按版本分组，墙角有欧非标记」。
+ *
+ * **默认值分两种情况**：
+ *   --preview 且没显式传 → 2（README 那张图就是干这个的，不传也该是短的）
+ *   其它情况（验收图）    → null，不截断（验收要看完整列表，包括 41 行那个最长的频道）
+ *
+ * **右栏角色汇总不截断**：用户只说了「抽卡详情那部分」。而且右栏是独立分栏、
+ * 跟着全账号走，截断它会让「这个号一共拿到过哪些角色」这个答案缺一块。
+ *
+ * 传 0 或负数视为「不截断」，和没传一样——避免把 0 解释成「一行都不要」截出个空壳。
+ */
+const DETAIL_VERSIONS_RAW = argOf('detail-versions', null);
+const DETAIL_VERSIONS = (() => {
+  if (DETAIL_VERSIONS_RAW != null && DETAIL_VERSIONS_RAW !== '') {
+    const n = Number(DETAIL_VERSIONS_RAW);
+    if (!Number.isFinite(n)) {
+      console.error(`--detail-versions 要给一个数字，收到的是 ${JSON.stringify(DETAIL_VERSIONS_RAW)}`);
+      process.exit(1);
+    }
+    const k = Math.floor(n);
+    return k > 0 ? k : null;
+  }
+  return PREVIEW ? 2 : null;
+})();
+
 /**
  * 两档尺寸来自 references/report-rules.md §9.3：
  * 1440×900 与 1280×800 都必须「首屏无滚动、图例单行」。
@@ -196,12 +231,13 @@ mkdirSync(OUT_DIR, { recursive: true });
  * 否则立即 init，所以这里统一等 DOMContentLoaded + setTimeout(0)。
  * 点太早会拿到未初始化的空图——这不是猜测，是踩过的。
  */
-function withState(srcHtml, { privacy, chartLabel, filters, detailLabel, collapse }) {
+function withState(srcHtml, { privacy, chartLabel, filters, detailLabel, collapse, detailVersions }) {
   const n = privacy == null ? 0 : Math.max(0, Math.min(2, Number(privacy)));
   const wantsChart = chartLabel != null && chartLabel !== '';
   const wantsFilter = filters != null && filters !== '';
   const wantsDetail = detailLabel != null && detailLabel !== '';
-  if (!n && !wantsChart && !wantsFilter && !wantsDetail && !collapse) return srcHtml;
+  const wantsVers = Number.isInteger(detailVersions) && detailVersions > 0;
+  if (!n && !wantsChart && !wantsFilter && !wantsDetail && !collapse && !wantsVers) return srcHtml;
 
   const inject = `<script>
 (function () {
@@ -230,6 +266,33 @@ function withState(srcHtml, { privacy, chartLabel, filters, detailLabel, collaps
     if (dtab) dtab.click();` : ''}
     ${collapse ? `var col = document.getElementById('collapse-chart');
     if (col) col.click();` : ''}
+    ${wantsVers ? `/*
+     * 详情列表只留前 N 个版本组（--detail-versions）。
+     *
+     * 按**版本组**而不是按行截：组是 .detail-group，它自带左侧竖括号和版本号，
+     * 半组会让图里留下一个没有版本号的光秃行段。用户说的是「2 个版本够了」，
+     * 单位就是版本组。
+     *
+     * 用 hidden 属性 + 内联 display 兜底，不改产物文件本身：
+     * 注入只发生在这个临时页里，用户手上的 report.html 一行不动。
+     *
+     * 必须在切 tab 之后执行——切 tab 会重画整个列表，提前隐藏会被 innerHTML='' 冲掉。
+     */` + `
+    (function () {
+      var keep = ${detailVersions};
+      var groups = [].slice.call(document.querySelectorAll('#detail-list .detail-group'));
+      /*
+       * **必须同时写 style.display，不能只设 hidden。**
+       * .detail-group { display: flex } 的优先级高于浏览器对 [hidden] 的默认
+       * display: none，只设 hidden 的话元素照样显示——图一点都不会变短，
+       * 而且没有任何报错，看起来像「参数没生效」。
+       */
+      groups.forEach(function (g, i) {
+        if (i < keep) return;
+        g.hidden = true;
+        g.style.display = 'none';
+      });
+    })();` : ''}
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { setTimeout(act, 0); });
   else setTimeout(act, 0);
@@ -258,8 +321,8 @@ const pageFile = join(tmpDir, 'report.html');
  *   - README 的预览图连着两版把真名和真 UID 截进了公开仓库，事后才发现。
  *     于是 `--preview` 被定成**无条件**强制打码到 2，截图前再断言 `#nick` / `#uid` 都含 `*`，
  *     断言不过就中止、不写文件。那道断言是对的，**不能拆**。
- *   - 但它对 `fixtures/` 里的假数据没有意义。`fixtures/baseline` 是「玩家A / 10000001」，
- *     本来就是编的，遮成「玩*****」只是让预览图变难看，还掩盖真实排版（用户原话：
+ *   - 但它对 `fixtures/` 里的假数据没有意义。`fixtures/baseline` 是「绳匠A / 10000001」，
+ *     本来就是编的，遮成「绳*****」只是让预览图变难看，还掩盖真实排版（用户原话：
  *     「github 截图没更新，既然是模拟名字的话，就不用打星号了」）。
  *
  * 所以现在分两条路，**都在脚本里断言，不是「记得点两下」**：
@@ -279,7 +342,19 @@ if (PREVIEW) {
   console.log(`预览图隐私：${previewPolicy.reason} → 眼睛点到 ${EFFECTIVE_PRIVACY}`
     + `，断言「${previewPolicy.expectMasked ? '已打码（必须含 *）' : '未打码（不许含 *）'}」`);
 }
-writeFileSync(pageFile, withState(readFileSync(HTML, 'utf8'), { privacy: EFFECTIVE_PRIVACY, chartLabel: CHART, filters: FILTER, detailLabel: DETAIL, collapse: COLLAPSE }), 'utf8');
+if (DETAIL_VERSIONS != null) {
+  console.log(`详情列表：只保留前 ${DETAIL_VERSIONS} 个版本组`
+    + `${DETAIL_VERSIONS_RAW == null ? '（--preview 的默认值）' : '（显式 --detail-versions）'}`
+    + '，右栏角色汇总不截断');
+}
+writeFileSync(pageFile, withState(readFileSync(HTML, 'utf8'), {
+  privacy: EFFECTIVE_PRIVACY,
+  chartLabel: CHART,
+  filters: FILTER,
+  detailLabel: DETAIL,
+  collapse: COLLAPSE,
+  detailVersions: DETAIL_VERSIONS,
+}), 'utf8');
 
 /*
  * 截图一律走 CDP 设备模拟，不再用 `--screenshot` + `--window-size`。
