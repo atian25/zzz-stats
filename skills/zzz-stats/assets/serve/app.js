@@ -14,6 +14,17 @@
  * 3. **不写 localStorage / sessionStorage。** 刷新页面 = 重新开始；
  *    留下 runId 只会让下一次访问看起来像「接着别人的流程」。
  *
+ * ## 扫码之后要遮住二维码
+ *
+ * 用户的原话：「扫码后那个二维码应该遮罩住，免得下面还在处理，上面还以为需要扫码」。
+ * 所以一旦进入扫码之后的阶段（`已登录并查到角色` / `开始取数` / `采集完成` / `构建报表` …），
+ * 立刻给二维码盖遮罩：码变暗变模糊、遮罩上写明当前在干什么、「换一张二维码」按钮隐藏。
+ *
+ * 判据用**后端实际推的阶段名**，不靠计时器猜：
+ * `serve.mjs` 的 `execute()` 只在扫码确认之后才会推那几条（见那里的注释），
+ * 而扫码期间只会出现「申请二维码」和「二维码已生成，等待扫码」。
+ * 另外收到 `account`（拿到昵称/UID）也一定是扫码之后。
+ *
  * ## SSE 断线重连
  *
  * EventSource 自带重连并会带上 Last-Event-ID，服务端从头重放。前端按 seq 去重，
@@ -30,6 +41,9 @@
   var restartBtn = $('restart');
   var reissueBtn = $('reissue');
   var qrBox = $('qrbox');
+  var qrWrap = $('qrwrap');
+  var qrMask = $('qrmask');
+  var qrMaskText = $('qrmask-text');
   var qrImg = $('qr');
   var qrTip = $('qrtip');
   var stageList = $('stages');
@@ -92,6 +106,50 @@
     errBox.textContent = '';
   }
 
+  /*
+   * ------------------------------------------------------------ 二维码遮罩
+   *
+   * 扫码成功之后，二维码本身就没有再次扫的价值了，但**它还亮着**时用户会以为
+   * 「是不是还没扫上、要不要再扫一次」。所以进入后续阶段就立刻盖上遮罩：
+   *   1. 码变暗 + 模糊（视觉上失效）
+   *   2. 遮罩上写明当前在干什么（`aria-live` 会被读屏念出来）
+   *   3. 「换一张二维码」按钮藏掉（避免误点，那会新起一个 run）
+   * 遮罩只盖二维码那一块（`.qrwrap` 的 inset: 0），不是整页弹窗。
+   */
+
+  /** 遮罩文案。键是后端推的阶段名（见 serve.mjs 的 execute()）。 */
+  var MASK_TEXT = {
+    '已登录并查到角色': '已扫码，正在取数…',
+    '开始取数': '已扫码，正在取数…',
+    '采集完成': '采集完成，正在构建报表…',
+    '构建报表': '采集完成，正在构建报表…',
+    '完成': '已完成，正在打开报表…'
+  };
+
+  /** 扫码**之前**才会出现的阶段。除此之外一律当作「扫码之后」。 */
+  var PRESCAN_STAGES = ['申请二维码', '二维码已生成，等待扫码'];
+
+  function setQrMasked(masked, label, spinning) {
+    if (!qrWrap || !qrMask) return;
+    if (masked) {
+      qrWrap.classList.add('masked');
+      qrMask.hidden = false;
+      // 出错/结束时不该还转圈：转圈等于「仍在处理」
+      qrMask.classList.toggle('done', spinning === false);
+      qrMaskText.textContent = MASK_TEXT[label] || label || '已扫码，正在处理…';
+      reissueBtn.hidden = true;
+      // 码已经失效，倒计时留在下面只会让人以为还需要再扫
+      qrTip.hidden = true;
+    } else {
+      qrWrap.classList.remove('masked');
+      qrMask.hidden = true;
+      qrMask.classList.remove('done');
+      qrMaskText.textContent = '';
+      qrTip.hidden = false;
+      reissueBtn.hidden = false;
+    }
+  }
+
   function showRun() {
     intro.hidden = true;
     runBox.hidden = false;
@@ -100,6 +158,7 @@
     doneBox.hidden = true;
     resetStages();
     qrBox.hidden = true;
+    setQrMasked(false);
     qrImg.removeAttribute('src');
     qrTip.textContent = '';
     qrTip.className = 'qrtip';
@@ -143,6 +202,15 @@
 
     on(r, 'stage', function (d) {
       addLine(d.label, d.tone, d.elapsed);
+      /*
+       * 扫码之后的判据：**出现任何不是「扫码前」的阶段**就遮。
+       * 白名单而不是黑名单 —— 后端以后多推一个阶段名，黑名单会漏遮，
+       * 白名单只会多遮一次（遮着比让用户重复扫要好）。
+       */
+      if (d.label && PRESCAN_STAGES.indexOf(d.label) < 0) {
+        stopTick(r);
+        setQrMasked(true, d.label);
+      }
       if (d.tone === 'ok' && d.label && /等待扫码|二维码/.test(d.label) === false) {
         runTitle.textContent = d.label;
       }
@@ -153,12 +221,17 @@
     on(r, 'qr', function (d) {
       qrImg.src = d.dataUrl;
       qrBox.hidden = false;
+      // 新的码 = 又回到「等扫码」，遮罩必须撤掉
+      setQrMasked(false);
       reissueBtn.hidden = false;
       runTitle.textContent = '等待扫码';
       startCountdown(r, d.ttlMs || 120000);
     });
 
     on(r, 'account', function (d) {
+      // 拿到账号 = 登录已经成功，一定在扫码之后
+      stopTick(r);
+      setQrMasked(true, '已登录并查到角色');
       var who = d.nickname ? d.nickname + '（UID ' + d.uid + '）' : 'UID ' + d.uid;
       addLine('账号：' + who);
     });
@@ -173,6 +246,8 @@
       r.finished = true;
       closeStream(r);
       runTitle.textContent = '失败';
+      // 已经扫过码的话遮罩还在转圈，失败时要停下来（不再「处理中」）
+      if (qrWrap.classList.contains('masked')) setQrMasked(true, '已扫码，处理失败', false);
       showError(d.message || '未知错误');
       restartBtn.disabled = false;
     });
@@ -182,6 +257,7 @@
       closeStream(r);
       addLine('这次运行已结束：' + (d.reason || '已取消'), 'muted');
       runTitle.textContent = '已取消';
+      if (qrWrap.classList.contains('masked')) setQrMasked(true, '这次运行已取消', false);
     });
 
     r.es.addEventListener('error', function () {

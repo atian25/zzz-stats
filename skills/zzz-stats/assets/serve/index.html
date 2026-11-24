@@ -10,11 +10,13 @@
 <main class="page">
 
   <!-- ============================================================ 介绍页
-       首次访问只看到这一屏：标题 / 说明 / 一个按钮。
+       首次访问只看到这一屏：示例图 / 标题 / 说明 / 一个按钮。
        **不预生成二维码、不接上一次的运行、不显示任何人的报表。**
        每个人进来都是从零开始。 -->
   <section id="intro" class="intro">
-    <div class="intro-bg" aria-hidden="true"></div>
+    <div class="intro-hero">
+      <div class="intro-bg" aria-hidden="true"></div>
+    </div>
     <div class="intro-inner">
       <h1>绝区零 调频数据</h1>
       <p class="lead">
@@ -44,7 +46,14 @@
     </header>
 
     <div id="qrbox" class="qrbox" hidden>
-      <img id="qr" alt="米游社登录二维码" width="260" height="260">
+      <!-- 码 + 遮罩叠在同一块区域上：扫码成功后遮罩只盖这一块，不弹整页 -->
+      <div id="qrwrap" class="qrwrap">
+        <img id="qr" alt="米游社登录二维码" width="320" height="320">
+        <div id="qrmask" class="qrmask" role="status" aria-live="polite" hidden>
+          <span class="qrmask-spin" aria-hidden="true"></span>
+          <p id="qrmask-text" class="qrmask-text"></p>
+        </div>
+      </div>
       <p id="qrtip" class="qrtip"></p>
       <button id="reissue" class="btn ghost small" type="button">换一张二维码</button>
     </div>

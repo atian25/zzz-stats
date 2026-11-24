@@ -1,12 +1,27 @@
 /*
- * 首页介绍页的样式。
+ * 本地采集页（assets/serve/）的样式。
+ *
+ * 三块：介绍页 / 进行中（二维码 + 进度）/ 完成。
+ *
+ * ## 介绍页的示例图
  *
  * 背景用仓库里的 docs/preview.png（报表预览截图，2880×2382）。
- * 它是「示例展示」，不是主角：**必须压暗 + 模糊 + 只占上半屏**，
- * 否则文字读不清。用户要的是「先看懂这是什么」，不是「先看一张报表」。
+ * 它是**示例展示**：用户要一眼看出「这是个报表长什么样」，
+ * 所以图必须够大、够清楚；同时文字区在它**下方**，本来就不该压在图上。
  *
- * 深色/浅色都跟随系统，但介绍页的背景图在两种模式下都走暗化叠层 ——
- * 那张截图本身是浅色底，直接铺在浅色页面上会和文字糊在一起。
+ * 早先那版的错：
+ *   - 高度只有 min(52vh, 360px)，报表结构压成一条缝；
+ *   - `blur(1.1px)` + 渐变盖到 .72，截图出来是一团灰，看不出是报表；
+ *   - 文字区靠 `margin-top` 压进图的下半段，于是「为了让文字可读」只能把图压得更狠。
+ *
+ * 现在改成**真实块高**：`.intro-hero` 是一块高 520px 的区域，图铺满它并顶部对齐；
+ * 文字区在它下面正常流式排布，两者只在接缝处用一段渐变过渡。图不再为文字让路。
+ *
+ * ## 二维码遮罩
+ *
+ * 扫码成功后二维码必须立刻「看起来失效」：`.qrwrap.masked` 同时做三件事
+ * —— 图片变暗/模糊、盖一层遮罩、藏掉「换一张」按钮。
+ * 遮罩只盖二维码那一块（inset 落在 `.qrwrap` 上），不是整页弹窗。
  */
 :root {
   color-scheme: light dark;
@@ -21,7 +36,7 @@
   --bad: #b8342a;
   --warn: #96650a;
   --muted-bg: #ececf1;
-  --radius: 14px;
+  --radius: 16px;
   --shadow: 0 1px 2px rgba(20, 20, 30, .05), 0 8px 24px rgba(20, 20, 30, .06);
 }
 
@@ -44,61 +59,82 @@
 
 * { box-sizing: border-box; }
 
+/*
+ * `hidden` 属性必须真的藏住。
+ *
+ * UA 的 `[hidden] { display: none }` 是**浏览器默认样式**，作者样式随便一条
+ * `display: inline-block` 就能盖过它（作者样式永远胜过 UA 样式）。
+ * 这里 `.btn` 正是 `display: inline-block` —— 所以 `reissueBtn.hidden = true`
+ * 属性设上了、`btn.hidden` 读出来也是 true，**但按钮仍然在屏幕上**。
+ *
+ * 这个 bug 真实发生过：遮罩验收时我断言的是 `btn.hidden`（属性），
+ * 全部通过；截图里「换一张二维码」还亮在二维码右侧。断言要测**实际可见性**
+ * （getComputedStyle().display），不能测属性。
+ */
+[hidden] { display: none !important; }
+
 html, body { margin: 0; padding: 0; }
 
 body {
   background: var(--bg);
   color: var(--ink);
-  font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
         "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
+/*
+ * 960 而不是 720：720 在 1440 的屏上只占一半，卡片显得又窄又小，
+ * 二维码也只有 260px —— 用户的原话是「整个页面的弹框也有点小」。
+ * 窄屏靠下面的 @media 收回去，不靠这里的 max-width。
+ */
 .page {
-  max-width: 720px;
+  max-width: 960px;
   margin: 0 auto;
-  padding: 32px 20px 64px;
+  padding: 40px 24px 72px;
 }
 
 /* ============================================================ 介绍页 */
 
 .intro {
-  position: relative;
   border-radius: 20px;
   overflow: hidden;
   background: var(--card);
   box-shadow: var(--shadow);
-  isolation: isolate;
 }
 
 /*
- * 背景示例图。
+ * 示例区。块高而不是绝对定位：下面文字区的位置由它撑开，
+ * 不再需要「猜一个 margin-top 让文字正好落在图的某个位置」。
+ */
+.intro-hero {
+  position: relative;
+  height: min(66vh, 520px);
+  background: var(--card);
+}
+
+/*
+ * 背景图。用 ::before 而不是 <img>：它纯装饰、不该被读屏念出来，也不该能被拖走。
+ * `cover` + `top` 让报表头部（KPI + 主图）留在可见区 —— 那张图的重点就在上半部分。
  *
- * 用 ::before 而不是 <img>：它纯装饰、不该被读屏念出来，也不该能被选中/拖走。
- * `object-fit: cover` + `object-position: top` 让报表的头部（KPI + 主图）
- * 留在可见区域 —— 那张图的重点就在上半部分。
- *
- * 压暗的力度是调过的：
- *   第一版压得太狠（brightness .9 + 渐变 .55→.78→card），截图出来只能看见
- *   「一团灰」，看不出那是报表。用户的原话是「做成背景/示例展示」，
- *   所以它得**看得出是个报表**，只是不能抢文字的注意力。
- *
- * 现在：上半段几乎不压（只 blur + 轻微降饱和），往下线性加深，
- * 到文字区完全变成卡片底色。文字区本身从图下方才开始，不压在图上。
+ * 模糊去掉了：1.1px 的模糊在 520px 高的区域里足以把刻度和小字糊成噪点，
+ * 而这张图存在的意义就是「让人看清报表长什么样」。降饱和留一点点，
+ * 让它比正文低调但不失真。
  */
 .intro-bg {
   position: absolute;
-  inset: 0 0 auto 0;
-  height: min(52vh, 360px);
-  z-index: -1;
+  inset: 0;
   background-image: url("/assets/preview.png");
   background-size: cover;
   background-position: top center;
-  filter: saturate(.85) blur(1.1px);
-  transform: scale(1.03); /* 模糊会让边缘透出白边，放大一点盖住 */
-  opacity: .9;
+  filter: saturate(.92);
 }
 
+/*
+ * 接缝渐变。整张图从上到下：完全不盖 → 最后 30% 渐变成卡片底色。
+ * 这样图的下边缘和下面的文字区之间没有一条硬线，
+ * 而上面 70% 是完全清楚的图。
+ */
 .intro-bg::after {
   content: "";
   position: absolute;
@@ -106,72 +142,68 @@ body {
   background: linear-gradient(
     to bottom,
     rgba(245, 245, 247, 0) 0%,
-    rgba(245, 245, 247, .12) 45%,
-    rgba(245, 245, 247, .72) 76%,
-    var(--card) 97%
+    rgba(245, 245, 247, .04) 58%,
+    rgba(245, 245, 247, .30) 80%,
+    rgba(245, 245, 247, .70) 91%,
+    var(--card) 100%
   );
 }
 
 @media (prefers-color-scheme: dark) {
-  /* 深色模式下那张浅底截图会很扎眼，压得比浅色重一些 */
-  .intro-bg { filter: brightness(.55) saturate(.7) blur(1.1px); opacity: .95; }
+  /* 那张截图是浅底，深色模式下要压住亮度，但压到 .55 就只剩灰块了 */
+  .intro-bg { filter: brightness(.68) saturate(.8); }
   .intro-bg::after {
     background: linear-gradient(
       to bottom,
-      rgba(14, 14, 18, .35) 0%,
-      rgba(14, 14, 18, .55) 48%,
-      rgba(14, 14, 18, .88) 78%,
-      var(--card) 97%
+      rgba(14, 14, 18, .12) 0%,
+      rgba(14, 14, 18, .22) 58%,
+      rgba(14, 14, 18, .55) 80%,
+      rgba(14, 14, 18, .86) 91%,
+      var(--card) 100%
     );
   }
 }
 
 .intro-inner {
-  padding: 40px 32px 32px;
-  /* 文字区从背景图下方开始，不压在图上 */
-  margin-top: min(34vh, 250px);
-  background: linear-gradient(to bottom, transparent 0, var(--card) 40px);
-}
-
-@media (max-width: 560px) {
-  .intro-bg { height: min(38vh, 230px); }
-  .intro-inner { padding: 28px 22px 24px; margin-top: min(22vh, 150px); }
+  /* 文字区从示例图下方开始，不压在图上 */
+  padding: 36px 40px 40px;
+  background: var(--card);
 }
 
 h1 {
-  margin: 0 0 12px;
-  font-size: clamp(22px, 5vw, 28px);
-  line-height: 1.25;
+  margin: 0 0 14px;
+  font-size: clamp(26px, 4vw, 34px);
+  line-height: 1.22;
   letter-spacing: .01em;
 }
 
 .lead {
-  margin: 0 0 20px;
+  margin: 0 0 24px;
   max-width: 46em;
   color: var(--ink-2);
-  font-size: 15px;
+  font-size: 16.5px;
 }
 
 .points {
   list-style: none;
-  margin: 0 0 24px;
+  margin: 0 0 28px;
   padding: 0;
   display: grid;
-  gap: 9px;
+  gap: 10px;
 }
 
 .points li {
   position: relative;
   padding-left: 18px;
   color: var(--ink-2);
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .points li::before {
   content: "";
   position: absolute;
   left: 3px;
-  top: 10px;
+  top: 11px;
   width: 5px;
   height: 5px;
   border-radius: 50%;
@@ -185,9 +217,9 @@ h1 {
 }
 
 .fineprint {
-  margin: 18px 0 0;
+  margin: 20px 0 0;
   color: var(--ink-2);
-  font-size: 12.5px;
+  font-size: 13px;
   opacity: .85;
 }
 
@@ -196,9 +228,9 @@ h1 {
 .btn {
   display: inline-block;
   font: inherit;
-  font-size: 15px;
-  padding: 11px 22px;
-  border-radius: 11px;
+  font-size: 16px;
+  padding: 12px 26px;
+  border-radius: 12px;
   border: 1px solid transparent;
   cursor: pointer;
   text-decoration: none;
@@ -223,7 +255,7 @@ h1 {
 
 .btn.ghost:hover { background: var(--muted-bg); }
 
-.btn.small { padding: 7px 14px; font-size: 13.5px; }
+.btn.small { padding: 8px 16px; font-size: 14px; }
 
 .btn:disabled { opacity: .5; cursor: default; filter: none; }
 
@@ -242,8 +274,7 @@ h1 {
 /* ============================================================ 进行中 */
 
 .run {
-  margin-top: 20px;
-  padding: 22px;
+  padding: 32px 34px 34px;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -255,39 +286,111 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 .run-head h2 {
   margin: 0;
-  font-size: 17px;
+  font-size: 20px;
   font-weight: 600;
 }
 
 .qrbox {
   text-align: center;
-  padding: 4px 0 18px;
+  padding: 6px 0 20px;
+}
+
+/*
+ * 码 + 遮罩的同一块区域。inline-block 让它正好裹住图片宽度，
+ * 遮罩用 inset: 0 就只会盖住这张码，不会盖到整页。
+ */
+.qrwrap {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+  border-radius: 14px;
+  overflow: hidden;
 }
 
 #qr {
-  width: 260px;
-  height: 260px;
+  width: 320px;
+  height: 320px;
   /* 二维码必须是方形像素，不能被平滑插值糊掉边缘 */
   image-rendering: pixelated;
   background: #fff;
   padding: 8px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 14px;
+  transition: filter .18s ease, opacity .18s ease;
 }
 
-@media (max-width: 400px) {
-  #qr { width: 220px; height: 220px; }
+/*
+ * 扫码之后：码本身先变暗 + 模糊 + 脱色，一眼看出它失效了。
+ * 只靠遮罩半透明也能盖住，但那样底下还是一张清晰的码，
+ * 用户会以为「是不是还能扫」—— 用户的原话就是这个。
+ */
+.qrwrap.masked #qr {
+  filter: blur(4px) brightness(.42) grayscale(.7);
+  opacity: .55;
 }
+
+.qrmask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 20px;
+  border-radius: 14px;
+  background: rgba(14, 14, 18, .78);
+  /* 兜底：不支持 backdrop-filter 时上面那层实色也够暗 */
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  color: #fff;
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* `display: flex` 会盖过 UA 的 `[hidden] { display: none }`，必须显式关 */
+.qrmask[hidden] { display: none; }
+
+.qrmask-text {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+
+.qrmask-spin {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, .28);
+  border-top-color: #fff;
+  animation: qr-spin .9s linear infinite;
+}
+
+@keyframes qr-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qrmask-spin { animation: none; border-top-color: rgba(255, 255, 255, .55); }
+}
+
+/*
+ * 失败 / 已取消：遮罩留在原地（码确实失效了，不该露出可扫的样子），
+ * 但**不能还转圈** —— 转圈的意思是「仍在处理」。只留一行文字。
+ */
+.qrmask.done .qrmask-spin { display: none; }
+.qrmask.done .qrmask-text { color: rgba(255, 255, 255, .82); }
 
 .qrtip {
-  margin: 10px 0 12px;
+  margin: 12px 0 14px;
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -300,13 +403,13 @@ h1 {
   margin: 0;
   padding: 0;
   border-top: 1px solid var(--line);
-  padding-top: 14px;
+  padding-top: 16px;
 }
 
 .stages li {
   position: relative;
-  padding: 5px 0 5px 22px;
-  font-size: 14px;
+  padding: 6px 0 6px 24px;
+  font-size: 15px;
   color: var(--ink);
 }
 
@@ -314,7 +417,7 @@ h1 {
   content: "";
   position: absolute;
   left: 4px;
-  top: 12px;
+  top: 14px;
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -329,19 +432,19 @@ h1 {
 .stages li .t {
   margin-left: 8px;
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
 
 .stages li.log {
-  padding: 1px 0 1px 22px;
+  padding: 2px 0 2px 24px;
   color: var(--ink-2);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 .stages li.log::before {
   left: 5px;
-  top: 9px;
+  top: 10px;
   width: 4px;
   height: 4px;
   opacity: .55;
@@ -350,13 +453,13 @@ h1 {
 /* 错误 */
 
 .err {
-  margin: 16px 0 0;
-  padding: 12px 14px;
-  border-radius: 10px;
+  margin: 18px 0 0;
+  padding: 14px 16px;
+  border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--bad) 35%, transparent);
   background: color-mix(in srgb, var(--bad) 9%, transparent);
   color: var(--ink);
-  font-size: 13.5px;
+  font-size: 14px;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -366,9 +469,43 @@ h1 {
 /* 完成 */
 
 .done {
-  margin: 18px 0 0;
-  padding-top: 18px;
+  margin: 20px 0 0;
+  padding-top: 20px;
   border-top: 1px solid var(--line);
 }
 
-.done p { margin: 0 0 12px; color: var(--ink-2); }
+.done p { margin: 0 0 14px; color: var(--ink-2); font-size: 15px; }
+
+/* ============================================================ 窄屏
+ *
+ * ≤560px 全部退回原来的尺寸，**不要**跟着这次的放大一起变。
+ * 320px 的码在 390 宽的屏上放进卡片里会横向溢出，这条是硬约束。
+ */
+
+@media (max-width: 560px) {
+  .page { padding: 20px 14px 48px; }
+
+  .intro { border-radius: 16px; }
+  .intro-hero { height: min(42vh, 250px); }
+  .intro-inner { padding: 24px 20px 28px; }
+
+  h1 { font-size: clamp(22px, 6vw, 28px); }
+  .lead { font-size: 15px; }
+  .points li { font-size: 14px; }
+  .btn { font-size: 15px; padding: 11px 20px; }
+  .btn.small { padding: 7px 14px; font-size: 13.5px; }
+
+  .run { padding: 22px 18px 24px; border-radius: var(--radius); }
+  .run-head { margin-bottom: 16px; }
+  .run-head h2 { font-size: 18px; }
+
+  #qr { width: 220px; height: 220px; }
+  .stages li { font-size: 14px; }
+  .stages li.log { font-size: 12.5px; }
+}
+
+/*
+ * 没有更窄的一档：220px + 上面的内边距在 320 宽下也放得下
+ * （320 − 14×2 − 18×2 = 256 > 220）。旧版在 400 处还压到 200，
+ * 那让 390 的手机反而比旧版更小 —— 窄屏的目标是「保持原来那档」，不是继续缩。
+ */

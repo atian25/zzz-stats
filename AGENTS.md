@@ -188,6 +188,22 @@
     入参可能是 Map，而 `JSON.stringify(map)` 是 `{}` —— 构建全绿、Node 口径也对，
     只有打开产物才崩（`Cannot read properties of null (reading 'type_stats')`）。
     CLI 一直传对象，所以这个 bug 只在服务/用例传 Map 时显形，是 `serve.mjs` 的浏览器验收抓到的。
+  - **`hidden` 属性必须真的藏住 —— 别让作者样式盖过 UA 样式。**
+    UA 的 `[hidden] { display: none }` 是**浏览器默认样式**，作者样式里任何一条
+    `display: inline-block` 都能盖过它（作者样式优先于 UA 样式）。`.btn` 正是 `display: inline-block`，
+    所以 `reissueBtn.hidden = true` 之后**属性是 true、按钮还在屏幕上**。
+    `style.css` 现在有一条全局 `[hidden] { display: none !important; }` 兜住这件事，
+    **不要删**。遮罩验收时我断言的是 `btn.hidden`（属性）所以全绿，截图里按钮还亮着 ——
+    **断言 `hidden` 之后的东西要测 `getComputedStyle().display` 或 `getBoundingClientRect().width`，
+    不能测属性。**
+  - **扫码之后必须给二维码盖遮罩**（用户原话：「免得下面还在处理，上面还以为需要扫码」）。
+    判据用**后端实际推的阶段名**，`app.js` 里 `PRESCAN_STAGES` 是白名单
+    （`申请二维码` / `二维码已生成，等待扫码`），**其余任何阶段一律当扫码之后**遮住。
+    做成白名单而不是黑名单：后端以后多推一个阶段名，黑名单会漏遮，
+    白名单只会多遮一次（遮着远比让用户重复扫好）。
+    遮罩那一块同时做三件事：码 `blur + brightness + opacity`（视觉失效）、
+    遮罩上写当前在干什么（`aria-live`）、**藏掉「换一张二维码」与倒计时**（码已失效，
+    留着倒计时会让人以为还要再扫）。失败/取消时遮罩留在原地但**停掉转圈**（转圈＝仍在处理）。
 - 任何改动后跑 §8 回归基线与 §9.3 验收，确认控制台数字与截图。
 
 ## 改完必须回填文档与模板
