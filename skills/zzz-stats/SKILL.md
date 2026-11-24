@@ -591,7 +591,7 @@ output/<账号名>/data/hist_pool_stat_<t>.json
 sum(cur_records[].count) + type_stats[].next_s_cur_times == type_stats[].total_count
 ```
 
-逐频道比对。左边是「已出金抽数 + 当前垫抽」，右边是官方总抽数——**它校验的是抽数，金数对得上但记录缺抽也会在这里露出来**。`scripts/build-report.mjs` 会自动跑这条并报警（校验仍在 Node 外壳，不在 core —— 理由见 §6 的三层分工）。
+逐频道比对。左边是「已出金抽数 + 当前垫抽」，右边是官方总抽数——**它校验的是抽数，金数对得上但记录缺抽也会在这里露出来**。`scripts/build-report.mjs` 会自动跑这条并报警（校验仍在构建期外壳，不在 core —— 理由见「分层」那节）。
 
 另外两条容易踩的：
 
@@ -983,13 +983,13 @@ UP 抽数是该角色**各轮 total 累加**（含期间歪出的）、非 UP �
 （**不在 `details[频道]` 里**——放进去会诱使人以为它该跟着 tab 变），渲染在 `charts.js` 的 `renderDetailChars()`。
 **不要在渲染层重新聚合**——那会让「左栏和右栏对不上」变成两处口径各写一遍。
 
-### 三层分工（改东西前先认层）
+### 分层（改东西前先认层）
 
 | 层 | 位置 | 改什么 |
 |---|---|---|
 | **配置** | `config/report.json` | 称号分档、标签阈值与去重、配色值、文案、图例、频道定义、保底抽数（`channels[].pityCap`）、隐私规则。**90% 的调整都在这层**，改完重跑构建即生效 |
-| **口径内核** | `assets/report/core.js` | 轮次模型、不歪率、称号、标签、详情行、右栏汇总、分母。**纯 JS，Node 与浏览器共用同一份**。改这层要同步 `report-rules.md` |
-| **两个外壳** | `scripts/build-report.mjs`（Node）<br>`assets/report/app.html` + `app.js`（浏览器） | Node 外壳管参数/读盘/拼模板/写文件；浏览器外壳管粘贴 UI/静态资源加载。**口径不许写在外壳里** |
+| **口径内核** | `assets/report/core.js` | 轮次模型、不歪率、称号、标签、详情行、右栏汇总、分母。**纯 JS，Node 与浏览器跑的是同一份源码**（产物里是它的构建期转换版）。改这层要同步 `report-rules.md` |
+| **一个外壳** | `scripts/build-report.mjs` | 算参数、读盘、把数据与 core 一起塞进模板、跑校验、写文件。**口径不许写在外壳里** |
 | **资源** | `assets/report/icons/` | 里面是 `avatars/`（圆头像）与 `items/`（方图标）两套，**都只有 64px 一套**。**构建时内嵌进 HTML 用的就是它**，没有第二份 96px 原图了。缺图**不要手动找**，跑 `scripts/sync-icons.mjs` |
 | **规范** | `references/report-rules.md` | 记录「为什么这样算、为什么这样画」以及踩过的坑。**不要为了改行为去改它**；它是给维护者看的 |
 
@@ -1004,53 +1004,81 @@ UP 抽数是该角色**各轮 total 累加**（含期间歪出的）、非 UP �
 现在拆成：
 
 ```
-assets/report/core.js   ← 口径（纯 JS，零 Node 依赖）
-   ↑ import                        ↑ import
-scripts/build-report.mjs     assets/report/app.js
-（Node 外壳：读盘→内嵌图标→拼模板→写 HTML）  （浏览器外壳：粘贴 JSON→静态图标→动态加载 charts.js）
+assets/report/core.js   ← 口径（纯 JS，零 Node 依赖），既有 ESM 也有构建期转换版
+   ↑ import                              ↓ scripts/core-inline.mjs 转换
+scripts/build-report.mjs                   产物里的第 ② 段脚本
+（Node 外壳：读盘→内嵌图标→拼模板→写 HTML）   （经典同步脚本，浏览器现算 → window.__REPORT__）
 ```
 
 `core.js` 的约束是硬性的：**不许出现 `node:` import、`process`、`Buffer`、`fs`、`__dirname`、`import.meta`**。
 一旦出现，Node 端照样跑得通、只有浏览器端白屏——最难定位的一类。
-`scripts/test-core-pure.mjs` 用 grep 把这条钉成断言（43 项）。
+`scripts/test-core-pure.mjs` 用 grep 把这条钉成断言（63 项）。
 
 入口是 `computeReport({ files, cfg, icons, generatedAt })`：
 
 - `files` 是**文件名作键**的虚拟文件系统（`index.json` / `meta.json` /
   `cur_pool_stat_<id>.json` / `hist_pool_stat_<id>.json`）。Node 端把磁盘目录读成这个 map，
-  浏览器端把 `fetch-in-page.js` 的 `{index, channels}` 摊成同一批键（`filesFromInPage()`）。
+  产物内嵌的也是同一批键（构建时把磁盘目录原样 JSON 化，不做任何预算）。
 - `icons` 是图标解析器。core 只负责「把 key 贴到 `avatarKey` / `iconKey` 上」，
-  值是什么由外壳决定：Node 端是 sha1 → 内嵌 dataURL（产物单文件可发送），
-  浏览器端是 sha1 → 静态 png 路径。**key 两端完全一致**，所以 `charts.js` 的 `ICONS[key]` 一行都不用改。
+  值是什么由外壳决定：Node 端与产物端都是 sha1 → 内嵌 dataURL（产物单文件可发送）。
+  **两端 key 与值都完全一致**，所以 `charts.js` 的 `ICONS[key]` 一行都不用改。
 - `generatedAt` 可注入，为了两端逐字节比对；默认仍是 `new Date().toISOString()`。
 
 **fatal 校验不搬进 core**：那些断言（坐标轴退化、抽数闭合、影画编号一致……）是「产物不可信
 就退出 1、不写文件」的构建期关闸。浏览器端没有「退出 1」这个概念，硬塞进去只会让静态页白屏。
 
-#### 浏览器外壳：`assets/report/app.html`
+#### 产物：内嵌原始 JSON，浏览器现算
 
-纯静态页、零后端、零 AI。把 `fetch-in-page.js` 返回的那段 JSON 粘进去（或把 `.json` 拖进去），
-页面用同一份 `core.js` 算出报表、用同一份 `charts.js` 渲染。**全程在浏览器里跑完，不联网、不上传**
-（只读同源的 echarts / charts.js / 图标）。
+**改前**：`report.html` 内嵌**算好的** `window.__REPORT__`（绳匠A 约 1015 KB），
+口径只在构建期跑一次，页面只是「照着数据画」。
 
-- 输入方式**只支持粘贴/拖入 JSON**，没做 localStorage 与 URL hash：
-  前者会把含 UID 的数据留在浏览器里，后者要把大 JSON 编码进 URL，都不比粘贴省事。
-- 图标走 `assets/report/icons/manifest.json`（`{ "dir/id": "<sha1 前 16 位>" }`）。
-  这份清单与 `assets/report/config.json`（`config/report.json` 的逐字节副本）都由
-  `scripts/build-icons-manifest.mjs` 生成。**改了配置或图标要重跑它**，否则静态页读到旧值；
-  `test-core-pure.mjs` 会断言两者仍然一致。
-- 页面里有 `html:not([data-ready]) .screen { display: none }`，
-  而 `data-ready` **必须在插入 charts.js 之前置上**：ECharts 在 init 那一刻量容器尺寸，
-  若那时容器是 `display:none` 会画出 0×0 的空画布（svg 元素存在、计数是 1、图却空白）。实测踩过。
-- 本地打开方式（浏览器不允许 `file://` 下的 module import，必须起静态服务）：
+**改后**：产物内嵌**原始采集 JSON**（绳匠A 约 45 KB）+ `core.js` 的构建期转换版 +
+`charts.js`，浏览器打开时现算。三段都是**经典同步脚本**，`window.__REPORT__`
+在 `charts.js` 执行前一定就绪：
 
-```bash
-cd skills/zzz-stats && python3 -m http.server 8901 --bind 127.0.0.1
-# 打开 http://127.0.0.1:8901/assets/report/app.html
+```
+<script type="application/json" id="zzz-stats-payload">原始 JSON</script>
+<script>core（转换版）+ 引导 → window.__REPORT__</script>
+<script>charts.js</script>
 ```
 
-验收 `scripts/test-app-browser.mjs`（21 项）：浏览器算出的 report 与 Node 产物逐字段相同
-（只允许 `icons` 的值与 `generatedAt` 不同）、结构计数与页面高度一致、主图容器有实际尺寸、console 0 error。
+为什么必须同步：`charts.js` 的 IIFE 在解析期就取 `window.__REPORT__`。
+一旦第 ② 段变成 `<script type="module">` / `await import()` / `fetch`，第 ③ 段会先跑，
+`__REPORT__` 还是 `undefined`，charts.js 第一行 `if (!R) return` 静默退出——
+**页面一片空白、console 干净**。`screenshot.mjs` 只等 `DOMContentLoaded + setTimeout(0)`，
+四套用例也都在这个时机读页面，异步化会让它们间歇性扑空。
+
+转换规则写死在 `scripts/core-inline.mjs`：剥掉顶层 `export function` 前缀、包进 IIFE、
+末尾调 `computeReport` 并挂 `window.__REPORT__`。遇到别的 export 形式**直接抛错**，
+不静默留下半份 ESM。产物里还会断言「`export ` 出现 0 次、取得到 `computeReport`、
+没有 `import` / `await`、数据里没有裸的 `</script`」。
+
+为什么不在 `core.js` 里写 UMD / CJS：那会破坏「Node 与浏览器跑同一份源码」这条性质。
+转换只发生在构建期，`core.js` 始终是纯 ESM。
+
+验收 `scripts/test-report-browser.mjs`（30 项，需要 chrome）：产物在真实浏览器里现算的
+`__REPORT__` 与 Node 对同一批 fixtures 算出的对象**逐字段相同**（连 `icons` 的值都相同，
+只归一化 `generatedAt`）、结构计数非空、`#chart` 与 `#chart svg` 有实际像素尺寸、console 0 error。
+
+#### 擦掉的历史：粘贴面板
+
+上一版曾有一个纯静态的粘贴面板（`assets/report/app.html` + `app.js`）：把 `fetch-in-page.js`
+的 JSON 粘/拖进去，页面自己算、自己渲染，配 `config.json` 与 `icons/manifest.json` 两份静态副本
+（由 `scripts/build-icons-manifest.mjs` 生成），验收是 `test-app-browser.mjs`（21 项）。
+
+**这一版整个删掉了**，用户原话是「我不要粘贴，还是之前 skill 那套流程，只是之前构建的时候
+直接生成最终的 html 了……现在是生成 html，html 里面要么内嵌要么加载几个爬取好的 json，
+然后纯 js 渲染出最终的报表」。所以：产物自己内嵌原始 JSON、自己现算，不再有第二个入口。
+
+删掉的文件：`app.html`、`app.js`、`config.json`、`icons/manifest.json`、
+`build-icons-manifest.mjs`、`test-app-browser.mjs`。**不要把它们加回来**——
+`test-core-pure.mjs` 现在把「这些文件不存在」钉成了断言（见 §4）。
+
+那次踩过的坑仍然适用，写在这里免得下次重复：ECharts 在 init 那一刻量容器尺寸，
+如果容器当时是 `display:none`，会画出 **0×0 的空画布**（svg 元素存在、计数是 1、图却全白）。
+当时的触发原因是 `data-ready` 置位晚于 charts.js。现在产物里没有这个开关了，
+但同类症状还会出现在「容器被折叠 / 尚未布局」的场景，所以验收用例仍然断言
+`#chart` 与 `#chart svg` 的**像素尺寸**，而不只是「元素存在」。
 
 **图标不用手动找**：接口每条记录都带 `icon` URL，跑一次就补齐缺的（下载即裁成 64px，一步到位）：
 

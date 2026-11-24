@@ -33,21 +33,37 @@ export const PREVIEW_MASK = 2;
 export const PREVIEW_RAW = 0;
 
 /**
- * 从构建好的报表 HTML 里取出内嵌的 `window.__REPORT__`。
+ * 从构建好的报表 HTML 里取出 `meta.synthetic` 标记。
  *
- * 为什么按「行」取而不是正则匹配整段 JSON：报表把 ECharts 源码内联进了 HTML，
- * 那段源码的字符串里含有 `</body>` 之类的东西（见 screenshot.mjs 里同名注释），
- * 用正则跨块匹配容易咬到别的脚本。
+ * ## 两种产物形状都要认
  *
- * 这里靠一个事实：注入的那一行是
+ * 2026-11 起产物不再内嵌算好的 `report`，而是内嵌**原始采集 JSON**，
+ * 由浏览器里的 core 现算。所以标记有两个来源，按可靠性排：
+ *
+ *   ① 新产物：`<script type="application/json" id="zzz-stats-payload">` 里那份
+ *      `files`，其中 `meta.json` 就是标记的原始出处（`report.meta.synthetic`
+ *      正是由它 `=== true` 推导的，读它比读推导结果更直接）。
+ *   ② 旧产物：`window.__REPORT__ = {...};` 那一行。
+ *
+ * 两条都认，是为了让这个安全判定不依赖「产物是哪一版构建的」——
+ * 换实现时忘了同步这里，症状是 preview 图突然全被打码（难看但安全）或
+ * 反过来（真名进仓库）。**取不到一律 null → 按真实数据处理**。
+ *
+ * 为什么旧路径按「行」取而不是正则匹配整段 JSON：报表把 ECharts 源码内联进了 HTML，
+ * 那段源码的字符串里含有 `</body>` 之类的东西，用正则跨块匹配容易咬到别的脚本。
+ * 靠的事实是注入的那一行是
  *     window.__REPORT__ = {"schema":"zzz-stats/report@1",...};
  * 而 `JSON.stringify()` **不产生裸换行**（字符串里的换行会转成 `\n` 两个字符），
  * 所以「从标记起到本行末」正好是完整 JSON。JSON 里的分号、引号都不影响。
  *
- * @returns {object|null} 解析失败一律 null，调用方按「真实数据」处理。
+ * @returns {object|null} 形状同 report（只需 `meta.synthetic`）。解析失败一律 null。
  */
 export function extractReport(html) {
   if (typeof html !== 'string' || !html) return null;
+
+  const fromPayload = extractFromPayload(html);
+  if (fromPayload) return fromPayload;
+
   const marker = 'window.__REPORT__ = ';
   const at = html.indexOf(marker);
   if (at < 0) return null;
@@ -62,6 +78,38 @@ export function extractReport(html) {
   } catch {
     return null;
   }
+}
+
+/**
+ * 新产物：从内嵌的原始采集 JSON 里读 `meta.json`，包装成 report 的形状。
+ *
+ * 只造 `meta.synthetic` 一个字段——调用方（`previewPrivacyPolicy`）只读它。
+ * **不伪造其余字段**：这里不是「重新算一份 report」，伪造会让将来加进来读别的字段的人
+ * 拿到假数据。宁可窄。
+ *
+ * `meta.json` 的值可能是接口原始响应（`{retcode, data}`）也可能是已解包的 `data`，
+ * 与 core 的 `readJson()` 同一套约定，两种都认。
+ *
+ * @returns {object|null} 找不到/解析失败 → null（调用方按真实数据兜底）
+ */
+function extractFromPayload(html) {
+  const m = html.match(/<script\b[^>]*\btype="application\/json"[^>]*>([\s\S]*?)<\/script>/i);
+  if (!m) return null;
+  let files;
+  try {
+    files = JSON.parse(m[1]);
+  } catch {
+    return null;
+  }
+  if (!files || typeof files !== 'object') return null;
+  const body = files['meta.json'];
+  const meta = body == null ? null : (body && typeof body === 'object' && 'data' in body ? body.data : body);
+  if (!meta || typeof meta !== 'object') return null;
+  /*
+   * 只认严格的布尔 true —— 与 `previewPrivacyPolicy()` 里的判据保持一字不差。
+   * `"true"` 字符串 / `1` / 缺失 都原样返回 false，由下游走「真实数据」分支。
+   */
+  return { meta: { synthetic: meta.synthetic === true } };
 }
 
 /**

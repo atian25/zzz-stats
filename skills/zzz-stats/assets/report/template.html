@@ -121,8 +121,25 @@
 <script>
 /*__ECHARTS__*/
 </script>
+<!--
+  三段经典同步脚本，顺序不能动：
+
+  ① 原始采集 JSON（`type="application/json"`，不进执行上下文，只当一个数据块）
+  ② core.js 的口径计算 + 引导：读上面那块 JSON → computeReport → window.__REPORT__
+  ③ charts.js：读 window.__REPORT__ 立刻 init
+
+  **必须是经典脚本、不许 module / 动态 import / await / fetch。**
+  charts.js 的 IIFE 在**解析期**就取 `window.__REPORT__` 并注册 DOMContentLoaded；
+  ② 一旦变成异步，③ 会先跑、`__REPORT__` 还是 undefined，charts.js 第一行静默 return ——
+  页面空白、console 干净。screenshot.mjs 只等 DOMContentLoaded + setTimeout(0)，
+  4 套用例也都在这个时机读页面，异步化会让它们间歇性扑空，且极难定位。
+
+  ① 的值由 scripts/build-report.mjs 注入，`<` 已转义成 \u003c：
+  数据里出现 `</script` 也不会把脚本截断。
+-->
+<script type="application/json" id="zzz-stats-payload">/*__PAYLOAD_JSON__*/</script>
 <script>
-/*__REPORT_DATA__*/
+/*__CORE_PLUS_BOOT__*/
 </script>
 <script>
 /*__CHARTS_JS__*/

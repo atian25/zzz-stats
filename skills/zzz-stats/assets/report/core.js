@@ -13,7 +13,7 @@
  *
  *   core.js        口径计算（本文件）。纯 JS，Node 与浏览器加载的是同一份字节。
  *   build-report   Node 外壳：解析参数、把磁盘目录读成虚拟文件系统、调 core、拼模板、写文件。
- *   app.html       浏览器外壳：把粘贴/拖入的采集 JSON 摊成虚拟文件系统、调 core、渲染。
+ *   产物           单文件 HTML，内嵌原始采集 JSON + 本文件的转换版 + charts.js（三段同步脚本）。
  *
  * ## 约束（改这个文件前先读）
  *
@@ -24,11 +24,14 @@
  * ## §加载
  *
  * 本文件是 ESM。仓库根没有 package.json（本 skill 不依赖 npm 安装），所以靠
- * **同目录的 assets/report/package.json 里的 `"type": "module"`** 让 Node 把它按 ESM 解析；
- * 浏览器那边 `<script type="module">` 天然按 ESM 处理，不需要那个文件。
- * 两条都实测过：
- *   Node   → `import { computeReport } from '../assets/report/core.js'`
- *   浏览器 → `import('/assets/report/core.js')`
+ * **同目录的 assets/report/package.json 里的 `"type": "module"`** 让 Node 把它按 ESM 解析。
+ * Node 外壳直接 `import { computeReport } from '../assets/report/core.js'`。
+ *
+ * 产物里跑的是**转换后的经典脚本**：`scripts/core-inline.mjs` 在构建期剥掉 `export `
+ * 前缀、包进 IIFE、末尾调用 `computeReport`。转换只发生在构建期，本文件始终是纯 ESM ——
+ * 那条「Node 与浏览器加载同一份字节」的性质因此没有被破坏，node 端 import 的
+ * 和产物里内嵌的来自同一个文件。**不要为了内嵌把本文件改成 UMD / CJS**：
+ * 那会让 Node 与产物跑的不是同一份源码，而差异只在浏览器端显形。
  *
  * ## §入口
  *
@@ -39,17 +42,18 @@
  *     `files['cur_pool_stat_<id>.json']` / `files['hist_pool_stat_<id>.json']`
  *   值可以是接口原始响应（带 `retcode`/`data` 包裹）也可以是已解包的 `data`，
  *   与历史 `readJson()` 行为一致（`retcode !== 0` 抛错）。
- *   Node 端把磁盘目录读成这个 map；浏览器端把 fetch-in-page.js 的 `{index, channels}`
- *   摊成同一批键（`filesFromInPage()` 做的就是这件事），两条路喂进来的是同一套输入。
+ *   Node 端把磁盘目录读成这个 map；产物里的引导脚本内嵌的就是同一批键
+ *   （构建时把磁盘目录读出来、原样 JSON 化），两条路喂进来的是同一套输入。
  *
  * - `cfg`：`config/report.json` 的解析结果。**由调用方读**，core 不碰文件系统。
  *
  * - `icons`：可选的 `{ encode(dir, id), resolveId(id) }`。
  *   core 自己不知道图标长什么样，只负责「把每一处需要图标的地方填上 key」
  *   （`avatarKey` / `iconKey`），再把 `report.icons` 交给调用方填。
- *   默认实现是 no-icon 模式（全部 null），Node 外壳传 sha1→dataURL 的实现，
- *   浏览器外壳传静态 png 路径的实现。这样 charts.js 的 `ICONS[key]` 一行都不用改：
- *   它只认识「一个字符串 key」。
+ *   默认实现是 no-icon 模式（全部 null）。Node 外壳与产物里的引导脚本传的是**同一套**
+ *   sha1→dataURL 实现（同一份 `icons/` 目录算出来的 sha1、同一份 base64），
+ *   所以两端的 `report.icons` 完全一致，视觉上不可能有差别。
+ *   charts.js 的 `ICONS[key]` 一行都不用改：它只认识「一个字符串 key」。
  *
  * - `generatedAt`：时间戳字符串。默认 `new Date().toISOString()`（保持历史行为）。
  *   之所以允许注入：Node 与浏览器两端的等价性验证要逐字节比对，时间戳不固定就没法比。
@@ -108,62 +112,6 @@ export function metaFromInPage(payload) {
     total_s_count: Number(idx.total_s_count ?? 0),
     total_counts_exclude_bangboo: true,
   };
-}
-
-/**
- * 配置 → CSS 变量的 `:root { ... }` 块。
- *
- * 「改配色只改 config」是这份 skill 对外的承诺，但主色 / 歪章色 / 详情条色过去在
- * charts.css 里各写了一份硬编码，改配置纹丝不动。这里把颜色统一灌进 CSS 变量：
- *   --accent / --loss-stamp / --detail-good / --detail-bad / --ink-*
- *
- * **放在 core 而不是外壳**：Node 端内联进 <style>，浏览器端写进 <style> 标签，
- * 两处必须产出同一份值。各写一份必然漂移（改配置后静态页还是旧配色）。
- */
-export function cssVarBlock(cfg) {
-  const vars = {
-    accent: cfg.colors.accent,
-    lossStamp: cfg.colors.lossStamp,
-    detailGood: cfg.colors.detailGood,
-    detailBad: cfg.colors.detailBad,
-    extremeTop: cfg.colors.extreme?.top,
-    goodTop: cfg.colors.good?.top,
-    badTop: cfg.colors.bad?.top,
-  };
-  const pairs = Object.entries(vars)
-    .filter(([, v]) => typeof v === 'string' && v)
-    .map(([k, v]) => `  --${k.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)}: ${v};`);
-  return pairs.length ? `:root {\n${pairs.join('\n')}\n}\n` : '';
-}
-
-/**
- * 模板里的文案占位符 → 实际文案。**两端共用这一份**，不要在任一外壳里重写。
- *
- * 文案一律从配置来：过去 copy.chartTitle / detailTitle / mergeToggle 有定义没人读，
- * 改配置不生效。
- */
-export function textSubs(cfg) {
-  return {
-    '/*__COPY_CHART_TITLE__*/': cfg.copy.chartTitle ?? '抽卡总览',
-    '/*__COPY_DETAIL_TITLE__*/': cfg.copy.detailTitle ?? '抽卡详情',
-    // 右栏标题和「抽卡详情」并列在头部，由模板输出（不是 charts.js 画的）
-    '/*__COPY_DETAIL_CHARS_TITLE__*/': cfg.copy.detailCharsTitle ?? '代理人汇总',
-    '/*__COPY_MERGE_TOGGLE__*/': cfg.copy.mergeToggle ?? '真实抽数',
-    /*
-     * 详情左栏被版本过滤筛空时的说明。
-     *
-     * 不能沿用 `detailEmpty`（「这个频段还没有 S 级记录」）——那句话在这个状态下是**假的**：
-     * 频段里明明有记录，只是被当前勾选筛掉了。两句话说的是两件事，所以是两个键。
-     * 文案里不带数字：勾了哪几档、筛掉多少行，界面上那些 chip 和行本身已经说明，
-     * 再报一遍数字属于重复。
-     */
-    '/*__COPY_DETAIL_FILTER_EMPTY__*/': cfg.copy.detailFilterEmpty ?? '当前版本筛选下没有记录',
-  };
-}
-
-/** HTML 转义：配置里的文案可能带尖括号，不能让它把模板打坏。 */
-export function escapeHtml(text) {
-  return String(text ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 }
 
 /**

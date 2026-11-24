@@ -130,14 +130,16 @@
 
 - 改口径 / 阈值 / 称号 / 文案 / 配色 → 只改 `skills/zzz-stats/config/report.json`。
 - 改算法（口径）→ `skills/zzz-stats/assets/report/core.js`，并同步 `references/report-rules.md`。
-  **纯 JS，Node 与浏览器共用同一份**，不许出现 `node:` / `process` / `fs` / `require` / `import.meta`
-  （`test-core-pure.mjs` 会 grep）。两个外壳（`scripts/build-report.mjs`、`assets/report/app.js`）里
-  **不许写口径** —— 写进去就只在一端生效。
+  **纯 JS，Node 与产物里的浏览器跑同一份源码**（产物里是它的构建期转换版，见
+  `scripts/core-inline.mjs`），不许出现 `node:` / `process` / `fs` / `require` / `import.meta`
+  （`test-core-pure.mjs` 会 grep）。**只**有 `scripts/build-report.mjs` 这一个外壳，
+  口径**不许写在外壳里** —— 写进去就只在构建期生效，产物里现算的那份没有。
+  改完除了 `test-core-pure.mjs`，还要跑 `test-report-browser.mjs`：转换环节坏了 Node 端毫无反应。
 - 改视觉 → `skills/zzz-stats/assets/report/charts.{js,css}` / `assets/report/template.html`，
   并同步 `references/report-rules.md` §2–§6 **和 `SKILL.md` 的「产物里有哪些交互」表**
   （那是宿主 agent 读的唯一入口，漏了等于用户看不到新行为）。
-- 改了 `config/report.json` 或 `assets/report/icons/` → 重跑
-  `node skills/zzz-stats/scripts/build-icons-manifest.mjs`，否则浏览器外壳读到的是旧配色 / 旧图标清单。
+- 改了 `config/report.json` 或 `assets/report/icons/` → **不用再跑任何清单脚本**（那两份静态副本
+  已随粘贴面板一起删除，见下），重跑构建即可：配色与文案在构建期注入，图标在构建期编码内嵌。
 - **「改配置就生效」是硬约定**：不要在 CSS / JS 里另写一份硬编码色值。
 - 任何改动后跑 §8 回归基线与 §9.3 验收，确认控制台数字与截图。
 
@@ -233,20 +235,22 @@ node skills/zzz-stats/scripts/test-verify-cleanup.mjs   # 27 项，不需要浏�
 node skills/zzz-stats/scripts/test-image-server.mjs      # 25 项，只起一个 127.0.0.1 临时端口
 node skills/zzz-stats/scripts/test-qr-wait.mjs           # 75 项，刷新通道 + 真实等待循环
 node skills/zzz-stats/scripts/test-preview-privacy.mjs   # 53 项（output/ 在场时 55 项），--preview 的隐私分流（见下）
-node skills/zzz-stats/scripts/test-core-pure.mjs         # 43 项，core.js 纯度 + 静态副本一致性 + 摊平逻辑
+node skills/zzz-stats/scripts/test-core-pure.mjs         # 63 项，core.js 纯度 + 转换规则 + 面板已删 + 图标资产
+node skills/zzz-stats/scripts/test-report-browser.mjs    # 30 项，需要 chrome；产物现算的 __REPORT__ 与 Node 口径逐字段相同
 ```
 
-**浏览器外壳（`assets/report/app.html`）另有一套，需要 chrome 和一个静态服务**：
+`test-report-browser.mjs` 默认用 `file://` 打开产物，**不需要起静态服务**；
+`--data fixtures/multigold --report output/绳匠B/report.html` 可以跑第二份数据。
+它会断言「产物里浏览器现算的 report 与 Node 对同一批 fixtures 算出的对象逐字段相同
+（连 `icons` 的值都相同，只归一化 `generatedAt`）」，以及产物里 0 处 `/*__` 残留、
+内嵌 JSON 与磁盘数据集逐键一致。
 
-```bash
-cd skills/zzz-stats && python3 -m http.server 8901 --bind 127.0.0.1 &
-node skills/zzz-stats/scripts/test-app-browser.mjs        # 21 项：等价性 + 渲染 + console
-```
+**这套用例抓到过一个结构计数抓不到的真 bug**：ECharts 量到 `display:none` 的容器、
+画出 0×0 空画布——`#chart svg` 计数仍是 1，图却全白。所以它同时断言容器与 svg 的**像素尺寸**。
 
-它会断言「浏览器算出的 report 与 Node 产物逐字段相同（只差 icons 值与 generatedAt）」。
-**这套用例抓到过一个结构计数抓不到的真 bug**：`data-ready` 置位晚于 charts.js，
-ECharts 量到 `display:none` 的容器、画出 0×0 空画布——`#chart svg` 计数仍是 1，图却全白。
-所以它同时断言容器与 svg 的**像素尺寸**。改 `app.js` 时别把那行 `dataset.ready` 挪到 loadScript 之后。
+**产物里那三段脚本的顺序不能动**（原始 JSON → core+引导 → charts.js），
+且**不许**把中间那段改成 `type="module"` / `await import()` / `fetch`：
+charts.js 会早于 `__REPORT__` 执行、静默 return，页面全白而 console 干净。详见 `report-rules.md` §6.8。
 
 **`--preview` 的隐私分流也是安全相关的**：`synthetic: true` 的数据集不打码、其余强制打码。
 判错一次就是把真名截进公开仓库，所以判定逻辑单独在 `preview-privacy.mjs` 里，用例

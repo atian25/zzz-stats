@@ -1407,10 +1407,10 @@ bad2  → Apple Color Emoji, glyphCount=2
   > `.detail-chars-body` 高度恒为内容自然高度 **854**（25 × 34 + 4），
   > 「多出几行可见」这个说法随之失效——删那行小字现在的收益只是**少占 41~56px 的整页高度**。
   口径本身仍然有效（影画跨全部频段合并、UP 抽数是各轮 total 累加、非 UP 只显示影画），
-  只是**不再写在界面上**：这些规则留在本文档、`build-report.mjs` 的 `charSummary()` 注释和构建期断言里。
+  只是**不再写在界面上**：这些规则留在本文档、`core.js` 的 `charSummary()` 注释和构建期断言里。
   别再把它加回来，也别改成更短的版本——用户说的是「不要这句」，不是「精简它」。
 
-**实现放在数据层**：`build-report.mjs` 的 `charSummary()` 算好，挂在报告**顶层 `report.charSummary`**
+**实现放在数据层**：`core.js` 的 `charSummary()` 算好，挂在报告**顶层 `report.charSummary`**
 （不在 `details[ch].chars` 里——放频道下会诱使人以为它该跟着 tab 变），
 `charts.js` 的 `renderDetailChars()` 只画。**不要在渲染层重新聚合**——
 那会让「左栏和右栏对不上」变成两处口径各写一遍。
@@ -2231,31 +2231,73 @@ measured（`fixtures/baseline`，相对详情卡顶边，`/tmp/yokai-cgroup.mjs`
 | 721 | 0 | 78.75 | 第 3 行 | 35 |
 | 720 | 0 | —（`display: contents`） | 与 tab 同行 | 35 |
 
-## 6.8 代码分层：口径内核 + 两个外壳（2026-11 拆分）
+## 6.8 代码分层：口径内核 + 构建期外壳（2026-11 拆分，2026-11 二次改向）
 
 ### 改前 vs 改后
 
-| | 改前 | 改后 |
-|---|---|---|
-| 口径算法在哪 | `scripts/build-report.mjs` 里，和 `readFileSync` / `createHash` / `writeFileSync` 混在同一份 2453 行文件 | `assets/report/core.js`，**纯 JS、零 Node 依赖** |
-| 能否在浏览器里算 | 不能。要「纯前端出报表」只能把算法复制一份 | 能。Node 与浏览器 import 的是同一份字节 |
-| 口径有几份实现 | 一份（但无法复用，复制是必然） | **一份**，两个外壳都只是调用方 |
-| 失败模式 | —— | 若有人往 core 里写 Node API：**Node 端照样通过，只有浏览器白屏**，最难定位的一类 |
+这段改了两轮，第二轮的**方向**与第一轮相反，两轮都必须读懂，否则很容易把已删的东西加回来。
 
-之所以要拆，是因为「Node 开浏览器采集 → 纯前端页面加载 JSON → 浏览器里算并渲染」这条路要求
-同一套口径在两个运行时都成立。复制一份口径的代价不是「多写点代码」，而是**必然漂移**，
-且漂移的症状（同一账号两处算出不同称号）没人会主动比对。
+| | 最初 | 第一轮（已废） | 现在 |
+|---|---|---|---|
+| 口径算法在哪 | `scripts/build-report.mjs`，和 `readFileSync` / `createHash` / `writeFileSync` 混在 2453 行里 | `assets/report/core.js` | `assets/report/core.js`（不变） |
+| 产物里内嵌什么 | 算好的 `window.__REPORT__`（约 1015 KB） | 算好的 `window.__REPORT__` | **原始采集 JSON（约 45 KB）+ core 的转换版 + charts.js**，浏览器现算 |
+| 有没有第二个入口 | 无 | 有：粘贴面板 `app.html` + `app.js` | **无**。产物自己内嵌数据、自己算，粘贴面板已删 |
+| 口径有几份实现 | 一份 | 一份 | **一份**（产物里跑的是它的构建期转换版，同源） |
+
+第一轮的出发点是「让纯前端页面也能算」，做法是另做一个粘贴 JSON 的静态页。
+用户否掉了这个方向，原话：「我不要粘贴，还是之前 skill 那套流程，只是之前构建的时候直接生成最终的
+html 了，会把对应的渲染都计算好。现在是生成 html，html 里面要么内嵌要么加载几个爬取好的 json，
+然后纯 js 渲染出最终的报表」。
+
+关键区别：**要变的不是「有没有前端入口」，而是「产物里内嵌的是结果还是原料」**。
+skill 的调用方式、CLI 参数、日志、退出码全都没变，变的只是 `report.html` 的内部。
 
 ### 结构
 
 ```
-assets/report/core.js          computeReport({files, cfg, icons, generatedAt})
-      ↑ import                        ↑ import
-scripts/build-report.mjs        assets/report/app.js + app.html
-Node 外壳：读盘→sha1 内嵌图标     浏览器外壳：粘贴 JSON→静态 png 图标
-          →拼模板→校验→写 HTML            →动态插入 charts.js
-scripts/build-icons-manifest.mjs  生成 app 端要的两份静态文件
+assets/report/core.js                    computeReport({files, cfg, icons, generatedAt})
+      ↑ import                                    │
+scripts/build-report.mjs                          │ scripts/core-inline.mjs 构建期转换
+Node 外壳：读盘 → sha1 内嵌图标 → 拼模板 → 校验 → 写 HTML
+                                                  ↓
+                                       产物里的第 ② 段脚本（经典同步）
 ```
+
+删掉的东西（**不要加回来**）：`assets/report/app.html`、`app.js`、`config.json`、
+`icons/manifest.json`、`scripts/build-icons-manifest.mjs`、`scripts/test-app-browser.mjs`。
+`test-core-pure.mjs` 现在把「这些文件不存在」钉成断言。
+
+### 产物的三段同步脚本
+
+```html
+<script type="application/json" id="zzz-stats-payload">原始采集 JSON</script>
+<script>core（转换版）+ 引导 → window.__REPORT__</script>
+<script>charts.js</script>
+```
+
+**必须是经典同步脚本，顺序不能动。** `charts.js` 是 IIFE，第一句就是
+`const R = window.__REPORT__; if (!R) return;`。一旦第 ② 段变成 `<script type="module">`、
+`await import()` 或 `fetch`，第 ③ 段会先执行、`__REPORT__` 还是 `undefined`，charts.js 静默 return ——
+**页面一片空白、console 干净**。而 `screenshot.mjs` 只等 `DOMContentLoaded + setTimeout(0)`，
+四套用例也都在这个时机读页面，异步化会让它们间歇性扑空，且极难定位。
+
+`scripts/core-inline.mjs` 的转换规则（写死在一处，不要在别处再写一份）：
+
+1. 顶层 `export function foo(` → `function foo(`。core.js 只有这一种 export 形式，
+   多一种就当场抛错，不静默留下半份 ESM。
+2. 整段包进 IIFE（`'use strict'`），不污染产物页面的全局作用域。
+3. 末尾调 `computeReport(...)`，把结果挂到 `window.__REPORT__`。
+4. 所有注入的 JSON（原始数据、配置、图标索引）都做 `</script` / `\u2028` / `\u2029` 转义。
+
+**不要为了内嵌把 `core.js` 改成 UMD / CJS。** 那会破坏「Node 与浏览器跑同一份源码」这条性质，
+而差异只在浏览器端显形。转换只发生在构建期。
+
+构建期有三道闭环（都是 fatal，坏产物不落盘）：
+
+- 模板里出现的每个 `/*__NAME__*/` 都必须被消费过；
+- 填完之后产物里 `/*__…__*/` 残留必须为 0；
+- 内嵌脚本里 `export ` / `import` / `await` 出现 0 次、`computeReport` 取得到、
+  `window.__REPORT__ = out.report` 在、没有裸的 `</script`。
 
 ### 接口契约（`computeReport`）
 
@@ -2263,70 +2305,58 @@ scripts/build-icons-manifest.mjs  生成 app 端要的两份静态文件
 |---|---|
 | `files` | **文件名作键**的虚拟文件系统：`index.json` / `meta.json` / `cur_pool_stat_<id>.json` / `hist_pool_stat_<id>.json`。值可以是接口原始响应（带 `retcode`/`data`）或已解包的 `data`，`retcode !== 0` 抛错 |
 | `cfg` | `config/report.json` 的解析结果，**由调用方读**，core 不碰文件系统 |
-| `icons` | `{ encode(dir,id), resolveId(id) }`。core 只把 key 贴到 `avatarKey` / `iconKey`，**值是什么由外壳决定**：Node = sha1→dataURL，浏览器 = sha1→静态 png 路径 |
+| `icons` | `{ encode(dir,id), resolveId(id) }`。core 只把 key 贴到 `avatarKey` / `iconKey`，值由调用方决定 |
 | `generatedAt` | 可注入的时间戳，默认 `new Date().toISOString()`。两端逐字节比对靠它 |
 
 返回 `{ report, notes, internals }`。`notes` 是原先打到 stdout 的非致命提示（标签去重等）；
-`internals` 给 Node 外壳的 fatal 断言用（`channelReports` / `details` / `index` / `metrics` / `tags` / `charSummaryRows`）。
+`internals` 给外壳的 fatal 断言用（`channelReports` / `details` / `index` / `metrics` / `tags` / `charSummaryRows`）。
 
-**fatal 校验不进 core**：那些断言的前提是「产物不可信 → 退出 1、不写文件」，浏览器端没有这个概念。
-判由外壳判，算在 core 算。core 被迫搬进了两份 helper（`cssVarBlock` / `textSubs`）——
-它们原先只服务 Node 端，但浏览器端也需要**同一份** CSS 变量与文案，各写一份必然漂移（改配置后静态页还是旧配色）。
+**fatal 校验不进 core**：那些断言的前提是「产物不可信 → 退出 1、不写文件」，而 core 现在也在
+浏览器里跑，那里没有「退出 1」这个概念。判由外壳判，算在 core 算。
+
+**图标两端完全一致**：Node 外壳与产物里的引导脚本用的是**同一套** sha1 → base64 dataURL
+（同一份 `icons/` 目录、同一份 `iconIds` 表、同一份 `iconData`）。所以 `report.icons`
+不是「允许有差异的字段」，而是必须逐字节相同 —— `test-report-browser.mjs` 就是这么断言的。
 
 ### 纯度的硬约束
 
 `core.js` 里**不许出现** `node:` import、`process`、`Buffer`、`require(`、`__dirname`、`__filename`、
 `import.meta`，以及裸的 `readFileSync` / `writeFileSync` / `existsSync` / `readdirSync` / `createHash`。
 
-`scripts/test-core-pure.mjs`（43 项）先**剥掉注释再 grep**这些词：
+`scripts/test-core-pure.mjs`（63 项）先**剥掉注释再 grep** 这些词：
 不剥注释的话，文件头那句「不许出现 `node:` import」会把自己的断言判红（实测过一次）。
-这套用例还断言：静态副本 `assets/report/config.json` 与 `config/report.json` 逐字节相同、
-`icons/manifest.json` 与 114 个 png 的 sha1 逐条相同且无遗漏、两种 icons resolver 下
-**除图标字段外**report 逐字节相同。
 
-### 浏览器外壳的两条实测坑
-
-1. **`data-ready` 必须在插入 `charts.js` 之前置上。**
-   `app.html` 有 `html:not([data-ready]) .screen { display: none }`（避免没数据时显示空壳），
-   而 ECharts 在 init 那一刻量容器尺寸。若那时容器还是 `display:none`，画出来的是 **0×0 空画布**：
-   `#chart svg` 元素存在、DOM 计数是 1、结构断言全绿，**肉眼却一片空白**。
-   这个坑是靠「app 页与 Node 产物截图逐像素比对」才发现的，结构计数抓不到。
-   用例已加断言：`#chart` 与 `#chart svg` 的像素尺寸都必须 > 600×200。
-
-2. **`charts.js` 不能静态引入**。它是 IIFE，进来第一句就是 `const R = window.__REPORT__; if (!R) return;`。
-   静态引入时 `__REPORT__` 还没赋值，它会静默退出、页面空白且 console 干净。必须由 `app.js` 在赋值后动态插入。
+`cssVarBlock` / `textSubs` / `escapeHtml` 已从 core **搬回构建期**（`scripts/template-tokens.mjs`）。
+理由：它们唯一的调用方是 Node 外壳（产物是拼好的静态 HTML，浏览器既不写 `<style>` 也不做文案替换）。
+留在 core 里的副作用是 token 字面量（`'/*__COPY_CHART_TITLE__*/'`）会随 core 源码内嵌进产物，
+让「产物里不许残留 `/*__` 占位符」那条断言永远命中自己。
 
 ### 等价性验收（实测）
 
-`scripts/test-app-browser.mjs`（21 项，需要 chrome + 静态服务）：
+`scripts/test-report-browser.mjs`（30 项，需要 chrome；默认 `file://` 打开产物，不需要起服务）：
 
 ```bash
-cd skills/zzz-stats && python3 -m http.server 8902 --bind 127.0.0.1   # 用仓库根则挂 8902 供产物一起比对
-node skills/zzz-stats/scripts/test-app-browser.mjs
-node skills/zzz-stats/scripts/test-app-browser.mjs --data fixtures/multigold --report output/绳匠B/report.html
+node skills/zzz-stats/scripts/test-report-browser.mjs
+node skills/zzz-stats/scripts/test-report-browser.mjs --data fixtures/multigold --report output/绳匠B/report.html
 ```
 
 | 项 | `fixtures/baseline` | `fixtures/multigold` |
 |---|---|---|
-| 除 icons 值 / generatedAt 外逐字段相同 | ✅ 0 处差异 | ✅ 0 处差异 |
-| icons 键集完全一致 | ✅ 76 / 76 | ✅ 81 / 81 |
-| 浏览器端 icon 值无 base64（全是相对路径） | ✅ | ✅ |
-| 结构计数（KPI/标签/tab/详情行/右栏行/svg） | ✅ 5/6/3/6/41/25/1 | ✅ 5/10/2/6/103/24/1 |
-| 主图容器尺寸与 Node 产物相同 | ✅ 1058×588 | ✅ 1058×588 |
-| 页面高度 | ✅ 2171 = 2171 | ✅ 3979 = 3979 |
+| 浏览器现算 vs Node 口径（归一化 generatedAt）| ✅ 逐字段相同 | ✅ 逐字段相同 |
+| `icons` 的值也相同（都是内嵌 dataURL）| ✅ 76 / 76 | ✅ 81 / 81 |
+| 与**上一版 HEAD 产物**内嵌的 `__REPORT__` 比 | ✅ 归一化 generatedAt 后逐字段相同 | ✅ 相同 |
+| 结构计数（KPI/标签/主图tab/详情tab/详情行/右栏/svg）| ✅ 5/6/3/6/41/25/1 | ✅ 5/10/2/6/103/24/1 |
+| `#chart` 与 `#chart svg` 有实际像素尺寸 | ✅ | ✅ |
+| 产物里 `/*__` 残留 | ✅ 0 | ✅ 0 |
+| 内嵌 JSON 与磁盘数据集逐键一致 | ✅ 14/14 | ✅ 14/14 |
 | console error | ✅ 0 | ✅ 0 |
-| **整页截图逐像素比对** | ✅ **0 / 3126240 像素不同** | ✅ **0 / 5729760 像素不同** |
 
-截图比对用的是「视口固定 1440×900 + `captureBeyondViewport` 截整页」。
-**不要先把视口高度改成 docH 再截**：`.screen` 的 `min-height:100vh` 会跟着变成整页高，
-图表容器被撑开、详情面板被推到最底部，截出来是一张「图表空白」的假图（实测踩过，差点误判成渲染 bug）。
+### 上一版踩过、现在仍然适用的坑
 
-### 静态副本：`build-icons-manifest.mjs`
-
-`assets/report/config.json`（配置逐字节副本）与 `assets/report/icons/manifest.json`
-（`{ "dir/id": "<sha1 前 16 位>" }`）都由这个脚本生成。**改了 `config/report.json` 或 `icons/` 之后必须重跑**，
-否则浏览器外壳读到旧值 —— 命令行产物是新配色、静态页是旧配色，两边「看起来都正常」。
-`--check` 只校验不写，供 CI 用；`test-core-pure.mjs` 也断言这条。
+**ECharts 量到 `display:none` 的容器会画出 0×0 空画布。** svg 元素存在、DOM 计数是 1、
+结构断言全绿，**肉眼却一片空白**。第一版粘贴面板的触发原因是 `data-ready` 置位晚于 charts.js。
+现在产物里没有那个开关了，但同类症状还会出现在「容器被折叠 / 尚未布局」的场景，所以验收
+仍然断言 `#chart` 与 `#chart svg` 的**像素尺寸**，而不只是「元素存在」。
 
 ## 7. 静态依赖
 
@@ -2784,14 +2814,16 @@ node skills/zzz-stats/scripts/build-report.mjs --data fixtures/baseline   # 坐�
 ## 10. 改动边界
 
 - 改**称号 / 标签阈值 / 配色 / 文案 / 频道定义** → 只改 `config/report.json`。
-- 改**计算口径** → 改 `assets/report/core.js`（纯 JS，Node 与浏览器共用），并同步本文件 §1。
-  **不要写进 `build-report.mjs` 或 `app.js`** —— 那是两个外壳，写进去就等于只在一端生效。
-  改完跑 `test-core-pure.mjs`（43 项），它会 grep 掉 Node 专属符号并断言静态副本仍然一致。
+- 改**计算口径** → 改 `assets/report/core.js`（纯 JS，Node 与产物里的浏览器同源），并同步本文件 §1。
+  **不要写进 `build-report.mjs`** —— 那是唯一的外壳，写进去就只在构建期生效，产物里现算的那份没有。
+  改完跑 `test-core-pure.mjs`（63 项），它会 grep 掉 Node 专属符号并断言转换规则与面板已删。
+  **改完必须重跑 `test-report-browser.mjs`**：产物里跑的是 core 的构建期转换版，
+  转换环节坏了 Node 端毫无反应、浏览器端白屏或算错。
 - 改**视觉** → 改 `assets/report/charts.css` / `charts.js`，并同步本文件 §2–§6。
 - 改**配色 / 文案** → 只改 `config/report.json`：颜色经 `--accent` / `--detail-good` / `--detail-bad` / `--loss-stamp`
   注入 CSS 变量，`copy.chartTitle / detailTitle / mergeToggle` 在构建时替换模板占位符。
   **不要在 CSS 里另写一份色值**——那样改配置就不生效了（这是过去的实际 bug）。
-- 改**详情右栏的代理人汇总**（影画 / 抽数 / 歪）→ 口径在 `scripts/build-report.mjs` 的 `charSummary()`，
+- 改**详情右栏的代理人汇总**（影画 / 抽数 / 歪）→ 口径在 `assets/report/core.js` 的 `charSummary()`，
   渲染在 `charts.js` 的 `renderDetailChars()`。**改口径必须同步 §6.1**，尤其六条不能丢：
   ①影画**跨全部频段合并**（分频道算会少算，实测珂蕾妲少 1 影）；②「出现次数 − 1、不是游戏内等级」；
   ③**UP 角色才显示抽数与歪**，非 UP 角色只显示影画（数据层可以留，界面不渲染）；
@@ -2819,5 +2851,7 @@ node skills/zzz-stats/scripts/build-report.mjs --data fixtures/baseline   # 坐�
   改完必须验「左栏逐行不变」（对比 41 行的 class / data-side / tip / 条文字 / 条宽 / 底色 / 图标 / 文本）。
 - 新增角色/音擎/邦布 → 先跑 `node skills/zzz-stats/scripts/sync-icons.mjs` 补图（会自动重跑 64px 压缩），再构建。
 - 任何改动后都要跑 §8 的自检与 §9.3 的验收，确认控制台数字与截图。
-- 改**浏览器外壳**（`app.html` / `app.js`）→ 跑 `test-app-browser.mjs`（21 项），
-  两份 fixtures 都要过，并确认整页截图与 Node 产物**逐像素相同**。详见 §6.8。
+- 改**产物结构 / 内嵌方式**（`template.html` 的三段脚本、`core-inline.mjs` 的转换规则）
+  → 跑 `test-report-browser.mjs`（30 项），两份 fixtures 都要过。详见 §6.8。
+  **千万不要把第 ② 段改成 module / 动态 import / fetch**：charts.js 会早于 `__REPORT__` 执行、
+  静默 return，页面全白且 console 干净。三条硬顺序见 §6.8。

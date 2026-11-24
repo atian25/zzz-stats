@@ -19,7 +19,9 @@ import { join, dirname, resolve, relative, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { wantsHelp, printHelp, WORK_DIR_NOTE } from './cli-help.mjs';
 import { outputRoot, listOutputDatasets, sanitizeSegment } from './datasets.mjs';
-import { computeReport, cssVarBlock, textSubs, escapeHtml } from '../assets/report/core.js';
+import { computeReport } from '../assets/report/core.js';
+import { cssVarBlock, textSubs, escapeHtml, templatePlaceholders } from './template-tokens.mjs';
+import { PAYLOAD_ID, escapeJsonForScript, buildCorePlusBoot, checkInlinedScript } from './core-inline.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /*
@@ -210,6 +212,7 @@ if (!files['index.json']) {
 function makeIconResolver() {
   const byHash = new Map();   // sha1 → dataURL
   const byId = new Map();     // `${dir}/${id}` → hash|null
+  const paths = new Map();    // sha1 → `${dir}/${id}`（产物里的图标索引要它）
   let missing = 0;
 
   const encode = (dir, id) => {
@@ -234,7 +237,15 @@ function makeIconResolver() {
       return null;
     }
     const hash = createHash('sha1').update(buf).digest('hex').slice(0, 16);
-    if (!byHash.has(hash)) byHash.set(hash, `data:image/png;base64,${buf.toString('base64')}`);
+    if (!byHash.has(hash)) {
+      byHash.set(hash, `data:image/png;base64,${buf.toString('base64')}`);
+      /*
+       * 产物里的引导脚本要能**自己**复算出同一批 key（它没有文件系统，只有一张表）。
+       * 这张表按 `dir/id → sha1` 落盘，与 Node 端 `encode()` 的返回一字不差 ——
+       * 浏览器和 Node 于是从同一份 sha1 出发，`report.icons` 自然也完全一致。
+       */
+      paths.set(hash, `${dir}/${id}`);
+    }
     byId.set(key, hash);
     return hash;
   };
@@ -257,7 +268,13 @@ function makeIconResolver() {
     encode,
     resolveId,
     finish() {
-      return { map: Object.fromEntries(byHash), unique: byHash.size, used: byId.size, missing };
+      /*
+       * `ids`：`dir/id → sha1`。产物内嵌它，引导脚本据此复算 core 要的 key。
+       * `_fallback` 也在这张表里（resolveId 最后会退到它），不用单独处理。
+       */
+      const ids = {};
+      for (const [hash, key] of paths) ids[key] = hash;
+      return { map: Object.fromEntries(byHash), ids, unique: byHash.size, used: byId.size, missing };
     },
   };
 }
@@ -275,22 +292,119 @@ const icons = iconResolver.finish();
 report.icons = icons.map;
 
 /*
- * CSS 变量与文案替换都来自 core（见 assets/report/core.js 的 cssVarBlock / textSubs）。
- * 浏览器外壳用的是同两个函数 —— 两端各写一份必然漂移，改配置后静态页还是旧配色。
+ * CSS 变量与文案替换来自 scripts/template-tokens.mjs。
+ *
+ * 它们**只有构建期一个调用方**：产物是拼好的静态 HTML，浏览器既不写 <style>
+ * 也不做文案替换。历史（见该文件头）把它们放在 core 里，副作用是 token 字面量
+ * 会随 core 源码内嵌进产物，让「产物里不许残留 /*__ 占位符」那条断言命中自己。
  */
 const cssVarBlockText = cssVarBlock(CFG);
 const textSubsMap = textSubs(CFG);
+
+/*
+ * 产物里的口径计算段。
+ *
+ * **这是本轮改动的核心**：产物不再内嵌算好的 `report`（1015 KB），
+ * 而是内嵌原始采集 JSON（59 KB）+ 转换后的 core（59 KB）+ 引导。
+ * 浏览器启动那一刻现算，`window.__REPORT__` 在 charts.js 执行前一定就绪
+ * （三段都是经典同步脚本，见 template.html 的注释）。
+ *
+ * `files` 直接内嵌磁盘上读到的原始响应 —— 不做任何预算、不裁剪字段。
+ * 于是产物里的 JSON 与 `fixtures/<name>/*.json` 逐键对得上，
+ * 拿产物就能反推出「这份报表是用哪份数据出的」。
+ */
+const coreSource = readFileSync(join(SKILL_DIR, 'assets/report/core.js'), 'utf8');
+const corePlusBoot = buildCorePlusBoot({
+  coreSource,
+  config: CFG,
+  iconIds: icons.ids,
+  iconData: icons.map,
+  generatedAt: report.generatedAt,
+});
+
+/*
+ * 装配期的问题先收在这里，稍后并入 `fatal`（后者要到校验段才声明）。
+ * 直接往 `fatal` 里 push 会踩 TDZ —— `const fatal` 还没初始化就访问，
+ * 报 "Cannot access 'fatal' before initialization"，构建当场崩，而不是给出可读的失败原因。
+ */
+const assemblyProblems = [];
 
 let html = template
   .replace('/*__CONFIG_CSS_VARS__*/', () => cssVarBlockText)
   .replace('/*__CHARTS_CSS__*/', () => chartsCss)
   .replace('/*__ECHARTS__*/', () => echartsJs)
-  .replace('/*__REPORT_DATA__*/', () => `window.__REPORT__ = ${JSON.stringify(report)};`)
+  .replace('/*__PAYLOAD_JSON__*/', () => escapeJsonForScript(JSON.stringify(files)))
+  .replace('/*__CORE_PLUS_BOOT__*/', () => corePlusBoot)
   .replace('/*__CHARTS_JS__*/', () => chartsJs);
 for (const [token, text] of Object.entries(textSubsMap)) {
   // 文案来自本地配置，但仍做一次 HTML 转义，避免配置里写了尖括号把模板打坏
   const esc = escapeHtml(text);
   html = html.split(token).join(esc);
+}
+
+/*
+ * ---------------------------------------------------------------- 占位符闭环
+ *
+ * 模板换占位符、构建脚本没跟着换 → 产物里留着字面量 `/*__XXX__*\/`、
+ * `window.__REPORT__` 一次都没赋值、页面全白，**而构建日志照样打印「成功」**。
+ * 这真实发生过一次（本轮开工时就撞上了），所以这里做两道闭环：
+ *
+ *   1. 模板里出现的每个占位符都必须被消费过；
+ *   2. 填完之后产物里一个 `/*__…__*\/` 都不许剩。
+ *
+ * 两条都是 fatal：坏产物不该落盘。
+ */
+/*
+ * 闭环要做**双向**，只做一个方向会漏掉真实事故那一半：
+ *
+ *   A. 模板里有、构建没填  → 产物里留着字面量（下面第 3 条能抓到）
+ *   B. 构建要填、模板里没有 → **占了位的地方被换成别的东西/被删掉**，
+ *      产物里既没有占位符、也没有数据，构建一切「正常」通过。
+ *
+ * B 方向是真实踩过的那次：模板的 `/*__PAYLOAD_JSON__*\/` 被换成了新名字，
+ * 构建脚本还在填旧名字。当时只查 A，构建打印「成功」，产物里 `window.__REPORT__`
+ * 一次都没赋值、页面全白。所以这里维护一份**构建负责填的名单**（REQUIRED），
+ * 逐个要求模板里必须出现 —— 名单的每一端都紧挨着真正的 `replace` 调用，改漏会当场红。
+ */
+const REQUIRED_TOKENS = [
+  'CHARTS_CSS', 'CONFIG_CSS_VARS', 'ECHARTS',
+  'PAYLOAD_JSON', 'CORE_PLUS_BOOT', 'CHARTS_JS',
+  ...Object.keys(textSubsMap).map((t) => t.replace(/^\/\*__|__\*\/$/g, '')),
+];
+const templateTokens = templatePlaceholders(template);
+for (const name of REQUIRED_TOKENS) {
+  if (!templateTokens.includes(name)) {
+    assemblyProblems.push(
+      `构建要填 /*__${name}__*/，但模板里没有这个占位符：模板被改过名字或删掉了，` +
+      '产物会缺这一段（可能表现为页面全白，而构建照样成功）',
+    );
+  }
+}
+const unknownTokens = templateTokens.filter((name) => !REQUIRED_TOKENS.includes(name));
+if (unknownTokens.length) {
+  assemblyProblems.push(
+    `模板里有构建不认识占位符：${[...new Set(unknownTokens)].join(', ')} —— ` +
+    '它只会原样留在产物里',
+  );
+}
+
+// C. 填完之后一个都不许剩
+const leftover = html.match(/\/\*__[A-Z0-9_]+__\*\//g);
+if (leftover) {
+  assemblyProblems.push(`产物里残留 ${leftover.length} 处未替换的占位符：${[...new Set(leftover)].join(' ')}`);
+}
+
+/*
+ * 内嵌脚本的形状自检：转换后不许有 export / import / await，
+ * 且必须能取到 computeReport、必须把结果挂到 window.__REPORT__。
+ * 这些条件任一不成立，产物就是「页面全白但构建是绿的」。
+ */
+for (const problem of checkInlinedScript(corePlusBoot)) assemblyProblems.push(`内嵌口径脚本不合格：${problem}`);
+if (!html.includes(`id="${PAYLOAD_ID}"`)) {
+  assemblyProblems.push(`产物里找不到 #${PAYLOAD_ID} 数据块：引导脚本会读不到原始 JSON`);
+}
+if (!html.includes('window.__REPORT__ = out.report')) {
+  assemblyProblems.push('产物里没有 window.__REPORT__ 的赋值：charts.js 会静默退出、页面全白');
 }
 
 // ---------------------------------------------------------------- 校验 + 摘要
@@ -312,7 +426,7 @@ for (const [token, text] of Object.entries(textSubsMap)) {
  * 只打一行 ⚠️ 而照样退出 0，下次改代码时仍然会静默退回去。
  */
 const warn = [];
-const fatal = [];
+const fatal = [...assemblyProblems];
 for (const c of channelReports) {
   if (!c.stats) {
     warn.push(`${c.label}: index 里没有对应 type_stats，抽数只能从记录推算`);
