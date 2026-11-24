@@ -160,14 +160,30 @@
   出问题按这个顺序怀疑：app_id → cookie 名 → game_biz。别先怀疑网络。
 - **`scripts/serve.mjs` 是「第三个外壳」，规则同上：只调 SDK、不改 SDK。**
   本地 Web 服务（`node skills/zzz-stats/scripts/serve.mjs`，默认 `0.0.0.0:3000`），
-  浏览器里走完「扫码 → 取数 → 出报表」，产物仍落 `output/<账号名>/{data/,report.html}`。
-  五条约束，改之前先看：
-  - **单文件、只用 `node:http`、前端 HTML 全内联、不加任何 npm 依赖**——它是「让人亲手试一次」，
-    不是产品化服务端，装依赖/拆静态目录都会带来安装步骤与版本漂移；
+  浏览器里走完「扫码 → 取数 → 出报表」。它是**多人同时用**的服务，不是单人玩具。
+  七条约束，改之前先看：
+  - **前端在 `assets/serve/`，不内联进 serve.mjs。** `index.html` / `app.js` / `style.css`
+    与 `assets/report/template.html`、`charts.css` 同一个惯例：静态资源进 `assets/`，脚本只管后端。
+    （这条一度被定成「全内联单文件」，用户明确撤销了：仓库惯例是拆出去。
+    前端只提供三个白名单资源，路径用**固定表**而不是拼接 —— 拼接会让
+    `/assets/../lib/build.mjs` 把源码吐出去。）
+  - **「零 npm 依赖」只对 skill 本体成立，不对服务成立。** 这条也被用户撤销了：
+    本服务是本机开发服务，不需要守；能用内置模块解决就用内置，但不必为此自我设限。
+  - **多人隔离：每个 run 独立，按 runId 取自己那一份。** 不要再引入任何全局单例
+    （上一版 `currentRun` + `startRun()` 里 `cancelRun(前一个)` 会让第二个人把第一个人的扫码顶掉）。
+    `/api/events?runId=`、`/report?runId=`、`/api/state?runId=` 都必须带 runId；
+    **`/report` 不带 runId 返回 400，绝不猜「最近一个」** —— 猜了就让 A 看到 B 的报表。
+    并发上限（`--max-runs`，默认 8）满了返回 503，**不踢掉别人的 run**。
+  - **报表不落盘，只在内存。** `collectData()` 的 files 直接交给 `buildReport()`，
+    HTML 存在 run 上、`/report` 从内存返回，run 结束 + TTL 后释放。
+    **不要写 `output/`**：多人同时用会互相覆盖（同名昵称 → 同一个账号目录），
+    而且这个服务的语义是「当场看一次」；归档是 CLI 的事。
+  - **`collectData()` 返回的 `files` 不含 `meta.json`**（它是单独的 `meta` 字段）。
+    内存直通时必须先 `ordered.set('meta.json', result.meta)` 再交给 `buildReport()`，
+    否则报表里昵称/UID 全空 —— 产物照样构建成功、`fatal` 也空，只是页面上没账号信息。
+    CLI 是写盘时手动补的，服务这里同样，**这条已经漏过一次**。
   - **走纯 Node 路（`transport: 'node'`）且服务里不降级**，失败把真实错误显示在页面上；
-    降级策略仍然只在 `scripts/collect.mjs`；
-  - **凭据不进日志、不进 SSE**（ticket / Cookie / set-cookie），页面上只出现二维码图片本身；
-  - **落盘顺序与两个 CLI 一致**：先写 14 个原始响应，再构建；**校验通过之后才写 `report.html`**；
+    降级策略仍然只在 `scripts/collect.mjs`。**凭据不进日志、不进 SSE**（ticket / Cookie / set-cookie）。
   - **`lib/build.mjs` 内嵌的原始 JSON 必须用 `fileMap`，不能用入参 `files`。**
     入参可能是 Map，而 `JSON.stringify(map)` 是 `{}` —— 构建全绿、Node 口径也对，
     只有打开产物才崩（`Cannot read properties of null (reading 'type_stats')`）。

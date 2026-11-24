@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>绝区零 调频数据 · 本地采集</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<main class="page">
+
+  <!-- ============================================================ 介绍页
+       首次访问只看到这一屏：标题 / 说明 / 一个按钮。
+       **不预生成二维码、不接上一次的运行、不显示任何人的报表。**
+       每个人进来都是从零开始。 -->
+  <section id="intro" class="intro">
+    <div class="intro-bg" aria-hidden="true"></div>
+    <div class="intro-inner">
+      <h1>绝区零 调频数据</h1>
+      <p class="lead">
+        用米游社 App 扫一次码，把六个频道的调频记录拉下来，
+        在浏览器里直接生成一份可以发出去的报表。
+      </p>
+      <ul class="points">
+        <li><b>扫码</b>　二维码只在本机页面显示，不经过第三方</li>
+        <li><b>取数</b>　直接调官方活动接口，六个频道逐条取回</li>
+        <li><b>出报表</b>　单文件 HTML，内嵌图标与图表，可离线打开</li>
+      </ul>
+      <div class="row">
+        <button id="start" class="btn primary" type="button">开始扫码</button>
+      </div>
+      <p class="fineprint">
+        数据只保留在这次会话的内存里，服务重启即消失；不写入磁盘。
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================ 进行中
+       点「开始扫码」之后才出现。二维码由后端实时申请。 -->
+  <section id="run" class="run" hidden>
+    <header class="run-head">
+      <h2 id="run-title">等待扫码</h2>
+      <button id="restart" class="btn ghost small" type="button">重新开始</button>
+    </header>
+
+    <div id="qrbox" class="qrbox" hidden>
+      <img id="qr" alt="米游社登录二维码" width="260" height="260">
+      <p id="qrtip" class="qrtip"></p>
+      <button id="reissue" class="btn ghost small" type="button">换一张二维码</button>
+    </div>
+
+    <ol id="stages" class="stages"></ol>
+
+    <div id="err" class="err" hidden></div>
+
+    <div id="done-box" class="done" hidden>
+      <p>报表已生成。</p>
+      <a id="report-link" class="btn primary" href="#">打开报表 →</a>
+    </div>
+  </section>
+
+</main>
+<script src="/assets/app.js"></script>
+</body>
+</html>
