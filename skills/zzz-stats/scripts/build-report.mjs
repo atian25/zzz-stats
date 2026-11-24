@@ -1455,6 +1455,39 @@ const details = Object.fromEntries(
     for (const rows of [all, merged]) {
       for (const r of rows) r.portrait = portraitLabel(r);
     }
+    /*
+     * 「本频道首个金」标记：tip 里不能对它写「距上一个金」。
+     *
+     * ## 判据是定义，不是现象
+     *
+     * 定义：**该频道 all 视图里获得时间最早的那一行**（`recordTime` 最小；
+     * 并列时用 `sort` 最小兜底，与 `charSummary` 的排序规则同一套）。
+     *
+     * 为什么不用「`count === sort`」那条更省事的判据：那是**现象**，不是定义。
+     * `sort` 是频道内跨池连续的全局序号，`count` 是距上一金的抽数，两者相等
+     * 只说明「这一金之前没有别的金」。但如果**首个金之前有垫抽**（上一期卡池抽了
+     * 几十抽没出金、跨池累计到本频道第一条记录），`count` 会大于它在这段序列里的
+     * 位置，等式立刻不成立，那一行就会被漏判成「距上一个金」——而它其实仍是本频道首金，
+     * 前面根本没有「上一个金」可距。
+     *
+     * 现在的 fixtures 里每个频道 `count === sort` 都恰好成立一行、且正是最早那行
+     * （绳匠A 5 个频道 + 绳匠B 4 个频道实测全部满足），所以两种判据在这份数据上结果相同。
+     * 但垫抽那种情况真实存在（`stats.next_s_cur_times` 就是它），所以按定义判。
+     *
+     * ## 合并视图不参与
+     *
+     * 合并视图的行代表「UP 轮」，第三行本来就写 `本轮 N 抽 ＝ …`，语义已经清楚，
+     * 不需要也不该出现「首个金」。所以这个标记只挂在 all 视图最早那一行上。
+     */
+    const epochs = all.map((r) => r.recordTime);
+    const minTime = epochs.length ? Math.min(...epochs) : null;
+    if (minTime != null) {
+      // 同 recordTime 的多金取 sort 最小的那只（十连里排最前）
+      const sameTime = all.filter((r) => r.recordTime === minTime);
+      const firstSort = Math.min(...sameTime.map((r) => r.sort ?? Infinity));
+      const first = sameTime.find((r) => (r.sort ?? Infinity) === firstSort);
+      if (first) first.firstGold = true;
+    }
     return [ch.id, {
       all,
       merged,
@@ -2164,6 +2197,42 @@ if (!Object.keys(pullsMaxCfg).length) {
         `右栏 ${c.name} 的来源 ${n} 条 ≠ 出现 ${c.appearances} 次：` +
         `tip 会少写或多写影画（来源明细：${kinds}）。` +
         '三处来源必须全覆盖——轮 losts / 轮 side / 常驻 golds，且只收 ItemType_Avatar',
+      );
+    }
+  }
+}
+
+/*
+ * 「本频道首个金」断言：防「tip 里有不止一个 / 一个都没有」。
+ *
+ * 判据是定义（该频道 all 视图时间最早那行），所以：
+ *   - **行的频道有金 → 恰好 1 行被标**（0 行说明判定失效，2 行说明排序坏了）
+ *   - **没有金的频道**（音擎回响只在垫抽、没有 S 记录）→ 0 行，这是合法的
+ *   - **merged 视图不标**：合并视图的行代表 UP 轮，第三行写「本轮」，语义已经完整，
+ *     硬塞「首个金」会和三行模板打架。非 has5050 频道两个视图共用同一批行对象，
+ *     所以那里 merged 也会带上标记——那是同一行，不是第二行。
+ */
+{
+  for (const ch of CFG.channels) {
+    const d = details[ch.id];
+    if (!d) continue;
+    const marked = (d.all ?? []).filter((r) => r.firstGold);
+    const hasGold = (d.all ?? []).length > 0;
+    if (hasGold && marked.length !== 1) {
+      fatal.push(
+        `频道 ${ch.label} 的 all 视图有 ${marked.length} 行被标成「本频道首个金」` +
+        `（${(d.all ?? []).length} 行金）：有金的频道必须恰好 1 行，` +
+        '判据是「该频道时间最早那行」，不是 count === sort',
+      );
+    }
+    if (!hasGold && marked.length !== 0) {
+      fatal.push(`频道 ${ch.label} 没有金，却有 ${marked.length} 行「本频道首个金」`);
+    }
+    const mergedMarked = (d.merged ?? []).filter((r) => r.firstGold);
+    if (ch.has5050 && mergedMarked.length > 0) {
+      fatal.push(
+        `频道 ${ch.label} 的 merged 视图有 ${mergedMarked.length} 行被标成「本频道首个金」：` +
+        '合并视图写「本轮」，不该出现首金措辞',
       );
     }
   }
