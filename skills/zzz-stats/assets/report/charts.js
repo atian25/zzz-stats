@@ -1711,7 +1711,16 @@
   }
 
   function buildRowTip(row, ch, merged) {
-    const lines = [row.name, `v${row.version} · ${fmtTime(row.recordTime)}`];
+    /*
+     * 第一行是「名字 · 本体/影画N」。
+     *
+     * 用户原话：「菲欧妮・本体/影画一 —— 在 up 角色后面也加下这个」。
+     * 编号由构建期算好放在 `row.portrait` 上（跨全部频段、按获得时间全局排序，
+     * 与右栏共用同一份），**这里不许自己数**——前端重算必然与右栏漂移。
+     * 音擎 / 邦布没有影画概念（音擎重复是精炼），构建期给它们的就是 null，所以这里判空即可。
+     */
+    const head = row.portrait ? `${row.name} · ${row.portrait}` : row.name;
+    const lines = [head, `v${row.version} · ${fmtTime(row.recordTime)}`];
     if (!ch.has5050) {
       lines.push(`距上一金 ${row.pulls} 抽`);
     } else if (!merged) {

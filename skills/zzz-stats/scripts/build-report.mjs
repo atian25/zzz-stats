@@ -252,6 +252,12 @@ function buildRounds(golds) {
       version: g.version,
       name: g.name,
       itemId: g.itemId,
+      /*
+       * UP 本身那条金的类型。音擎频段也有 50/50（输了给音擎、期间可能歪出角色），
+       * 所以「这一轮是角色还是音擎」不能按频道类型猜，必须照抄原始记录——
+       * 详情行要靠它决定标不标「本体/影画」（音擎重复是精炼，没有影画）。
+       */
+      itemType: g.itemType,
       recordTime: g.recordTime,
       sort: g.sort,
       off: off(),
@@ -995,6 +1001,15 @@ function detailRows(channel, merged) {
     lost: channel.has5050 ? !g.isUp : null,
     stamp: channel.has5050 && !g.isUp,
     recordTime: g.recordTime,
+    /*
+     * `itemType` 与 `sort` 是「本体/影画N」的坐标，不是给渲染层用的：
+     *   - itemType 决定要不要标（音擎 = 精炼、邦布无影画，都不标）；
+     *   - sort 是同一 recordTime 内的唯一区分（十连双金同秒），
+     *     只按 recordTime 回贴编号会把同秒两只标成同一号。
+     * 编号本身在构建期算好写进 `portrait`，前端只读，不重算。
+     */
+    itemType: g.itemType,
+    sort: g.sort,
   });
   if (!merged || !channel.has5050) {
     return channel.golds
@@ -1016,6 +1031,9 @@ function detailRows(channel, merged) {
       up: r.up,
       off: r.off,
       recordTime: r.recordTime,
+      // 合并模式下这一行代表的那条金记录（UP 本身），坐标与 all 视图同一条
+      itemType: r.itemType,
+      sort: r.sort,
       side: r.side,
       // 歪出的角色在 losts 里（side 只装十连副金），tip 需要它
       losts: r.losts,
@@ -1365,11 +1383,78 @@ function detailBarDivisor(rows, channel) {
   return Math.max(maxPulls, cap) || null;
 }
 
+/*
+ * 左栏每一行的「本体 / 影画N」标记：**跨全部频段按 itemId 全局编号**。
+ *
+ * 用户原话：「菲欧妮・本体/影画一 —— 在 up 角色后面也加下这个」。
+ *
+ * ## 为什么必须全局编号，不能按频道各自从 1 数
+ *
+ * 影画是账号级属性，而同一个角色的重复获取会散在不同频道里：实测 fixtures/baseline
+ * 的珂蕾妲本体是「抽雅时歪出」（独家频道），影画1 是「常驻 6 抽」（常驻频道）。
+ * 按频道各自数，常驻里那只珂蕾妲会显示「本体」，和右栏的「影画1」正面矛盾。
+ * 右栏 `charSummary()` 已经是全局口径（`portraits = 跨频段出现次数 − 1`），
+ * 所以左栏必须跟着它走，否则同一份报表两个地方对同一个角色说两套话。
+ *
+ * ## 编号来源就是右栏那份，不另写一套
+ *
+ * 直接用 `charSummaryRows` 的 `gains` / `sources`：它们已经按
+ * `recordTime` 正序（并列用 `sort` 兜底）排好，第 1 条 = 本体，第 2 条 = 影画1。
+ * **不要在左栏重新排序或重新计数**——两处各算一遍必然漂移，而且漂移的症状是
+ * 「左栏说影画2、右栏说影画1」这种没人会主动去查的静默错误。
+ *
+ * 这里只做一件事：把「(itemId, recordTime, sort) → 第几只」建成一张索引表，
+ * 让左栏每一行按自己那条记录的坐标回贴编号。坐标必须**三个字段全带上**：
+ * 同一角色在同一天拿到两只的情况 `recordTime` 会相同，只按时间匹配会把两只
+ * 都标成同一号（实测 multigold 有同 recordTime 的多金对）。
+ *
+ * ## 为什么只给角色，不给音擎 / 邦布
+ *
+ * 音擎重复获得是**精炼**（`ItemType_Weapon`），没有「影画」这个概念；
+ * 邦布整列都是邦布，也没有影画。给它们标「本体/影画」是错的术语。
+ * 判据用 `itemType === 'ItemType_Avatar'`，与 `charSummary()` 里筛角色的口径同一处。
+ */
+function portraitIndex() {
+  const key = (itemId, recordTime, sort) => `${itemId}|${recordTime}|${sort}`;
+  const idx = new Map();
+  for (const c of charSummaryRows) {
+    // 右栏 UP 角色用 gains，非 UP 角色用 sources——两者都是「逐次获得」，排好序的
+    const list = c.isUp ? c.gains : c.sources;
+    list.forEach((g, i) => {
+      idx.set(key(c.itemId, g.recordTime, g.sort), i);
+    });
+  }
+  return {
+    /** 第几只（0 = 本体）。查不到返回 null——不是角色，或坐标对不上。 */
+    of(itemId, recordTime, sort) {
+      const i = idx.get(key(itemId, recordTime, sort));
+      return i == null ? null : i;
+    },
+    size: idx.size,
+  };
+}
+const portraitOf = portraitIndex();
+
+/**
+ * 给一行的「本体/影画N」文案。非角色返回 null（音擎 / 邦布不标）。
+ *
+ * 措辞用「本体 / 影画N」而不是「0 影 / 1 影」：用户原话就是「菲欧妮・本体/影画一」，
+ * 第 1 只叫本体（游戏里也没有「0 影」这个说法），第 2 只起才是影画 1。
+ */
+function portraitLabel(row) {
+  if (row.itemType !== 'ItemType_Avatar') return null;
+  const i = portraitOf.of(row.itemId, row.recordTime, row.sort);
+  return i == null ? null : (i === 0 ? '本体' : `影画${i}`);
+}
+
 const details = Object.fromEntries(
   CFG.channels.map((ch) => {
     const c = channelReports.find((x) => x.id === ch.id);
     const all = detailRows(c, false);
     const merged = detailRows(c, true);
+    for (const rows of [all, merged]) {
+      for (const r of rows) r.portrait = portraitLabel(r);
+    }
     return [ch.id, {
       all,
       merged,
@@ -2081,6 +2166,102 @@ if (!Object.keys(pullsMaxCfg).length) {
         '三处来源必须全覆盖——轮 losts / 轮 side / 常驻 golds，且只收 ItemType_Avatar',
       );
     }
+  }
+}
+
+/*
+ * 左栏「本体 / 影画N」标记断言：防「左右两栏对同一个角色说两套话」。
+ *
+ * 三条独立校验：
+ *
+ * ① **左栏每一行的 `portrait` 必须等于右栏同一 itemId 那一条的编号。**
+ *    编号是从 `charSummary().gains/sources` 建表回贴的，正常情况恒等；
+ *    一旦有人把左栏改成「按频道从 1 数」，这条立刻全线失败（实测会报出几十条）。
+ *    这条断言的存在意义就是：左栏编号一旦漂移，**构建就挂**，而不是安静地显示错内容。
+ *
+ * ② **左栏某 itemId 的最高编号 == 右栏该角色的 `portraits`。**
+ *    例：蕾米埃尔 2 影 → 左栏最高必须是「影画2」。这条是①的独立补刀——
+ *    ① 只证明「查表查到了」，②证明「表里装的东西本身对」。
+ *
+ * ③ **音擎 / 邦布行不许有标记。** 术语错误：音擎重复是精炼、邦布没有影画。
+ *
+ * 编号查不到（null）也当失败：那意味着某个角色行在右栏里找不到对应记录，
+ * 渲染出来 tip 第一行就光秃秃一个名字，用户以为漏了。
+ */
+{
+  const byId = new Map((report.charSummary ?? []).map((c) => [c.itemId, c]));
+  const maxSeen = new Map(); // itemId → 左栏见过的最高编号
+  let mismatch = 0;
+  let nonAvatarMarked = 0;
+  const mismatchSamples = [];
+
+  for (const ch of CFG.channels) {
+    const d = details[ch.id];
+    if (!d) continue;
+    for (const mode of ['all', 'merged']) {
+      for (const r of d[mode] ?? []) {
+        const isAvatar = r.itemType === 'ItemType_Avatar';
+        if (!isAvatar) {
+          if (r.portrait != null) nonAvatarMarked += 1;
+          continue;
+        }
+        if (r.portrait == null) {
+          mismatch += 1;
+          if (mismatchSamples.length < 5) mismatchSamples.push(`${ch.label}/${mode} ${r.name} 编号查不到`);
+          continue;
+        }
+        const sum = byId.get(r.itemId);
+        if (!sum) {
+          mismatch += 1;
+          if (mismatchSamples.length < 5) mismatchSamples.push(`${ch.label}/${mode} ${r.name} 右栏没有这个角色`);
+          continue;
+        }
+        // 右栏这一条记录是第几只
+        const list = sum.isUp ? (sum.gains ?? []) : (sum.sources ?? []);
+        const i = list.findIndex((g) => g.recordTime === r.recordTime && (g.sort ?? 0) === (r.sort ?? 0));
+        const expect = i < 0 ? null : (i === 0 ? '本体' : `影画${i}`);
+        if (expect !== r.portrait) {
+          mismatch += 1;
+          if (mismatchSamples.length < 5) {
+            mismatchSamples.push(`${ch.label}/${mode} ${r.name}: 左栏「${r.portrait}」≠ 右栏「${expect ?? '查不到'}」`);
+          }
+          continue;
+        }
+        const n = i;
+        if (!maxSeen.has(r.itemId) || n > maxSeen.get(r.itemId)) maxSeen.set(r.itemId, n);
+      }
+    }
+  }
+
+  if (mismatch > 0) {
+    fatal.push(
+      `左栏「本体/影画N」与右栏对不上 ${mismatch} 行：${mismatchSamples.join('；')}。` +
+      '编号必须从 charSummary 的 gains/sources 回贴，不许在左栏按频道各自从 1 数',
+    );
+  }
+  let portraitMismatch = 0;
+  const portraitSamples = [];
+  for (const [itemId, n] of maxSeen) {
+    const c = byId.get(itemId);
+    if (!c) continue;
+    if (n !== c.portraits) {
+      portraitMismatch += 1;
+      if (portraitSamples.length < 5) {
+        portraitSamples.push(`${c.name}: 左栏最高影画${n}，右栏 portraits=${c.portraits}`);
+      }
+    }
+  }
+  if (portraitMismatch > 0) {
+    fatal.push(
+      `左栏最高影画编号与右栏 portraits 不一致 ${portraitMismatch} 个角色：${portraitSamples.join('；')}。` +
+      '两栏必须用同一份全局编号（跨全部频段、按获得时间排序）',
+    );
+  }
+  if (nonAvatarMarked > 0) {
+    fatal.push(
+      `有 ${nonAvatarMarked} 行音擎 / 邦布被标了「本体/影画」：` +
+      '音擎重复是精炼、邦布没有影画，这些行不许有该标记',
+    );
   }
 }
 
