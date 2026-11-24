@@ -387,24 +387,44 @@
     return round.total > perUp ? 'bad' : 'good';
   }
 
-  function tipLines(round, perUp, cumRate) {
+  /**
+   * 一轮的「这轮多少抽」说明——**主图 tip 与详情行 tip 共用这一份**。
+   *
+   * 用户原话：「距上一个金 这个很奇怪，直接说这轮多少抽不就行了」，追问后：
+   * 「不是，非合并情况下跟外面一样即可」——「外面」就是主图（抽卡总览）那套文案。
+   * 所以这里必须是**同一份实现**，不能在前端另抄一份字符串：
+   * 两处各写一遍必然漂移，而漂移的症状是「主图说大保底、详情说直出」这种没人会立刻发现的错。
+   *
+   * 三种分支的顺序（direct → guar → lost）本身就是口径，复制时不能重排：
+   * `direct` 是「这轮没歪」，`guar` 是「上个池子歪过所以这轮是保底」。
+   *
+   * 返回的是**行数组**，不含名字行 / 版本行 / 累计不歪率行——那三行归调用方决定。
+   */
+  function roundTipCore(round, perUp) {
     const T = CFG.copy.tip;
-    const lines = [];
-    const lead = round.side.length ? `${round.side.map((s) => s.name).join('、')} → ` : '';
-    const losses = round.off > 0 ? '' : '';
-    lines.push(`${lead}${round.name}`);
-    lines.push(`卡池 v${round.version} · ${fmtTime(round.recordTime)}`);
+    const out = [];
     if (round.direct) {
-      lines.push(fill(T.direct, { total: round.total }));
-      if (round.side.length) lines.push(T.multiGoldRound);
-      if (round.total < perUp) lines.push(T.nearMiss);
+      out.push(fill(T.direct, { total: round.total }));
+      if (round.side.length) out.push(T.multiGoldRound);
+      if (round.total < perUp) out.push(T.nearMiss);
     } else if (round.guar) {
-      lines.push(fill(T.guaranteed, { total: round.total, from: round.guarFrom }));
+      out.push(fill(T.guaranteed, { total: round.total, from: round.guarFrom }));
     } else {
       // 名字本身已带「」的（如「11号」）不再套一层，否则会出现「「11号」」
-      lines.push(fill(T.lost, { total: round.total, off: round.off, names: quoteName(round.lossNames || '') }));
+      out.push(fill(T.lost, { total: round.total, off: round.off, names: quoteName(round.lossNames || '') }));
     }
-    lines.push(fill(T.winRate, { rate: cumRate }));
+    return out;
+  }
+
+  function tipLines(round, perUp, cumRate) {
+    const T = CFG.copy.tip;
+    const lead = round.side.length ? `${round.side.map((s) => s.name).join('、')} → ` : '';
+    const lines = [
+      `${lead}${round.name}`,
+      `卡池 v${round.version} · ${fmtTime(round.recordTime)}`,
+      ...roundTipCore(round, perUp),
+      fill(T.winRate, { rate: cumRate }),
+    ];
     return lines.filter(Boolean).join('\n');
   }
 
@@ -1580,6 +1600,32 @@
 
   const detailState = { channel: CFG.channels[0].id, merged: false };
 
+  /**
+   * 详情频道 → 主图那份 rounds 索引（按 `sort` 查）。
+   *
+   * **默认视图要贴主图那套「这轮多少抽」的说法，就得先找到「这一金属于哪一轮」。**
+   * 坐标是 `sort`：详情行的 `sort` 与 round 上那条 UP 金的 `sort` 是同一条原始记录
+   * （build-report 里两处都抄 `g.sort`），实测可查率见 report-rules。
+   *
+   * `R.charts` 只装 `has5050` 的频道（独家 / 音擎 / 独家重映），
+   * 常驻 / 邦布 / 音擎回响没有轮模型、没有这个索引，调用方据此回落到旧写法。
+   *
+   * 为什么不在这里「按名字或时间猜」：同秒双金会撞时间，名字会重复获得，
+   * 只有 `sort` 是唯一坐标。查不到就是查不到，不许猜一个轮出来。
+   */
+  function roundIndexFor(channelId) {
+    const c = R.charts.find((x) => x.channelId === channelId);
+    if (!c) return null;
+    const byUpSort = new Map();
+    const byMemberSort = new Map(); // 歪出 / 十连副金 → 它所属的那一轮
+    for (const r of c.rounds ?? []) {
+      byUpSort.set(r.sort, r);
+      for (const x of r.losts ?? []) byMemberSort.set(x.sort, { round: r, kind: 'lost' });
+      for (const x of r.side ?? []) byMemberSort.set(x.sort, { round: r, kind: 'side' });
+    }
+    return { chart: c, byUpSort, byMemberSort };
+  }
+
   /*
    * 详情左栏的版本过滤状态。
    *
@@ -1677,6 +1723,13 @@
      * 不猜、不崩，但那种状态一眼可见是坏的。
      */
     const divisor = d.divisor?.[merged ? 'merged' : 'all'] || 1;
+
+    /*
+     * 默认视图的 tip 要贴主图那套「这轮多少抽」，所以先把该频道的轮索引取出来。
+     * 合并视图不需要（它自己就是轮），`!has5050` 频道也取不到（没有轮模型），
+     * 两种情况下 `buildRowTip` 会各自走自己的分支。
+     */
+    const roundCtx = !merged && ch.has5050 ? roundIndexFor(ch.id) : null;
 
     const toggle = $('#merge');
     toggle.checked = merged;
@@ -1797,7 +1850,7 @@
 
         line.appendChild(img);
         line.appendChild(track);
-        line.dataset.tip = buildRowTip(row, ch, merged);
+        line.dataset.tip = buildRowTip(row, ch, merged, roundCtx);
         rowsBox.appendChild(line);
       }
 
@@ -1808,7 +1861,7 @@
     }
   }
 
-  function buildRowTip(row, ch, merged) {
+  function buildRowTip(row, ch, merged, roundCtx) {
     /*
      * 第一行是「名字 · 本体/影画N」。
      *
@@ -1820,45 +1873,109 @@
     const head = row.portrait ? `${row.name} · ${row.portrait}` : row.name;
     const lines = [head, `v${row.version} · ${fmtTime(row.recordTime)}`];
     /*
-     * 第三行两种视图两套说法，**默认视图统一成「距上一个金」，不写「本轮」**。
+     * 第三行起：**默认视图改说「这轮多少抽」，与主图（抽卡总览）用同一套文案。**
      *
-     * 用户原话：「距上一金 这个词咋怪怪的，这不就是本轮的抽数么」——那个前提只在
-     * **合并视图**成立。默认视图的 `row.pulls` 是 `g.count`（这一金距**上一个金**的抽数），
-     * 不是本轮 total：本轮 total 还要加上期间歪出的（`off`）和十连副金（`side`）。
-     * 实测 fixtures/baseline 的 36 个 UP 行里有 17 行两者不等——
-     * 简显示 82 抽而本轮是 159 抽、叶瞬光显示 50 抽而本轮是 104 抽。
-     * 所以默认视图**不能**写「本轮」，写了就是贴错标签。
-     * 用户最终拍板的就是这个方向：数字一个不动，只把标签说清楚。
+     * ## 方向反转过一次，这里是现在的结论
      *
-     * 「上一金」→「上一个金」：用户说过这个词「咋怪怪的」，加个「个」读着顺，
-     * 意思完全不变。
+     * 上一版（`c620136`）是反方向：那条理由是「条上已经写了 N 抽，tip 不该再说一遍」，
+     * 于是默认视图只写 `UP` / `歪`。**那条理由在新方案下只对了一半**——
+     * 条上写的是**这一金用的抽数**（`row.pulls` ＝ `g.count`），而用户要看的是**这一轮总共多少抽**，
+     * 是两个不同的量。所以现在两个数同时出现是**故意的**，不是重复：
      *
-     * **本频道首个金单独一句**：它前面根本没有「上一个金」可距，`count` 是
-     * 「从频道开头抽到这一金」（实测 猫又 50/50、格莉丝 17/17，count 恒等于 sort）。
-     * 标在构建期算好（`row.firstGold`），前端不重算——判据是定义（最早那行），
-     * 不是 `count === sort` 这个现象，理由写在 build-report 那段注释里。
+     *   条上 `3抽`  ＝ 菲欧妮这一金距上一个金用的抽数
+     *   tip `总共 24 抽，大保底，21 抽歪「珂蕾妲」` ＝ 这一轮总共花的（含期间歪掉的 21 抽）
      *
-     * `!ch.has5050` 的频道（常驻 / 邦布 / 独家重映 / 音擎回响）没有 50/50，不标 UP/歪，
-     * 但它们同样有「首金」这个概念，所以句子结构共用、只省掉尾巴。
+     * 这两句能同时读懂，靠的是**tip 自带算式**：`24 = 3 + 21`，tip 把 21 写出来了，
+     * 读者不需要自己去凑。实测这层可读性有数据支撑（report-rules 有完整表）：
+     * 绳匠A 36 个 UP 行里 **19 行两数相同**（没有第二个数，天然不打架）、
+     * **16 行差额恰好等于 tip 里那个「歪 N 抽」**（算式闭合）、
+     * 只剩 **1 行**差额来自十连副金（`本发十连多金` 那行点明了来源）。
+     *
+     * ## 口径来源
+     *
+     * 用户原话：「距上一个金 这个很奇怪，直接说这轮多少抽不就行了」，追问后：
+     * 「不是，非合并情况下跟外面一样即可」。「外面」＝主图那套 `copy.tip`。
+     * 所以这里**复用 `roundTipCore()`**，不另抄一份字符串。
+     *
+     * ## 找不到轮的时候
+     *
+     * `!ch.has5050` 频道（常驻 / 邦布 / 独家重映 / 音擎回响）没有轮模型，
+     * **回落到上一版的写法**：普通行第三行删掉、首金写 `本频道首个金`。
+     * 它们没有「这轮多少抽」可写，硬套会编出一个不存在的轮。
      */
-    const pullsLine = row.firstGold
-      ? `本频道首个金，${row.pulls} 抽`
-      : `距上一个金 ${row.pulls} 抽`;
+    const verdict = row.isUp ? 'UP' : '歪';
+    /*
+     * 首金标记单独攒一段：它对**所有**频道都成立（有金就有首金），
+     * 而「这轮多少抽」只对 has5050 频道成立。两者拼起来读作
+     * `本频道首个金 · 总共 24 抽，大保底，21 抽歪「珂蕾妲」`。
+     */
+    const firstGoldMark = row.firstGold ? '本频道首个金' : null;
+
     if (!ch.has5050) {
-      lines.push(pullsLine);
-    } else if (!merged) {
-      lines.push(`${pullsLine} · ${row.isUp ? 'UP' : '歪'}`);
-    } else if (row.off > 0) {
-      // 「歪出」要读 losts（真正歪掉的角色），不是 side（十连副金）
-      const lost = (row.losts || []).map((x) => `${x.name} ${x.count} 抽`).join('、');
-      const extra = (row.side || []).map((x) => `十连副金 ${x.name} ${x.count} 抽`).join('、');
-      lines.push(`本轮 ${row.pulls} 抽 ＝ UP ${row.up} + 歪 ${row.off}`);
-      lines.push(`歪出：${[lost, extra].filter(Boolean).join('、') || '—'}`);
-    } else if ((row.side || []).length) {
-      lines.push(`本轮 ${row.pulls} 抽 · 无歪 · 十连副金 ${(row.side || []).map((x) => x.name).join('、')}`);
-    } else {
-      lines.push(`本轮 ${row.pulls} 抽 · 无歪`);
+      // 没有轮模型：只保留首金这条「条上看不出来」的信息（与 c620136 一致）
+      if (firstGoldMark) lines.push(firstGoldMark);
+      return lines.join('\n');
     }
+
+    if (merged) {
+      /*
+       * 合并视图**一个字都没动**（`c620136` 前后都是这套）：
+       * 这一行本来就代表一整轮，`本轮 N 抽 ＝ UP a + 歪 b` 已经说准了。
+       * 用户没要求动这里，不要顺手改。
+       */
+      if (row.off > 0) {
+        // 「歪出」要读 losts（真正歪掉的角色），不是 side（十连副金）
+        const lost = (row.losts || []).map((x) => `${x.name} ${x.count} 抽`).join('、');
+        const extra = (row.side || []).map((x) => `十连副金 ${x.name} ${x.count} 抽`).join('、');
+        lines.push(`本轮 ${row.pulls} 抽 ＝ UP ${row.up} + 歪 ${row.off}`);
+        lines.push(`歪出：${[lost, extra].filter(Boolean).join('、') || '—'}`);
+      } else if ((row.side || []).length) {
+        lines.push(`本轮 ${row.pulls} 抽 · 无歪 · 十连副金 ${(row.side || []).map((x) => x.name).join('、')}`);
+      } else {
+        lines.push(`本轮 ${row.pulls} 抽 · 无歪`);
+      }
+      return lines.join('\n');
+    }
+
+    // ---------------------------------------------------------- 默认视图
+    const up = roundCtx?.byUpSort.get(row.sort);
+    if (up) {
+      /*
+       * UP 行：照抄主图那套。首金标记并进**第一行**，不自己占一行——
+       * 否则首金行会比其他行凭空高一截（`.tip` 是 `white-space: pre` 的固定行高）。
+       * `roundTipCore()` 可能给 2 行（`本发十连多金` / `似非实欧` 会多一行）。
+       */
+      const core = roundTipCore(up, roundCtx.chart.perUp);
+      if (firstGoldMark) core[0] = `${firstGoldMark} · ${core[0]}`;
+      lines.push(...core);
+      return lines.join('\n');
+    }
+
+    const member = roundCtx?.byMemberSort.get(row.sort);
+    if (member) {
+      /*
+       * 歪行 / 十连副金：**不能**写成「总共 N 抽」——那是**它所属那一轮**的数，
+       * 不是它自己的。它自己的 `row.pulls`（如 21 抽）是「距上一个金」。
+       *
+       * 两句都明确写「这一轮共」，主语是**轮**不是它，所以两个数不会打架：
+       * 条上那个是它自己距上一金的抽数，tip 这句讲的是它落在哪一轮、那轮多贵。
+       *
+       * lost → `被歪出 · 这一轮共 24 抽`
+       * side → `本发十连副金 · 这一轮共 45 抽`
+       */
+      const what = member.kind === 'side' ? '本发十连副金' : '被歪出';
+      const said = `${what} · 这一轮共 ${member.round.total} 抽`;
+      lines.push(firstGoldMark ? `${firstGoldMark} · ${said}` : said);
+      return lines.join('\n');
+    }
+
+    /*
+     * 兜底：`has5050` 频道里既不是 UP、也不在任何一轮的 losts/side 里。
+     * 实测两份数据集**走不到这里**（report-rules 有归属率表），
+     * 但老产物 / 手改数据可能命中，所以不许静默吐半截 tip：
+     * 退回「只写判定」，至少不编造数字。
+     */
+    lines.push(firstGoldMark ? `${firstGoldMark} · ${verdict}` : verdict);
     return lines.join('\n');
   }
 
