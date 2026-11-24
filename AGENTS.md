@@ -21,7 +21,7 @@
 - **README 预览图走 `node skills/zzz-stats/scripts/screenshot.mjs --preview`，不要手截。**
   出的是 `docs/preview.png`：1440 逻辑宽、DPR 2、整页（当前实测 `2880×3588`，高度跟内容走）。
   **详情列表默认只留前 2 个版本组**（`--detail-versions 2`，`--preview` 的默认值），
-  右栏角色汇总不截断——整页原样截会有 16 个版本组、4342px 高，README 上根本看不完。
+  右栏代理人汇总不截断——整页原样截会有 16 个版本组、4342px 高，README 上根本看不完。
   显式 `--detail-versions N` 以传值为准，`0` 或不带 `--preview` 就是不截断。
   隐私按数据集来源分流：产物里 `meta.synthetic === true`（`fixtures/` 里的模拟数据）**不打码**，
   截图前反向断言昵称/UID **不含** `*`；其余一切**强制打码到 2**，断言 `eye=2` 且昵称/UID 含 `*`。

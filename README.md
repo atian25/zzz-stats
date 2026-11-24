@@ -107,7 +107,7 @@ node skills/zzz-stats/scripts/screenshot.mjs --preview --detail-versions 3 --htm
 两档图是**验收**用的（看首屏装不装得下、图例有没有折行）；`--preview` 出的是**对外展示**用的头图，
 1440 逻辑宽、DPR 2、整页。当前实测 `2880×3588`（高度跟内容走，不固定）。
 
-`--preview` 默认把**抽卡详情列表截到前 2 个版本组**（`--detail-versions 2`），右栏角色汇总不截断。
+`--preview` 默认把**抽卡详情列表截到前 2 个版本组**（`--detail-versions 2`），右栏代理人汇总不截断。
 改前是整页原样截——详情列表铺满十几金的十几个版本组，图高 **4342px**、摊在 README 上就是一条细长的东西；
 改后 2 个版本组（v3.3 的 2 行 + v3.1 的 4 行 = 6 行），图高 **3588px**，短了 754px。
 显式传 `--detail-versions N` 以传值为准，传 `0` 或不传（非 `--preview` 模式）就是不截断。

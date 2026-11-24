@@ -344,7 +344,7 @@
     "chartMetaFiltered": "{shown} / {upCount} 个 UP · {pulls} 抽",
     "chartEmpty": "还没有可画的 UP 记录",
     "detailEmpty": "这个频段还没有 S 级记录",
-    "detailCharsTitle": "角色汇总",
+    "detailCharsTitle": "代理人汇总",
     "detailCharsEmpty": "这个账号还没有角色记录",
     "detailCharPulls": "{n} 抽",
     "detailCharLost": "歪 {n} 次",

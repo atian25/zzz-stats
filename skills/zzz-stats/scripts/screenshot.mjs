@@ -185,7 +185,7 @@ const PREVIEW_DPR = 2;
  *   --preview 且没显式传 → 2（README 那张图就是干这个的，不传也该是短的）
  *   其它情况（验收图）    → null，不截断（验收要看完整列表，包括 41 行那个最长的频道）
  *
- * **右栏角色汇总不截断**：用户只说了「抽卡详情那部分」。而且右栏是独立分栏、
+ * **右栏代理人汇总不截断**：用户只说了「抽卡详情那部分」。而且右栏是独立分栏、
  * 跟着全账号走，截断它会让「这个号一共拿到过哪些角色」这个答案缺一块。
  *
  * 传 0 或负数视为「不截断」，和没传一样——避免把 0 解释成「一行都不要」截出个空壳。
@@ -345,7 +345,7 @@ if (PREVIEW) {
 if (DETAIL_VERSIONS != null) {
   console.log(`详情列表：只保留前 ${DETAIL_VERSIONS} 个版本组`
     + `${DETAIL_VERSIONS_RAW == null ? '（--preview 的默认值）' : '（显式 --detail-versions）'}`
-    + '，右栏角色汇总不截断');
+    + '，右栏代理人汇总不截断');
 }
 writeFileSync(pageFile, withState(readFileSync(HTML, 'utf8'), {
   privacy: EFFECTIVE_PRIVACY,

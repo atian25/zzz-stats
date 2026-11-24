@@ -1660,7 +1660,7 @@ function inlineImages(report) {
     }
   }
   /*
-   * 右栏角色汇总的图标：**先试 avatars，再退回 items**。
+   * 右栏代理人汇总的图标：**先试 avatars，再退回 items**。
    *
    * 右栏现在只收 `ItemType_Avatar`，理论上全在 avatars/ 下，直接 encode('avatars')
    * 就够。但仍然走 `iconKeyFor()` 逐个判断文件在不在，理由有两条：
@@ -1713,7 +1713,7 @@ const textSubs = (() => {
     '/*__COPY_CHART_TITLE__*/': CFG.copy.chartTitle ?? '抽卡总览',
     '/*__COPY_DETAIL_TITLE__*/': CFG.copy.detailTitle ?? '抽卡详情',
     // 右栏标题和「抽卡详情」并列在头部，由模板输出（不是 charts.js 画的）
-    '/*__COPY_DETAIL_CHARS_TITLE__*/': CFG.copy.detailCharsTitle ?? '角色汇总',
+    '/*__COPY_DETAIL_CHARS_TITLE__*/': CFG.copy.detailCharsTitle ?? '代理人汇总',
     '/*__COPY_MERGE_TOGGLE__*/': CFG.copy.mergeToggle ?? '真实抽数',
   };
   return map;
