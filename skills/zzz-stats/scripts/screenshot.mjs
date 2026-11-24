@@ -201,8 +201,35 @@ const PREVIEW_DPR = 2;
  * 优先吸附到**版本组的底边**：组的最后一行底边正好是干净的断点，
  * 图末不会出现「组还没结束就断了」的观感。找不到再退回任意行间隙。
  *
- * 拿不到页面几何（选择器变了）时不吸附，按名义值截——宁可图略丑也不要不出图。
+ * ## 量几何前必须确认视口高 == 截图视口高
+ *
+ * 行盒坐标全由排版决定，而排版随**视口高**变化（首屏 `.screen` 是 `calc(100vh - 26px)`）：
+ * 同一份产物，视口 1000 时整页 2271、视口 900 时 2171，行边界整体位移。
+ * 拿另一个视口下的坐标来判断 900 视口该切在哪，会得出完全错误的结论
+ * （实测过：用 1000 的坐标判断，会以为「两栏没有共同安全切点」，其实 900 下 1191 就是干净的）。
+ * 所以量几何前显式断言 `window.innerHeight === TARGETS` 的 height，不等就中止。
+ *
+ * ## 没有安全切口时中止，不静默按名义值截
+ *
+ * 「找不到就不吸附、按名义值截」是真实半行的来源：它会安静地出一张切了半行的图。
+ * 宁可不出图也不要出一张坏图，所以这种情况直接判失败、不写文件。
  */
+
+/**
+ * 辅助函数：`--preview` 下「页面自报视口」与标称尺寸不符时判失败。
+ *
+ * 为什么不能只比宽度：预览图的高度是**固定**的，它由吸附算出来，
+ * 而吸附依赖行盒坐标——那些坐标又依赖视口高。宽度对了、高度不对，
+ * 图会「尺寸看着对、切点却是按另一个排版算的」，比截错更难发现。
+ */
+function viewportMismatch(vp, wantW, wantH, { checkHeight }) {
+  if (!vp) return null;
+  if (vp.w !== wantW) return `视口宽是 ${vp.w}，标称 ${wantW}——CDP 设备模拟没生效`;
+  if (checkHeight && wantH != null && vp.h !== wantH) {
+    return `视口高是 ${vp.h}，标称 ${wantH}——排版会因此位移，几何不可用`;
+  }
+  return null;
+}
 const PREVIEW_HEIGHT_RAW = argOf('preview-height', null);
 const PREVIEW_HEIGHT = (() => {
   if (PREVIEW_HEIGHT_RAW != null && PREVIEW_HEIGHT_RAW !== '') {
@@ -523,13 +550,36 @@ try {
        * 再由 clip 把范围收成「宽 = 页面宽、高 = 吸附后的固定高度」。
        *
        * **高度不是硬切名义值**：页面里量一遍所有行 / 版本组的边界，
-       * 把切点下移到最近的安全间隙（没有任何行横跨它），
-       * 这样图末不会出现「半行字」。量不到几何时退回名义值（宁可图略丑也不要不出图）。
+       * 把切点吸附到最近的安全间隙（没有任何行横跨它），
+       * 这样图末不会出现「半行字」。
+       *
+       * 量几何**必须先确认视口高 == 截图视口高**（排版随视口高变），
+       * 量不到几何 / 选择器量到空 / 上下都没有安全切口时一律中止，不按名义值硬截。
        */
       let clip;
       let appliedHeight = null;
       let snap = null;
       if (PREVIEW) {
+        /*
+         * 量几何之前先确认视口就是截图视口。
+         *
+         * 行盒坐标是排版的产物，而排版随视口高变化（首屏 `.screen` = `calc(100vh - 26px)`）：
+         * 同一份产物视口 1000 时整页 2271、视口 900 时 2171，行边界整体位移。
+         * 拿错视口的坐标去判断切点会得出完全相反的结论——真实踩过：按 1000 的坐标量，
+         * 会以为「两栏没有共同安全切点」，但 900 下 1191 本来就是干净的。
+         *
+         * 所以这里和上面校验宽度一样，把高度也当成硬条件：不等就中止，不拿错坐标去吸附。
+         */
+        const vpNow = (() => {
+          try { return vp?.result?.value ? JSON.parse(vp.result.value) : null; } catch { return null; }
+        })();
+        const mismatch = viewportMismatch(vpNow, width, height, { checkHeight: true });
+        if (mismatch) {
+          failed += 1;
+          console.error(`  ✗ ${mismatch}`);
+          console.error('    几何必须按截图用的视口量，否则切点算在另一套排版上，已中止，未写文件。');
+          continue;
+        }
         const geom = await cdp.send('Runtime.evaluate', {
           expression: `JSON.stringify((() => {
             const q = (s) => [].slice.call(document.querySelectorAll(s));
@@ -556,6 +606,17 @@ try {
         if (!g) {
           failed += 1;
           console.error('  ✗ 拿不到页面几何，无法保证「不切半行」，中止');
+          continue;
+        }
+        /*
+         * 选择器失效（改了类名 / 详情区还没渲染）时几何是空的，
+         * 空数组会让 `safeAt()` 恒真——**任何**高度都「安全」，吸附看起来成功了，
+         * 实际却可能把某一栏切在半行上。这和拿不到几何一样致命，一起中止。
+         */
+        if (!g.left.length || !g.right.length) {
+          failed += 1;
+          console.error(`  ✗ 行盒选择器没量到内容（左 ${g.left.length} 行 / 右 ${g.right.length} 行），中止`);
+          console.error('    空数组会让「不跨行」恒成立，吸附会静默失准；选择器或渲染时机变了。');
           continue;
         }
 
@@ -627,8 +688,18 @@ try {
           appliedHeight = pickH;
           snap = pickH <= ceiling ? '名义高度下方最近空隙' : '名义高度上方最近空隙';
         } else {
-          appliedHeight = Math.floor(ceiling);
-          snap = '名义值（没找到安全切口）';
+          /*
+           * 上下都没找到安全切口：**不许静默按名义值截**。
+           *
+           * 这是真实的半行来源——旧实现会打一行「名义值（没找到安全切口）」照样出图，
+           * 图末就可能是半行字，而且没有任何东西会拦住它（自检只比尺寸，尺寸永远对）。
+           * 宁可不出图也不要出一张坏图：判失败、不写文件。
+           */
+          failed += 1;
+          console.error(`  ✗ 名义高度 ${PREVIEW_HEIGHT} 上下都找不到「两栏都不跨行」的切口，中止`);
+          console.error(`    行盒：左 ${g.left.length} 行 / 右 ${g.right.length} 行，整页 ${g.docH}；`
+            + '详情区没渲染或选择器变了？不按名义值硬截（会切出半行）。');
+          continue;
         }
 
         /* 内容比名义高度还短时按整页收，别在底部截出一片空白 */
@@ -656,6 +727,8 @@ try {
           width,
           height: PREVIEW ? appliedHeight : height,
           innerWidth: vw?.w ?? null,
+          innerHeight: vw?.h ?? null,
+          wantViewportHeight: PREVIEW ? height : null,
           dpr: PREVIEW ? PREVIEW_DPR : 1,
           fixedHeight: PREVIEW,
         });
@@ -663,10 +736,15 @@ try {
         /*
          * 视口与标称不符就是真 bug，直接判失败。
          * 这正是旧实现栽的坑：图截出来了、尺寸也对，但内容是按另一个宽度渲染的。
+         *
+         * 预览图额外校验**高度**：它的固定高度是量几何算出来的，而几何随视口高位移
+         * （实测同一份产物 1000 视口整页 2271、900 视口 2171）。高度不对就说明
+         * 这份几何算在另一套排版上——尺寸依然「看着对」，切点却是错的。
          */
-        if (vw && vw.w !== width) {
+        const mismatch = viewportMismatch(vw, width, height, { checkHeight: PREVIEW });
+        if (mismatch) {
           failed += 1;
-          console.error(`  ✗ 视口是 ${vw.w}，标称 ${width}——CDP 设备模拟没生效`);
+          console.error(`  ✗ ${mismatch}`);
         }
       } else {
         failed += 1;
@@ -703,8 +781,9 @@ if (failed) console.error(`${failed} 档失败`);
  * 后者才是真坑：headless 的 --window-size 有 500px 下限，
  * 早先「390 宽」的图其实是 500 视口裁出来的（见上方 CDP 注释）。
  *
- * 预览图是整页 2x 图，规则不同：宽 = 标称 × DPR、高由内容决定（只要 ≥ 视口就行）。
- * 拿标称高度去比会永远「不符」，那是自检写错了。
+ * 预览图是固定高度 2x 图：宽 = 标称 × DPR、高 = 吸附后的逻辑高 × DPR，
+ * 两个都精确比（吸附算错、DPR 没生效都会露出来）。它同时要求页面视口**高**
+ * 等于标称视口高——吸附用的行盒坐标来自那个视口，视口换了坐标就作废。
  */
 console.log(PREVIEW ? '\n自检：' : '\n自检（需要人眼确认「首屏无滚动、图例单行」）：');
 for (const f of written) {
@@ -720,9 +799,13 @@ for (const f of written) {
    * 精确比对是有意义的：吸附算错了、DPR 没生效，都会在这里露出来。
    */
   const ok = f.fixedHeight ? w === wantW && h === wantH : w === f.width && h === f.height;
-  const vw = f.innerWidth == null ? '' : ` · 页面视口 ${f.innerWidth}`;
+  const vp = f.innerWidth == null
+    ? ''
+    : ` · 页面视口 ${f.innerWidth}${f.innerHeight == null ? '' : `×${f.innerHeight}`}`;
   const vwOk = f.innerWidth == null || f.innerWidth === f.width;
+  const vhOk = f.wantViewportHeight == null || f.innerHeight == null
+    || f.innerHeight === f.wantViewportHeight;
   const label = f.fixedHeight ? `${f.width} @${dpr}x 固定高 ${f.height}` : `${f.width}x${f.height}`;
-  console.log(`  ${label} → 实际 ${w}x${h}${vw}${ok && vwOk ? '' : '  ⚠️ 不符'}`);
+  console.log(`  ${label} → 实际 ${w}x${h}${vp}${ok && vwOk && vhOk ? '' : '  ⚠️ 不符'}`);
 }
 process.exit(failed ? 1 : 0);
