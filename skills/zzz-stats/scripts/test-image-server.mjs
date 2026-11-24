@@ -39,11 +39,11 @@ const fetchStatus = async (url) => {
 console.log('image-server 回归用例\n');
 
 rmSync(ROOT, { recursive: true, force: true });
-mkdirSync(join(ROOT, '玩家A', 'data'), { recursive: true });
-mkdirSync(join(ROOT, '玩家B'), { recursive: true });
-writeFileSync(join(ROOT, '玩家A', 'data', 'meta.json'), '{"uid":"10000001","nickname":"玩家A"}');
-writeFileSync(join(ROOT, '玩家A', 'report.html'), '<html>report</html>');
-writeFileSync(join(ROOT, '玩家B', 'report.html'), '<html>report-b</html>');
+mkdirSync(join(ROOT, '绳匠A', 'data'), { recursive: true });
+mkdirSync(join(ROOT, '绳匠B'), { recursive: true });
+writeFileSync(join(ROOT, '绳匠A', 'data', 'meta.json'), '{"uid":"10000001","nickname":"绳匠A"}');
+writeFileSync(join(ROOT, '绳匠A', 'report.html'), '<html>report</html>');
+writeFileSync(join(ROOT, '绳匠B', 'report.html'), '<html>report-b</html>');
 writeFileSync(join(ROOT, IMAGE_SERVER_FILE), PNG_A);
 
 const { port } = await startImageServer(ROOT, () => {});
@@ -61,9 +61,9 @@ try {
     // 2. 账号数据一律 404（这是最关键的一条）
     console.log('# 2. 账号数据与报表必须 404（白名单生效）');
     for (const p of [
-      '%E7%8E%A9%E5%AE%B6A/data/meta.json',   // 玩家A/data/meta.json
-      '%E7%8E%A9%E5%AE%B6A/report.html',
-      '%E7%8E%A9%E5%AE%B6B/report.html',
+      '%E7%BB%B3%E5%8C%A0A/data/meta.json',   // 绳匠A/data/meta.json
+      '%E7%BB%B3%E5%8C%A0A/report.html',
+      '%E7%BB%B3%E5%8C%A0B/report.html',
       'report.html',
       'meta.json',
       'index.json',
@@ -80,7 +80,7 @@ try {
      * 真正要挡的是「能落到别的文件上」的写法。
      */
     console.log('# 3. 目录穿越与变体文件名');
-    for (const p of ['../etc/passwd', '..%2F..%2Fetc%2Fpasswd', '/login-qr.png/x', 'login-qr.png.bak', 'login-qr.PNG', 'LOGIN-QR.PNG', '%2e%2e/%E7%8E%A9%E5%AE%B6A/data/meta.json']) {
+    for (const p of ['../etc/passwd', '..%2F..%2Fetc%2Fpasswd', '/login-qr.png/x', 'login-qr.png.bak', 'login-qr.PNG', 'LOGIN-QR.PNG', '%2e%2e/%E7%BB%B3%E5%8C%A0A/data/meta.json']) {
       const r = await fetchStatus(`${base}/${p}`);
       check(`${decodeURIComponent(p)} → ${r.status === 404 ? '404' : '非 404 ⚠'}`, r.status === 404, String(r.status));
     }

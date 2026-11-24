@@ -55,12 +55,12 @@ console.log('preview-privacy 回归用例\n');
   console.log('# 1. extractReport：从产物 HTML 里取出内嵌的 report');
   const real = {
     schema: 'zzz-stats/report@1',
-    meta: { nickname: '玩家A', uid: '10000001', synthetic: true },
+    meta: { nickname: '绳匠A', uid: '10000001', synthetic: true },
     metrics: { pulls: 3714 },
   };
   const got = extractReport(buildHtml(real));
   check('取出的是完整对象', got && got.schema === 'zzz-stats/report@1');
-  check('嵌套字段没丢', got?.meta?.nickname === '玩家A' && got?.metrics?.pulls === 3714);
+  check('嵌套字段没丢', got?.meta?.nickname === '绳匠A' && got?.metrics?.pulls === 3714);
   check('synthetic 读成布尔 true', got?.meta?.synthetic === true);
   check('没被 ECharts 里的 </body> 干扰', got !== null && got.meta.uid === '10000001');
 
@@ -123,35 +123,35 @@ console.log('preview-privacy 回归用例\n');
   const raw = previewPrivacyPolicy({ meta: { synthetic: true } });
 
   /* 真实数据：必须遮住 */
-  check('真实 + 已打码 → 过', checkPreviewGuard(mask, { eye: '2', nick: '玩*****', uid: 'UID 10*****01' }).ok);
-  check('真实 + 没点眼睛（eye=0）→ 不过', !checkPreviewGuard(mask, { eye: '0', nick: '玩家A', uid: 'UID 10000001' }).ok);
-  check('真实 + 只到 eye=1 → 不过（昵称还没遮）', !checkPreviewGuard(mask, { eye: '1', nick: '玩家A', uid: 'UID 10*****01' }).ok);
-  check('真实 + 昵称没遮 → 不过', !checkPreviewGuard(mask, { eye: '2', nick: '玩家A', uid: 'UID 10*****01' }).ok);
-  check('真实 + UID 没遮 → 不过', !checkPreviewGuard(mask, { eye: '2', nick: '玩*****', uid: 'UID 10000001' }).ok);
-  check('真实 + eye 读不到 → 不过', !checkPreviewGuard(mask, { eye: null, nick: '玩*****', uid: 'UID 10*****01' }).ok);
+  check('真实 + 已打码 → 过', checkPreviewGuard(mask, { eye: '2', nick: '绳*****', uid: 'UID 10*****01' }).ok);
+  check('真实 + 没点眼睛（eye=0）→ 不过', !checkPreviewGuard(mask, { eye: '0', nick: '绳匠A', uid: 'UID 10000001' }).ok);
+  check('真实 + 只到 eye=1 → 不过（昵称还没遮）', !checkPreviewGuard(mask, { eye: '1', nick: '绳匠A', uid: 'UID 10*****01' }).ok);
+  check('真实 + 昵称没遮 → 不过', !checkPreviewGuard(mask, { eye: '2', nick: '绳匠A', uid: 'UID 10*****01' }).ok);
+  check('真实 + UID 没遮 → 不过', !checkPreviewGuard(mask, { eye: '2', nick: '绳*****', uid: 'UID 10000001' }).ok);
+  check('真实 + eye 读不到 → 不过', !checkPreviewGuard(mask, { eye: null, nick: '绳*****', uid: 'UID 10*****01' }).ok);
   check('真实 + 页面整个没渲染 → 不过', !checkPreviewGuard(mask, { eye: null, nick: '', uid: '' }).ok);
 
   /* 模拟数据：必须没遮，而且不能是空的 */
-  check('模拟 + 保持全显示 → 过', checkPreviewGuard(raw, { eye: '0', nick: '玩家A', uid: 'UID 10000001' }).ok);
-  check('模拟 + 被误点到 2 → 不过', !checkPreviewGuard(raw, { eye: '2', nick: '玩*****', uid: 'UID 10*****01' }).ok);
-  check('模拟 + 被误点到 1 → 不过', !checkPreviewGuard(raw, { eye: '1', nick: '玩家A', uid: 'UID 10*****01' }).ok);
-  check('模拟 + 昵称含 *（别处写死打码）→ 不过', !checkPreviewGuard(raw, { eye: '0', nick: '玩*****', uid: 'UID 10000001' }).ok);
-  check('模拟 + UID 含 * → 不过', !checkPreviewGuard(raw, { eye: '0', nick: '玩家A', uid: 'UID 10*****01' }).ok);
+  check('模拟 + 保持全显示 → 过', checkPreviewGuard(raw, { eye: '0', nick: '绳匠A', uid: 'UID 10000001' }).ok);
+  check('模拟 + 被误点到 2 → 不过', !checkPreviewGuard(raw, { eye: '2', nick: '绳*****', uid: 'UID 10*****01' }).ok);
+  check('模拟 + 被误点到 1 → 不过', !checkPreviewGuard(raw, { eye: '1', nick: '绳匠A', uid: 'UID 10*****01' }).ok);
+  check('模拟 + 昵称含 *（别处写死打码）→ 不过', !checkPreviewGuard(raw, { eye: '0', nick: '绳*****', uid: 'UID 10000001' }).ok);
+  check('模拟 + UID 含 * → 不过', !checkPreviewGuard(raw, { eye: '0', nick: '绳匠A', uid: 'UID 10*****01' }).ok);
 
   /*
    * 这两条是「放松成不管」的解毒剂：模拟数据也必须断言页面渲染出来了。
    * 否则一次 JS 崩溃导致昵称空白，图会静悄悄截成一张缺字的图。
    */
   check('模拟 + 昵称为空 → 不过', !checkPreviewGuard(raw, { eye: '0', nick: '', uid: 'UID 10000001' }).ok);
-  check('模拟 + UID 为空 → 不过', !checkPreviewGuard(raw, { eye: '0', nick: '玩家A', uid: '' }).ok);
+  check('模拟 + UID 为空 → 不过', !checkPreviewGuard(raw, { eye: '0', nick: '绳匠A', uid: '' }).ok);
   check('模拟 + 只有空白 → 不过', !checkPreviewGuard(raw, { eye: '0', nick: '   ', uid: '  ' }).ok);
-  check('policy 为 null（不该发生）→ 不过', !checkPreviewGuard(null, { eye: '0', nick: '玩家A', uid: 'UID 10000001' }).ok);
+  check('policy 为 null（不该发生）→ 不过', !checkPreviewGuard(null, { eye: '0', nick: '绳匠A', uid: 'UID 10000001' }).ok);
   check('seen 为 null → 不过', !checkPreviewGuard(raw, null).ok);
 
   /* 失败时必须有可读的原因，否则日志里只剩「没过」 */
-  const bad = checkPreviewGuard(mask, { eye: '0', nick: '玩家A', uid: 'UID 10000001' });
+  const bad = checkPreviewGuard(mask, { eye: '0', nick: '绳匠A', uid: 'UID 10000001' });
   check('不过时给出原因', !bad.ok && typeof bad.why === 'string' && bad.why.length > 0, bad.why);
-  const bad2 = checkPreviewGuard(raw, { eye: '2', nick: '玩*****', uid: 'UID 10*****01' });
+  const bad2 = checkPreviewGuard(raw, { eye: '2', nick: '绳*****', uid: 'UID 10*****01' });
   check('模拟分支不过时也给出原因', !bad2.ok && /eye=2/.test(bad2.why), bad2.why);
 }
 
@@ -168,7 +168,12 @@ console.log('preview-privacy 回归用例\n');
      * 万一有人把真实数据集整份拷进 fixtures 只加了标记，这里当场拦下。
      */
     check(`${name} 的 uid 是假值（1000000x）`, /^1000000\d$/.test(String(m?.uid ?? '')), `uid=${m?.uid}`);
-    check(`${name} 的昵称是中性占位名`, /^玩家[A-Z]$/.test(String(m?.nickname ?? '')), `nick=${m?.nickname}`);
+    /*
+     * 占位名是「绳匠A / 绳匠B」（用户要求换成绳匠，改前用的是另一套占位名）。
+     * 正则跟着改名走——只改 fixtures 不改这里，这条断言会假通过（谁都不是占位名），
+     * 等于把「有人拷了真实数据集进来」这个风险静悄悄地放过。
+     */
+    check(`${name} 的昵称是中性占位名`, /^绳匠[A-Z]$/.test(String(m?.nickname ?? '')), `nick=${m?.nickname}`);
   }
 }
 
