@@ -13,13 +13,12 @@
  *   node skills/zzz-stats/scripts/screenshot.mjs --width 1440 --height 900
  *   node skills/zzz-stats/scripts/screenshot.mjs --out-dir /tmp/shots --html output/<账号名>/report.html
  *   node skills/zzz-stats/scripts/screenshot.mjs --privacy 2           # 截图前先点全打码（对外用）
- *   node skills/zzz-stats/scripts/screenshot.mjs --preview             # README 预览图 → docs/preview.png（整页 2x）
+ *   node skills/zzz-stats/scripts/screenshot.mjs --preview             # README 预览图 → docs/preview.png（固定高度 2x）
  *                                                                      # 真实数据强制打码；meta.synthetic === true 的数据集不打码
  *   node skills/zzz-stats/scripts/screenshot.mjs --chart 音擎 --filter 2
  *   node skills/zzz-stats/scripts/screenshot.mjs --detail 独家重映     # 切底部详情面板的频段
- *   node skills/zzz-stats/scripts/screenshot.mjs --preview --detail-versions 2
- *                                                                      # 详情列表只留 2 个版本组
- *                                                                      # （--preview 不传时默认就是 2）
+ *   node skills/zzz-stats/scripts/screenshot.mjs --preview --preview-height 1200
+ *                                                                      # 覆盖预览图的固定高度（不传就是 1200）
  *
  * 只依赖本机 Chrome，不需要 Playwright，不联网。
  * 浏览器查找复用 drivers.mjs 的 findChrome()，与采集期同一份候选列表。
@@ -54,9 +53,9 @@ if (wantsHelp()) {
       { flag: '--chart <名>', desc: '切到指定主图频段 tab（如 音擎）' },
       { flag: '--filter <档>', desc: '只留指定版本档位（如 2；多个用 1,2）' },
       { flag: '--detail <名>', desc: '切底部详情面板的频段 tab（如 独家重映）' },
-      { flag: '--detail-versions <n>', desc: '详情列表只保留前 N 个版本组（其余隐藏）；--preview 默认 2' },
+      { flag: '--preview-height <n>', desc: '预览图的固定高度（逻辑 px，默认 1200）；自动下移到不切半行的位置' },
       { flag: '--collapse', desc: '收起主图，让详情面板进首屏' },
-      { flag: '--preview', desc: '出 README 头图：整页 2x；真实数据强制打码到 2 并断言，meta.synthetic 为 true 的数据集不打码' },
+      { flag: '--preview', desc: '出 README 头图：固定高度 2x；真实数据强制打码到 2 并断言，meta.synthetic 为 true 的数据集不打码' },
       { flag: '--out-file <file>', desc: '配合 --preview 指定输出，默认 docs/preview.png' },
       { flag: '--cwd <dir>', desc: '用户工作目录，默认当前目录' },
       { flag: '--help, -h', desc: '打印本帮助后退出，不启动浏览器' },
@@ -156,10 +155,11 @@ if (!chrome) {
 }
 
 /*
- * --preview         产出 README 用的整页预览图（默认 docs/preview.png）
+ * --preview         产出 README 用的预览图（默认 docs/preview.png）
  * --out-file 路径   配合 --preview 指定输出文件
+ * --preview-height  预览图的固定高度（逻辑 px），默认 1200
  *
- * 为什么单独一个模式：README 那张图要的是「整页长图 + 2x 高清」，
+ * 为什么单独一个模式：README 那张图要的是「高清 + 尺寸可控」，
  * 跟 §9.3 的两档视口验收图（1x、只看首屏装不装得下）是两个用途。
  * 以前这张图是手工截的、随仓库带一份，于是代码一路改、图一直停在初始化那版——
  * 折线还是黄的、图例还带「黄线＝累计不歪率」、右轴还是 60%。让它跟得上，只能由脚本出。
@@ -168,40 +168,52 @@ const PREVIEW = args.includes('--preview');
 const OUT_FILE = abs(argOf('out-file', 'docs/preview.png'));
 /*
  * 宽度 1440 与验收图一致（看到的排版就是用户看到的），DPR 2 让文字在高分屏不发虚。
- * 高度由整页截图自己算，这里的 900 只保证首帧有视口。
  */
 const PREVIEW_WIDTH = 1440;
 const PREVIEW_DPR = 2;
 
 /*
- * --detail-versions <n>   详情列表只保留**前 N 个 `.detail-group`**，其余隐藏。
+ * --preview-height <n>   预览图的**固定高度**（逻辑 px），默认 1200。
  *
- * 用户原话：「README 的截图，抽卡详情那部分不要截太长，2 个版本够了」。
- * 整页图里详情列表会列出十几金的十几个版本组、把图拉到 4300+ 像素高，
- * README 上摊开就是一条细长的东西，读者根本看不完。截前两个版本组刚好能说明
- * 「这里逐金列出来、按版本分组，墙角有欧非标记」。
+ * ## 为什么是「固定高度截图」而不是「过滤掉后面的内容」
  *
- * **默认值分两种情况**：
- *   --preview 且没显式传 → 2（README 那张图就是干这个的，不传也该是短的）
- *   其它情况（验收图）    → null，不截断（验收要看完整列表，包括 41 行那个最长的频道）
+ * 这里踩过一次方向错误。用户原话两条，说的是同一件事：
+ *   1)「README 的截图，抽卡详情那部分不要截太长，2 个版本够了」
+ *   2)「抽卡详情和代理人汇总都是按固定高度截图即可，不是让你过滤抽卡详情」
  *
- * **右栏代理人汇总不截断**：用户只说了「抽卡详情那部分」。而且右栏是独立分栏、
- * 跟着全账号走，截断它会让「这个号一共拿到过哪些角色」这个答案缺一块。
+ * 第一版把要求理解成「隐藏后面的版本组」（`--detail-versions`），那是**改内容**：
+ * 图里只剩 2 个组，右栏还完整留着 25 行，两栏被强行修成不同深度。
+ * 用户要的是**内容全在、只是截到固定高度就停**——超出部分天然不在图里，
+ * 两栏受同一高度约束，谁超出谁被裁。所以那套过滤逻辑整个删掉了，不留两套机制。
  *
- * 传 0 或负数视为「不截断」，和没传一样——避免把 0 解释成「一行都不要」截出个空壳。
+ * ## 页面本身不定高
+ *
+ * 用户早前明确说过「不要定高吧，抽卡详情多的话就直接在页面下面，方便滚动截图」，
+ * 所以**只改截图范围，不动 `.detail-body` / `.detail-list` 的 CSS**。
+ *
+ * ## 自动下移到「不切半行」的位置
+ *
+ * 硬切在某个像素上很可能把一行切成两半（截图里出现只有上半截的字）。
+ * 所以实际高度会在名义高度之上找最近的一个**安全切口**：
+ * 从名义值开始往下逐像素试，直到没有任何 `.detail-row` / `.detail-char` /
+ * `.detail-group` 横跨这一条线（即切点落在行与行、组与组的间隙里）。
+ *
+ * 优先吸附到**版本组的底边**：组的最后一行底边正好是干净的断点，
+ * 图末不会出现「组还没结束就断了」的观感。找不到再退回任意行间隙。
+ *
+ * 拿不到页面几何（选择器变了）时不吸附，按名义值截——宁可图略丑也不要不出图。
  */
-const DETAIL_VERSIONS_RAW = argOf('detail-versions', null);
-const DETAIL_VERSIONS = (() => {
-  if (DETAIL_VERSIONS_RAW != null && DETAIL_VERSIONS_RAW !== '') {
-    const n = Number(DETAIL_VERSIONS_RAW);
-    if (!Number.isFinite(n)) {
-      console.error(`--detail-versions 要给一个数字，收到的是 ${JSON.stringify(DETAIL_VERSIONS_RAW)}`);
+const PREVIEW_HEIGHT_RAW = argOf('preview-height', null);
+const PREVIEW_HEIGHT = (() => {
+  if (PREVIEW_HEIGHT_RAW != null && PREVIEW_HEIGHT_RAW !== '') {
+    const n = Number(PREVIEW_HEIGHT_RAW);
+    if (!Number.isFinite(n) || n <= 0) {
+      console.error(`--preview-height 要给一个正数，收到的是 ${JSON.stringify(PREVIEW_HEIGHT_RAW)}`);
       process.exit(1);
     }
-    const k = Math.floor(n);
-    return k > 0 ? k : null;
+    return Math.floor(n);
   }
-  return PREVIEW ? 2 : null;
+  return 1200;
 })();
 
 /**
@@ -231,13 +243,12 @@ mkdirSync(OUT_DIR, { recursive: true });
  * 否则立即 init，所以这里统一等 DOMContentLoaded + setTimeout(0)。
  * 点太早会拿到未初始化的空图——这不是猜测，是踩过的。
  */
-function withState(srcHtml, { privacy, chartLabel, filters, detailLabel, collapse, detailVersions }) {
+function withState(srcHtml, { privacy, chartLabel, filters, detailLabel, collapse }) {
   const n = privacy == null ? 0 : Math.max(0, Math.min(2, Number(privacy)));
   const wantsChart = chartLabel != null && chartLabel !== '';
   const wantsFilter = filters != null && filters !== '';
   const wantsDetail = detailLabel != null && detailLabel !== '';
-  const wantsVers = Number.isInteger(detailVersions) && detailVersions > 0;
-  if (!n && !wantsChart && !wantsFilter && !wantsDetail && !collapse && !wantsVers) return srcHtml;
+  if (!n && !wantsChart && !wantsFilter && !wantsDetail && !collapse) return srcHtml;
 
   const inject = `<script>
 (function () {
@@ -266,33 +277,6 @@ function withState(srcHtml, { privacy, chartLabel, filters, detailLabel, collaps
     if (dtab) dtab.click();` : ''}
     ${collapse ? `var col = document.getElementById('collapse-chart');
     if (col) col.click();` : ''}
-    ${wantsVers ? `/*
-     * 详情列表只留前 N 个版本组（--detail-versions）。
-     *
-     * 按**版本组**而不是按行截：组是 .detail-group，它自带左侧竖括号和版本号，
-     * 半组会让图里留下一个没有版本号的光秃行段。用户说的是「2 个版本够了」，
-     * 单位就是版本组。
-     *
-     * 用 hidden 属性 + 内联 display 兜底，不改产物文件本身：
-     * 注入只发生在这个临时页里，用户手上的 report.html 一行不动。
-     *
-     * 必须在切 tab 之后执行——切 tab 会重画整个列表，提前隐藏会被 innerHTML='' 冲掉。
-     */` + `
-    (function () {
-      var keep = ${detailVersions};
-      var groups = [].slice.call(document.querySelectorAll('#detail-list .detail-group'));
-      /*
-       * **必须同时写 style.display，不能只设 hidden。**
-       * .detail-group { display: flex } 的优先级高于浏览器对 [hidden] 的默认
-       * display: none，只设 hidden 的话元素照样显示——图一点都不会变短，
-       * 而且没有任何报错，看起来像「参数没生效」。
-       */
-      groups.forEach(function (g, i) {
-        if (i < keep) return;
-        g.hidden = true;
-        g.style.display = 'none';
-      });
-    })();` : ''}
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { setTimeout(act, 0); });
   else setTimeout(act, 0);
@@ -342,10 +326,10 @@ if (PREVIEW) {
   console.log(`预览图隐私：${previewPolicy.reason} → 眼睛点到 ${EFFECTIVE_PRIVACY}`
     + `，断言「${previewPolicy.expectMasked ? '已打码（必须含 *）' : '未打码（不许含 *）'}」`);
 }
-if (DETAIL_VERSIONS != null) {
-  console.log(`详情列表：只保留前 ${DETAIL_VERSIONS} 个版本组`
-    + `${DETAIL_VERSIONS_RAW == null ? '（--preview 的默认值）' : '（显式 --detail-versions）'}`
-    + '，右栏代理人汇总不截断');
+if (PREVIEW) {
+  console.log(`预览图高度：名义 ${PREVIEW_HEIGHT} 逻辑 px`
+    + `${PREVIEW_HEIGHT_RAW == null ? '（默认）' : '（显式 --preview-height）'}`
+    + '，两栏共用同一高度；实际值会下移到不切半行的位置');
 }
 writeFileSync(pageFile, withState(readFileSync(HTML, 'utf8'), {
   privacy: EFFECTIVE_PRIVACY,
@@ -353,7 +337,6 @@ writeFileSync(pageFile, withState(readFileSync(HTML, 'utf8'), {
   filters: FILTER,
   detailLabel: DETAIL,
   collapse: COLLAPSE,
-  detailVersions: DETAIL_VERSIONS,
 }), 'utf8');
 
 /*
@@ -534,24 +517,118 @@ try {
       }
 
       /*
-       * 预览图要整页：README 展示的是「首屏主图 + 第二屏详情」的完整效果。
+       * 预览图按**固定高度**截，不再整页截。
+       *
        * captureBeyondViewport 让 Page.captureScreenshot 越过视口去截，
-       * 再用 clip 把高度收到 scrollHeight —— 不收的话会因为滚动容差多出空白带。
+       * 再由 clip 把范围收成「宽 = 页面宽、高 = 吸附后的固定高度」。
+       *
+       * **高度不是硬切名义值**：页面里量一遍所有行 / 版本组的边界，
+       * 把切点下移到最近的安全间隙（没有任何行横跨它），
+       * 这样图末不会出现「半行字」。量不到几何时退回名义值（宁可图略丑也不要不出图）。
        */
       let clip;
+      let appliedHeight = null;
+      let snap = null;
       if (PREVIEW) {
-        const dim = await cdp.send('Runtime.evaluate', {
-          expression: 'JSON.stringify({ w: document.documentElement.clientWidth, h: document.documentElement.scrollHeight })',
+        const geom = await cdp.send('Runtime.evaluate', {
+          expression: `JSON.stringify((() => {
+            const q = (s) => [].slice.call(document.querySelectorAll(s));
+            const bottom = (el) => { const r = el.getBoundingClientRect(); return r.bottom + window.scrollY; };
+            const rng = (el) => {
+              const r = el.getBoundingClientRect();
+              return { top: r.top + window.scrollY, bottom: r.bottom + window.scrollY };
+            };
+            return {
+              w: document.documentElement.clientWidth,
+              docH: document.documentElement.scrollHeight,
+              /* 两栏的行区间**分开收集**（top/bottom 都要）：行高不同（左 26 / 右 34），
+                 底边交集实测为空，所以安全切口必须落在「两栏都不横跨」的位置 */
+              left: q('#detail-list .detail-row').map(rng),
+              right: q('#detail-chars-fill .detail-char').map(rng),
+              /* 组底边优先：切在组与组之间，图末不会像「组没结束」 */
+              groupBottoms: q('#detail-list .detail-group').map(bottom),
+            };
+          })())`,
           returnByValue: true,
         }, sessionId).catch(() => null);
-        let d = null;
-        try { d = dim?.result?.value ? JSON.parse(dim.result.value) : null; } catch { /* ignore */ }
-        if (!d) {
+        let g = null;
+        try { g = geom?.result?.value ? JSON.parse(geom.result.value) : null; } catch { /* ignore */ }
+        if (!g) {
           failed += 1;
-          console.error('  ✗ 拿不到页面高度，整页截图会截不完整，中止');
+          console.error('  ✗ 拿不到页面几何，无法保证「不切半行」，中止');
           continue;
         }
-        clip = { x: 0, y: 0, width: d.w, height: d.h, scale: 1 };
+
+        /*
+         * 找安全切口：**两栏都必须完整**。
+         *
+         * 左栏行高 26、右栏行高 34，两栏行底边的**交集实测为空**——不存在天然对齐两栏的高度。
+         * 所以不能「取两栏各自最近底边的较小值」（那个值可能正好横跨另一栏的某一行：
+         * 实测 1189 是左栏组底边，但它切在右栏 1157~1191 那行的中间）。
+         *
+         * 正确做法是**逐行校验**：从名义高度往下试，第一个满足
+         * 「没有任何左栏行 / 右栏行横跨它」的像素就是答案。
+         *
+         * 优先在这个答案之上找**版本组底边**（组结束处最自然，图末不像「组没结束」）；
+         * 只有在它同样满足两栏不跨行时才采用。
+         */
+        const crosses = (H, list) => list.some((r) => H > r.top + 0.01 && H < r.bottom - 0.01);
+        const safeAt = (H) => !crosses(H, g.left) && !crosses(H, g.right);
+        const ceiling = Math.min(PREVIEW_HEIGHT, g.docH);
+
+        /*
+         * 找**离名义高度最近**的安全切口，不是只会往下掉。
+         *
+         * 上一步只向下找，结果 `--preview-height 1400` 会一路掉到 1191
+         * （因为 1191~1400 之间确实没有安全值），离名义值差了 209px——
+         * 用户显式传 1400 却得到 1191 会以为参数没生效。
+         * 实测这份数据离 1400 最近的安全值是 1429（差 29px），明显更符合预期。
+         *
+         * 所以先向下、再向上各找一遍，取距离更近的；距离相同优先取小的
+         * （宁可少显示一点，也别让图比用户要的高）。
+         * 向上不超过 `ceiling`——名义高度就是上限，不擅自截得比用户要的多。
+         */
+        let down = Math.floor(ceiling);
+        while (down > 0 && !safeAt(down)) down -= 1;
+        let up = Math.ceil(ceiling);
+        while (up <= g.docH && !safeAt(up)) up += 1;
+
+        const downOk = down > 0;
+        const upOk = up <= g.docH;
+        let pickH;
+        if (downOk && upOk) pickH = (ceiling - down) <= (up - ceiling) ? down : up;
+        else if (downOk) pickH = down;
+        else if (upOk) pickH = up;
+        else pickH = Math.floor(ceiling);
+
+        /*
+         * 版本组底边优先：在上一步的安全值之上找最近的组底边
+         * （组结束处最自然，图末不会像「组没结束」），但它同样必须两栏不跨行、
+         * 且不能超过 ceiling。
+         */
+        let bestGroup = null;
+        for (const gb of g.groupBottoms) {
+          const v = Math.round(gb);
+          if (v > ceiling) continue;
+          if (!safeAt(v)) continue;
+          if (bestGroup == null || Math.abs(v - ceiling) < Math.abs(bestGroup - ceiling)) bestGroup = v;
+        }
+
+        if (bestGroup != null && Math.abs(bestGroup - ceiling) <= Math.abs(pickH - ceiling)) {
+          appliedHeight = bestGroup;
+          snap = '版本组底边';
+        } else if (downOk || upOk) {
+          appliedHeight = pickH;
+          snap = pickH <= ceiling ? '名义高度下方最近空隙' : '名义高度上方最近空隙';
+        } else {
+          appliedHeight = Math.floor(ceiling);
+          snap = '名义值（没找到安全切口）';
+        }
+
+        /* 内容比名义高度还短时按整页收，别在底部截出一片空白 */
+        appliedHeight = Math.min(appliedHeight, g.docH);
+        clip = { x: 0, y: 0, width: g.w, height: appliedHeight, scale: 1 };
+        console.log(`  · 固定高度：名义 ${PREVIEW_HEIGHT} → 实际 ${appliedHeight}（吸附到${snap}，页面整页 ${g.docH}）`);
       }
 
       const shot = await cdp.send('Page.captureScreenshot',
@@ -564,12 +641,17 @@ try {
 
       if (existsSync(out)) {
         /*
-         * 预览图记 dpr=2、高度记 null：整页图的高度由页面内容决定，
-         * 拿标称 900 去比对必然「不符」，那是自检写错了，不是图错了。
+         * 预览图记一个**固定高度**（吸附后的实际值），自检就能像验收图那样精确比对
+         * 「图高 == 逻辑高 × DPR」。改前整页截图时高度是页面内容决定的，
+         * 只能退化成 `h >= 名义高` 的弱检查。
          */
         written.push({
-          path: out, width, height, innerWidth: vw?.w ?? null,
-          dpr: PREVIEW ? PREVIEW_DPR : 1, fullPage: PREVIEW,
+          path: out,
+          width,
+          height: PREVIEW ? appliedHeight : height,
+          innerWidth: vw?.w ?? null,
+          dpr: PREVIEW ? PREVIEW_DPR : 1,
+          fixedHeight: PREVIEW,
         });
         console.log(`✓ ${name}${vw ? `（页面视口 ${vw.w}×${vw.h}）` : ''}`);
         /*
@@ -626,10 +708,15 @@ for (const f of written) {
   const h = buf.readUInt32BE(20);
   const dpr = f.dpr ?? 1;
   const wantW = f.width * dpr;
-  const ok = f.fullPage ? w === wantW && h >= f.height : w === f.width && h === f.height;
+  const wantH = f.height * dpr;
+  /*
+   * 预览图现在是**固定高度**，所以和验收图一样精确比对（宽高都要对上）。
+   * 精确比对是有意义的：吸附算错了、DPR 没生效，都会在这里露出来。
+   */
+  const ok = f.fixedHeight ? w === wantW && h === wantH : w === f.width && h === f.height;
   const vw = f.innerWidth == null ? '' : ` · 页面视口 ${f.innerWidth}`;
   const vwOk = f.innerWidth == null || f.innerWidth === f.width;
-  const label = f.fullPage ? `${f.width} @${dpr}x 整页` : `${f.width}x${f.height}`;
+  const label = f.fixedHeight ? `${f.width} @${dpr}x 固定高 ${f.height}` : `${f.width}x${f.height}`;
   console.log(`  ${label} → 实际 ${w}x${h}${vw}${ok && vwOk ? '' : '  ⚠️ 不符'}`);
 }
 process.exit(failed ? 1 : 0);

@@ -98,20 +98,32 @@ node skills/zzz-stats/scripts/screenshot.mjs --privacy 2                       #
 node skills/zzz-stats/scripts/screenshot.mjs --chart 音擎                       # 截频段 tab 切过去之后
 node skills/zzz-stats/scripts/screenshot.mjs --filter 2                        # 截版本过滤生效之后
 node skills/zzz-stats/scripts/screenshot.mjs --html p.html --out-dir /tmp/x     # 指定产物与输出位置
-node skills/zzz-stats/scripts/screenshot.mjs --preview --html output/<账号名>/report.html   # → docs/preview.png（顶部头图，整页 2x）
-node skills/zzz-stats/scripts/screenshot.mjs --preview --detail-versions 3 --html output/<账号名>/report.html   # 详情列表留 3 个版本组
+node skills/zzz-stats/scripts/screenshot.mjs --preview --html output/<账号名>/report.html   # → docs/preview.png（固定高度 2x）
+node skills/zzz-stats/scripts/screenshot.mjs --preview --preview-height 1400 --html output/<账号名>/report.html   # 覆盖固定高度
 ```
 
 `--html` 不传时会在 `output/*/report.html` 里找唯一的那个；有多份会报错退出，不猜（截错账号的图比失败更糟）。
 
 两档图是**验收**用的（看首屏装不装得下、图例有没有折行）；`--preview` 出的是**对外展示**用的头图，
-1440 逻辑宽、DPR 2、整页。当前实测 `2880×3588`（高度跟内容走，不固定）。
+1440 逻辑宽、DPR 2、**固定高度**。当前实测 `2880×2382`（逻辑高 1191）。
 
-`--preview` 默认把**抽卡详情列表截到前 2 个版本组**（`--detail-versions 2`），右栏代理人汇总不截断。
-改前是整页原样截——详情列表铺满十几金的十几个版本组，图高 **4342px**、摊在 README 上就是一条细长的东西；
-改后 2 个版本组（v3.3 的 2 行 + v3.1 的 4 行 = 6 行），图高 **3588px**，短了 754px。
-显式传 `--detail-versions N` 以传值为准，传 `0` 或不传（非 `--preview` 模式）就是不截断。
-**右栏不截断**是有意的：它是全账号跨频段的汇总，截了「这个号一共拿到过哪些角色」就缺一块。
+`--preview` 按**固定高度**截，不再整页截：内容全在，超出部分天然不在图里，两栏受同一高度约束。
+名义高度默认 1200（`--preview-height <n>` 可覆盖），实际会**自动吸附**到最近的「不切半行」位置（上下都试，取离名义值最近的）。
+
+改前两次都不对，一并记在这里：
+
+| 版本 | 做法 | 问题 |
+|---|---|---|
+| 最早 | 整页原样截 | 详情列表铺满 16 个版本组，图高 **4342px**，README 上一条细长条 |
+| 上一版 | `--detail-versions 2` **隐藏后 14 个版本组** | **那是改内容**：图里只剩 2 个组、右栏却完整 25 行，两栏被修成不同深度。用户原话纠正：「抽卡详情和代理人汇总都是按固定高度截图即可，不是让你过滤抽卡详情」 |
+| 现在 | **固定高度截图** | 内容一个不少，截到高度就停。名义 1200 → 实测吸附到 **1191**，图 `2880×2382` |
+
+**页面本身没改成定高滚动**（用户早前明确要求「不要定高吧，抽卡详情多的话就直接在页面下面」），
+这是**截图范围**的固定高度，`.detail-body` / `.detail-list` 的 CSS 一行没动。
+
+吸附的原因：左栏行高 26、右栏行高 34，两栏行底边**交集实测为空**，任何像素高度都会切到某一栏的某一行。
+所以脚本从名义高度往下逐像素校验「没有任何左栏行 / 右栏行横跨它」，取第一个安全值。
+实测 1191 下左栏 9 行（末行底 1189，余 2px）、右栏 8 行（末行底 1191，余 0）、4 个完整版本组（v3.3 / v3.1 / v3.0 / v2.7）。
 
 这张图以前是手工截的，代码改了它不会跟着变，README 上就挂着一张和实际产物对不上的截图，
 现在统一由脚本出，别手截。
