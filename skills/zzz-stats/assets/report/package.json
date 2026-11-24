@@ -1,0 +1,6 @@
+{
+  "//": "本文件只为一件事存在：让 Node 把本目录下的 .js 当作 ESM 解析。",
+  "//why": "core.js 要同时被 Node（import）和浏览器（<script type=module>）加载同一份源码。浏览器天然按 ESM 处理，Node 则要看最近的 package.json 的 type —— 没有它，Node 会按 CJS 解析，core.js 里的 export 直接语法错误。仓库根故意不放 package.json（这份 skill 不依赖 npm 安装），所以就近放一个。",
+  "//scope": "只影响 skills/zzz-stats/assets/report/ 这一层；scripts/ 那边全是 .mjs，不受影响。",
+  "type": "module"
+}

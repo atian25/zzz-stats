@@ -129,10 +129,15 @@
 ## 改动的分工
 
 - 改口径 / 阈值 / 称号 / 文案 / 配色 → 只改 `skills/zzz-stats/config/report.json`。
-- 改算法 → `skills/zzz-stats/scripts/build-report.mjs`，并同步 `references/report-rules.md`。
+- 改算法（口径）→ `skills/zzz-stats/assets/report/core.js`，并同步 `references/report-rules.md`。
+  **纯 JS，Node 与浏览器共用同一份**，不许出现 `node:` / `process` / `fs` / `require` / `import.meta`
+  （`test-core-pure.mjs` 会 grep）。两个外壳（`scripts/build-report.mjs`、`assets/report/app.js`）里
+  **不许写口径** —— 写进去就只在一端生效。
 - 改视觉 → `skills/zzz-stats/assets/report/charts.{js,css}` / `assets/report/template.html`，
   并同步 `references/report-rules.md` §2–§6 **和 `SKILL.md` 的「产物里有哪些交互」表**
   （那是宿主 agent 读的唯一入口，漏了等于用户看不到新行为）。
+- 改了 `config/report.json` 或 `assets/report/icons/` → 重跑
+  `node skills/zzz-stats/scripts/build-icons-manifest.mjs`，否则浏览器外壳读到的是旧配色 / 旧图标清单。
 - **「改配置就生效」是硬约定**：不要在 CSS / JS 里另写一份硬编码色值。
 - 任何改动后跑 §8 回归基线与 §9.3 验收，确认控制台数字与截图。
 
@@ -227,8 +232,21 @@ ReferenceError，语法合法），而我当时手写的仿真 harness 又只模
 node skills/zzz-stats/scripts/test-verify-cleanup.mjs   # 27 项，不需要浏览器、不联网
 node skills/zzz-stats/scripts/test-image-server.mjs      # 25 项，只起一个 127.0.0.1 临时端口
 node skills/zzz-stats/scripts/test-qr-wait.mjs           # 75 项，刷新通道 + 真实等待循环
-node skills/zzz-stats/scripts/test-preview-privacy.mjs   # 53 项，--preview 的隐私分流（见下）
+node skills/zzz-stats/scripts/test-preview-privacy.mjs   # 53 项（output/ 在场时 55 项），--preview 的隐私分流（见下）
+node skills/zzz-stats/scripts/test-core-pure.mjs         # 43 项，core.js 纯度 + 静态副本一致性 + 摊平逻辑
 ```
+
+**浏览器外壳（`assets/report/app.html`）另有一套，需要 chrome 和一个静态服务**：
+
+```bash
+cd skills/zzz-stats && python3 -m http.server 8901 --bind 127.0.0.1 &
+node skills/zzz-stats/scripts/test-app-browser.mjs        # 21 项：等价性 + 渲染 + console
+```
+
+它会断言「浏览器算出的 report 与 Node 产物逐字段相同（只差 icons 值与 generatedAt）」。
+**这套用例抓到过一个结构计数抓不到的真 bug**：`data-ready` 置位晚于 charts.js，
+ECharts 量到 `display:none` 的容器、画出 0×0 空画布——`#chart svg` 计数仍是 1，图却全白。
+所以它同时断言容器与 svg 的**像素尺寸**。改 `app.js` 时别把那行 `dataset.ready` 挪到 loadScript 之后。
 
 **`--preview` 的隐私分流也是安全相关的**：`synthetic: true` 的数据集不打码、其余强制打码。
 判错一次就是把真名截进公开仓库，所以判定逻辑单独在 `preview-privacy.mjs` 里，用例

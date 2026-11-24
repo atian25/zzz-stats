@@ -591,7 +591,7 @@ output/<账号名>/data/hist_pool_stat_<t>.json
 sum(cur_records[].count) + type_stats[].next_s_cur_times == type_stats[].total_count
 ```
 
-逐频道比对。左边是「已出金抽数 + 当前垫抽」，右边是官方总抽数——**它校验的是抽数，金数对得上但记录缺抽也会在这里露出来**。`scripts/build-report.mjs` 会自动跑这条并报警。
+逐频道比对。左边是「已出金抽数 + 当前垫抽」，右边是官方总抽数——**它校验的是抽数，金数对得上但记录缺抽也会在这里露出来**。`scripts/build-report.mjs` 会自动跑这条并报警（校验仍在 Node 外壳，不在 core —— 理由见 §6 的三层分工）。
 
 另外两条容易踩的：
 
@@ -979,7 +979,7 @@ UP 抽数是该角色**各轮 total 累加**（含期间歪出的）、非 UP �
 **合并模式（勾「真实抽数」）不影响右栏**：那个开关只改变左栏怎么分行（把歪掉的抽数并进下一个 UP），
 右栏是全局聚合，跟它无关。
 
-**右栏的源码在 `scripts/build-report.mjs` 的 `charSummary()`**，结果挂在报告的顶层 `report.charSummary`
+**右栏的源码在 `assets/report/core.js` 的 `charSummary()`**（原 `build-report.mjs` 里，拆分后搬进 core），结果挂在报告的顶层 `report.charSummary`
 （**不在 `details[频道]` 里**——放进去会诱使人以为它该跟着 tab 变），渲染在 `charts.js` 的 `renderDetailChars()`。
 **不要在渲染层重新聚合**——那会让「左栏和右栏对不上」变成两处口径各写一遍。
 
@@ -988,11 +988,69 @@ UP 抽数是该角色**各轮 total 累加**（含期间歪出的）、非 UP �
 | 层 | 位置 | 改什么 |
 |---|---|---|
 | **配置** | `config/report.json` | 称号分档、标签阈值与去重、配色值、文案、图例、频道定义、保底抽数（`channels[].pityCap`）、隐私规则。**90% 的调整都在这层**，改完重跑构建即生效 |
-| **实现** | `scripts/build-report.mjs` + `assets/report/` | 口径算法与版式。改这层要同步 `report-rules.md` |
+| **口径内核** | `assets/report/core.js` | 轮次模型、不歪率、称号、标签、详情行、右栏汇总、分母。**纯 JS，Node 与浏览器共用同一份**。改这层要同步 `report-rules.md` |
+| **两个外壳** | `scripts/build-report.mjs`（Node）<br>`assets/report/app.html` + `app.js`（浏览器） | Node 外壳管参数/读盘/拼模板/写文件；浏览器外壳管粘贴 UI/静态资源加载。**口径不许写在外壳里** |
 | **资源** | `assets/report/icons/` | 里面是 `avatars/`（圆头像）与 `items/`（方图标）两套，**都只有 64px 一套**。**构建时内嵌进 HTML 用的就是它**，没有第二份 96px 原图了。缺图**不要手动找**，跑 `scripts/sync-icons.mjs` |
 | **规范** | `references/report-rules.md` | 记录「为什么这样算、为什么这样画」以及踩过的坑。**不要为了改行为去改它**；它是给维护者看的 |
 
 改配置不需要读规范；改实现必须先读规范、改完再回来同步。
+
+#### 为什么口径内核要单独成文件
+
+原先口径计算和 `readFileSync` / `createHash` / `writeFileSync` 混在 `build-report.mjs` 一份文件里，
+于是「纯前端算同一份报表」就只能把算法复制一份 —— 两份口径必然漂移，而漂移的症状
+（同一个账号，命令行出的称号是「欧皇」、网页上是「大欧皇」）没人会主动去比对。
+
+现在拆成：
+
+```
+assets/report/core.js   ← 口径（纯 JS，零 Node 依赖）
+   ↑ import                        ↑ import
+scripts/build-report.mjs     assets/report/app.js
+（Node 外壳：读盘→内嵌图标→拼模板→写 HTML）  （浏览器外壳：粘贴 JSON→静态图标→动态加载 charts.js）
+```
+
+`core.js` 的约束是硬性的：**不许出现 `node:` import、`process`、`Buffer`、`fs`、`__dirname`、`import.meta`**。
+一旦出现，Node 端照样跑得通、只有浏览器端白屏——最难定位的一类。
+`scripts/test-core-pure.mjs` 用 grep 把这条钉成断言（43 项）。
+
+入口是 `computeReport({ files, cfg, icons, generatedAt })`：
+
+- `files` 是**文件名作键**的虚拟文件系统（`index.json` / `meta.json` /
+  `cur_pool_stat_<id>.json` / `hist_pool_stat_<id>.json`）。Node 端把磁盘目录读成这个 map，
+  浏览器端把 `fetch-in-page.js` 的 `{index, channels}` 摊成同一批键（`filesFromInPage()`）。
+- `icons` 是图标解析器。core 只负责「把 key 贴到 `avatarKey` / `iconKey` 上」，
+  值是什么由外壳决定：Node 端是 sha1 → 内嵌 dataURL（产物单文件可发送），
+  浏览器端是 sha1 → 静态 png 路径。**key 两端完全一致**，所以 `charts.js` 的 `ICONS[key]` 一行都不用改。
+- `generatedAt` 可注入，为了两端逐字节比对；默认仍是 `new Date().toISOString()`。
+
+**fatal 校验不搬进 core**：那些断言（坐标轴退化、抽数闭合、影画编号一致……）是「产物不可信
+就退出 1、不写文件」的构建期关闸。浏览器端没有「退出 1」这个概念，硬塞进去只会让静态页白屏。
+
+#### 浏览器外壳：`assets/report/app.html`
+
+纯静态页、零后端、零 AI。把 `fetch-in-page.js` 返回的那段 JSON 粘进去（或把 `.json` 拖进去），
+页面用同一份 `core.js` 算出报表、用同一份 `charts.js` 渲染。**全程在浏览器里跑完，不联网、不上传**
+（只读同源的 echarts / charts.js / 图标）。
+
+- 输入方式**只支持粘贴/拖入 JSON**，没做 localStorage 与 URL hash：
+  前者会把含 UID 的数据留在浏览器里，后者要把大 JSON 编码进 URL，都不比粘贴省事。
+- 图标走 `assets/report/icons/manifest.json`（`{ "dir/id": "<sha1 前 16 位>" }`）。
+  这份清单与 `assets/report/config.json`（`config/report.json` 的逐字节副本）都由
+  `scripts/build-icons-manifest.mjs` 生成。**改了配置或图标要重跑它**，否则静态页读到旧值；
+  `test-core-pure.mjs` 会断言两者仍然一致。
+- 页面里有 `html:not([data-ready]) .screen { display: none }`，
+  而 `data-ready` **必须在插入 charts.js 之前置上**：ECharts 在 init 那一刻量容器尺寸，
+  若那时容器是 `display:none` 会画出 0×0 的空画布（svg 元素存在、计数是 1、图却空白）。实测踩过。
+- 本地打开方式（浏览器不允许 `file://` 下的 module import，必须起静态服务）：
+
+```bash
+cd skills/zzz-stats && python3 -m http.server 8901 --bind 127.0.0.1
+# 打开 http://127.0.0.1:8901/assets/report/app.html
+```
+
+验收 `scripts/test-app-browser.mjs`（21 项）：浏览器算出的 report 与 Node 产物逐字段相同
+（只允许 `icons` 的值与 `generatedAt` 不同）、结构计数与页面高度一致、主图容器有实际尺寸、console 0 error。
 
 **图标不用手动找**：接口每条记录都带 `icon` URL，跑一次就补齐缺的（下载即裁成 64px，一步到位）：
 
