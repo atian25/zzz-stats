@@ -44,6 +44,7 @@
 
 export { collectData, collectFiles, buildMeta, sortVersionsDesc, chunk, MAX_VERS, REQUEST_GAP_MS } from './collect.mjs';
 export { buildReport } from './build.mjs';
-export { loginWithQr, resolveGameUid, cookiesFromSetCookie } from './login-node.mjs';
+export { loginWithQr, resolveGameUid, cookiesFromSetCookie, loginByQrNode, collectViaNode } from './login-node.mjs';
+export { loginByQrBrowser, collectViaBrowser, closeBrowserSession } from './login-browser.mjs';
 export { createNodeTransport } from './transport-node.mjs';
 export { encodeQrDataUrl, dataUrlToBuffer } from './qr.mjs';

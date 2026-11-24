@@ -254,6 +254,20 @@ async function smsLogin(drv, frame, { ask, log, sleep, LOGGED_IN, sms, purge, wo
   throw new Error('短信登录后仍未检测到登录态。可能是验证码错误，或需要完成滑块验证。');
 }
 
+/**
+ * 登录方式的默认值。
+ *
+ * 改前在 `scripts/collect.mjs` 里（一行 `return 'qr'`），拆 lib 时漏搬了 ——
+ * 症状是浏览器路径一启动就 `ReferenceError: detectLoginMode is not defined`，
+ * 而且只在**没传 --login** 时触发（传了就短路，不走到这里），最容易漏测。
+ *
+ * 保留成函数而不是内联常量：环境变量 `ZZZ_LOGIN_MODE` 存在时优先它，
+ * 这里的返回值只是「两者都没有」时的兜底。
+ */
+function detectLoginMode() {
+  return 'qr';
+}
+
 async function loginFlow(drv, opts = {}) {
   const {
     // 登录方式：qr（默认）/ sms
@@ -272,6 +286,14 @@ async function loginFlow(drv, opts = {}) {
     persistQr = true,
     maxRefresh = 3,
     minGapMs = 5000,
+    /*
+     * 日志。改前 `loginFlow` 是 `scripts/collect.mjs` 里的内部函数，直接用外层闭包的
+     * 全局 `log`；拆成 lib 模块后那个闭包没了，**必须**从 opts 传进来。
+     * 漏了它的症状是 `ReferenceError: log is not defined` —— 只在真正走到
+     * 那几行时炸，所以构造函数/静态检查都发现不了。
+     */
+    log = () => {},
+    sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
   } = opts;
   const mode = String(modeIn || process.env.ZZZ_LOGIN_MODE || detectLoginMode()).toLowerCase();
   // 等到「已挂载 且 状态明确」：mounted 但既没 logged-out 也没 UID，说明还在加载
@@ -694,6 +716,8 @@ export async function collectWithBrowser({
       stdinStream,
       persistQr: Boolean(saveQrFile),
       sms,
+      log,
+      sleep,
     });
 
     const uid = await readUid(drv);
@@ -731,4 +755,138 @@ export async function collectWithBrowser({
   } finally {
     await drv.close?.();
   }
+}
+
+/**
+ * 浏览器扫码登录：打开官方页面 → 等登录态 → 读 UID。**只做登录，不取数。**
+ *
+ * 与 `loginByQrNode()` 并列的另一条登录路径。区别只在「怎么登录」：
+ * 这条路是官方页面自己发请求，签名/风控/CORS 全由官方前端处理。
+ *
+ * **不降级、不重试**：失败就抛。要不要换到纯 Node 是调用方的策略。
+ *
+ * @param {object} args
+ * @param {object} [args.driver]  openDriver 参数（cdpUrl / driver / port / profile / headless）
+ * @param {string} args.pageUrl   官方页面
+ * @returns {Promise<{uid: string, nickname: string|null, drv: object}>}
+ *        **`drv` 要由调用方关**（见 `closeBrowserSession`）；登录和取数分两次调用时，
+ *        中间这个浏览器上下文必须留着，cookie 在它里面。
+ */
+export async function loginByQrBrowser({
+  driver = {},
+  pageUrl,
+  region = 'prod_gf_cn',
+  loginMode = 'qr',
+  onQr = null,
+  saveQrFile = null,
+  qrUrlFor = () => null,
+  outputDir = null,
+  purge = () => {},
+  stdinStream = null,
+  sms = {},
+  log = () => {},
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+} = {}) {
+  const drv = await openDriver({ ...driver, log });
+  log(`驱动：${drv.kind}（${drv.version ?? '未知版本'}）`);
+
+  try {
+    await drv.open(pageUrl);
+    await loginFlow(drv, {
+      mode: loginMode,
+      onQr,
+      saveQrFile,
+      qrUrlFor,
+      outputDir,
+      refreshSignalFile: outputDir ? join(outputDir, REFRESH_SIGNAL_FILE) : null,
+      purge,
+      waitMode: driver.waitMode ?? 'a',
+      stdinRaw: Boolean(stdinStream?.isTTY),
+      stdinStream,
+      persistQr: Boolean(saveQrFile),
+      sms,
+      log,
+      sleep,
+    });
+
+    const uid = await readUid(drv);
+    if (!uid) throw new Error('拿不到 UID。确认账号已绑定《绝区零》角色。');
+    log('UID', uid, 'region', region);
+
+    const nickname = await readNickname(drv);
+    return { uid, nickname, drv };
+  } catch (e) {
+    /*
+     * 失败时才关浏览器：成功时 `drv` 要交给 `collectViaBrowser()` 继续用
+     * （登录态在那个上下文里，关了就白扫一次码）。
+     */
+    await drv.close?.();
+    throw e;
+  }
+}
+
+/** 从页面文本里找昵称。接口不返回昵称，只有页面有。 */
+async function readNickname(drv) {
+  const nickname = await drv.evaluate(`(() => {
+    const t = (document.body ? document.body.innerText : '').split('\\n').map(s => s.trim()).filter(Boolean);
+    const idx = t.findIndex(s => /^UID/.test(s) || /^\\d{6,}$/.test(s));
+    for (let i = 0; i < Math.min(t.length, 25); i += 1) {
+      if (i === idx) continue;
+      if (/^[\\u4e00-\\u9fa5A-Za-z0-9·_-]{1,16}$/.test(t[i]) && !/^(登录|绝区零|调频|UID|国服|全部|当前|历史)/.test(t[i])) return t[i];
+    }
+    return null;
+  })()`);
+  return typeof nickname === 'string' && nickname.length && !nickname.includes('\n') ? nickname : null;
+}
+
+/**
+ * 浏览器取数：在已登录的页面上下文里页内 fetch → 14 个键的 Map。
+ *
+ * 与 `collectViaNode()` 并列的另一条取数路径。**不降级**：失败就抛。
+ *
+ * 注意这里**不关 drv**：它可能是调用方传进来的、别处还要用的（比如取完数还要截图）。
+ * 关闭走 `closeBrowserSession()`，由调用方决定时机。
+ *
+ * @param {object} args
+ * @param {object} args.drv       `loginByQrBrowser()` 返回的 drv
+ * @param {string} args.api       act 接口基址
+ * @param {string} args.uid       游戏 UID
+ * @param {Array}  args.channels  频道表
+ * @returns {Promise<{files: Map<string, unknown>, summary: object, meta: object, index: object}>}
+ */
+export async function collectViaBrowser({
+  drv,
+  api,
+  uid,
+  region = 'prod_gf_cn',
+  channels,
+  nickname = null,
+  log = () => {},
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+  fetchedAt = undefined,
+  isCn = undefined,
+} = {}) {
+  if (!drv) throw new Error('collectViaBrowser 需要 drv（由 loginByQrBrowser 返回）');
+  if (!uid) throw new Error('collectViaBrowser 需要 uid');
+
+  log('UID', uid, 'region', region, '接口', api);
+
+  const transport = {
+    kind: 'browser',
+    fetchJson: (path, query = '') => fetchJson(drv, api, region, uid, path, query),
+  };
+  const { files, summary, index } = await collectFiles({ transport, channels, log, sleep });
+
+  const safeNickname = nickname ?? await readNickname(drv);
+  files.set('meta.json', buildMeta({
+    index, uid, nickname: safeNickname, region, api, summary, fetchedAt,
+    isCn: isCn ?? /^prod_gf_cn$/i.test(region),
+  }));
+
+  return { files, summary, meta: files.get('meta.json'), index };
+}
+
+/** 关掉 `loginByQrBrowser()` 开出来的浏览器上下文。**幂等**：没开着也不报错。 */
+export async function closeBrowserSession(drv) {
+  await drv?.close?.();
 }

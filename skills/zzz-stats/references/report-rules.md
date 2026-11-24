@@ -2299,12 +2299,35 @@ skill 的调用方式、CLI 参数、日志、退出码全都没变，变的只�
 轮询进入 `Created`。**扫码确认这一段需要人操作，没有自动化验证过** —— 这一点别在文档里
 写成「已端到端验证」。
 
-#### 降级：默认 node，失败降到 browser
+#### 降级：只在 CLI，SDK 不做
 
 `--transport node|browser`，默认 `node`。node 失败（国际服 / 私有 header 失效）**自动降到
 browser，并明确打一行说明为什么降级**。静默换路最难查：用户以为走的是纯 Node，
 实际弹出一个浏览器要扫。`--transport node` 显式指定时**不降级**，失败就报错 ——
 显式选择要能被信任。
+
+**这条策略的位置是有讲究的：它只写在 `scripts/collect.mjs` 里，`lib/` 一个字都没有。**
+SDK 暴露四个并列函数，各管各的、只抛错：
+
+| 动作 | 纯 Node | 浏览器 |
+|---|---|---|
+| 登录 | `loginByQrNode({ onQr })` → `{ cookieHeader, uid, gameUid }` | `loginByQrBrowser({ headless, onQr })` → `{ uid, drv }` |
+| 取数 | `collectViaNode({ cookieHeader, uid })` → `{ files, summary }` | `collectViaBrowser({ drv })` → `{ files, summary }` |
+
+`collectData({ transport })` 保留着，但它只是「按你给的那条调对应那一个」，
+**没有 switch 到另一条的逻辑、没有 catch、没有重试**。
+
+为什么这么切：策略会随部署形态变 —— 服务那边将来可能只用浏览器、或 node 失败就整体报错
+不降级。把策略写进 SDK，等于替所有调用方做了决定，而且调用方**再也没法知道**
+「node 这条路其实失败了」（它只会看到成功）。
+
+`test-lib-transport.mjs`（15 项）把这条钉成断言，其中关键一条是
+「`transport=node` 失败时浏览器的扫码回调一次都不许被调到」。反向验证过：
+在 SDK 的 node 分支里注入一个 `catch` 后改走 browser，用例立刻 14/15、exit 1。
+
+CLI 的判据是「用户有没有显式传 `--transport`」。注意 `argOf()` 的默认值会掩盖这件事
+（`argOf('transport','node')` 对「没传」和「传了 node」返回同一个字符串），
+所以实现里取默认值 null、再自己补 `'node'`。
 
 ### 结构
 

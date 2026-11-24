@@ -1008,10 +1008,10 @@ UP 抽数是该角色**各轮 total 累加**（含期间歪出的）、非 UP �
 lib/index.mjs            统一导出
 lib/collect.mjs          collectData()  采集编排（登录 → uid → 取数 → meta）
 lib/build.mjs            buildReport()  出 HTML
-lib/login-node.mjs       纯 Node 扫码登录（passport → Cookie）
-lib/login-browser.mjs    浏览器登录 + 页内取数（改前 collect.mjs 的主体）
-lib/transport-node.mjs   纯 Node 取数（Cookie 直连 act 接口）
-lib/qr.mjs               二维码编码（借 dsh 自带的 qrcode，不加 npm 依赖）
+lib/login-node.mjs       loginByQrNode() / collectViaNode()  纯 Node 登录与取数（各自独立）
+lib/login-browser.mjs    loginByQrBrowser() / collectViaBrowser()  浏览器登录与取数（各自独立）
+lib/transport-node.mjs   纯 Node 取数的 transport 实现（Cookie 直连 act 接口）
+lib/qr.mjs               二维码编码（自带 vendor 的 qrcode，不加 npm 依赖）
 lib/core-inline.mjs      ESM → 经典同步脚本的构建期转换
 lib/template-tokens.mjs  CSS 变量块 / 文案表 / HTML 转义
 ```
@@ -1048,6 +1048,21 @@ lib/template-tokens.mjs  CSS 变量块 / 文案表 / HTML 转义
 默认 `node`，**失败自动降到 `browser`，并明确打一行说明为什么降级**。
 静默换路是最难查的一类问题：用户以为走的是纯 Node，实际弹出一个浏览器要扫。
 `--transport node` 显式指定时**不降级**，失败就报错 —— 显式选择要能被信任。
+
+**降级只在 CLI 这一层。** SDK（`lib/`）只暴露并列的四个函数，各管各的、只抛错：
+
+| 动作 | 纯 Node | 浏览器 |
+|---|---|---|
+| 登录 | `loginByQrNode({ onQr })` → `{ cookieHeader, uid, gameUid }` | `loginByQrBrowser({ headless, onQr })` → `{ uid, drv }` |
+| 取数 | `collectViaNode({ cookieHeader, uid })` → `{ files, summary }` | `collectViaBrowser({ drv })` → `{ files, summary }` |
+
+SDK **不做降级、不 catch、不重试、不判断该不该换一条路**。`collectData({ transport })`
+只是「按你给的那条调」，没有 switch 到另一条的逻辑。原因是策略会随部署形态变
+（服务里可能只用浏览器、或 node 失败就整体报错），写进 SDK 就等于替所有调用方做了决定。
+`test-lib-transport.mjs` 把这条钉成断言（含「node 失败时浏览器一次都不许被调到」）。
+
+CLI 的三种情形：不传 `--transport` → 先 node、抛错就打一行说明再走 browser；
+`--transport node` / `--transport browser` → 只用那一个，失败按现有方式报错退出。
 
 纯 Node 那条路是**私有接口的逆向结论**，不是带文档的公开 API。改了会**静默失败**
 （回业务错误码，不是「接口不存在」）。出问题按这个顺序怀疑：

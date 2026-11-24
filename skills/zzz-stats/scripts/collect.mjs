@@ -42,7 +42,7 @@ if (wantsHelp()) {
   printHelp('collect', {
     summary: '采集《绝区零》调频数据，落成 output/<账号名>/data/*.json',
     options: [
-      { flag: '--transport <t>', desc: 'node / browser，默认 node（失败自动降到 browser）' },
+      { flag: '--transport <t>', desc: 'node / browser。不传＝先 node、失败降级 browser；显式指定则失败不降级' },
       { flag: '--data <dir>', desc: '数据集目录，默认按昵称自动落到 output/<账号名>/data（拿不到昵称则用 UID）' },
       { flag: '--cwd <dir>', desc: '用户工作目录，默认当前目录；output/ 与 .chrome-profile/ 相对它算' },
       { flag: '--driver <name>', desc: '浏览器路径的驱动：playwright / cdp，默认自动挑' },
@@ -65,7 +65,7 @@ if (wantsHelp()) {
     notes: [
       WORK_DIR_NOTE,
       '不读取、不保存 cookie 与请求头，只取三个接口的响应体。',
-      '纯 Node 那条路只做国服；国际服会自动降级到浏览器路径。',
+      '纯 Node 那条路只做国服；不传 --transport 时失败会降级到浏览器路径，显式指定则不降级。',
     ],
   });
 }
@@ -192,28 +192,47 @@ async function main() {
   }
 
   try {
-    const requested = String(argOf('transport', 'node')).toLowerCase();
+    /*
+     * 降级策略**全部在这一层**，SDK 里没有任何「换一条路」的判断。
+     * 理由：策略会随部署形态变（服务里可能只用浏览器、或 node 失败就整体报错），
+     * 写进 SDK 就等于替所有调用方做了决定。
+     *
+     * 三种情形，判据是「用户有没有显式给 --transport」：
+     *
+     *   不传        → 先试 node，抛错就说明原因、再走 browser（默认策略）
+     *   --transport node    → 只用 node，失败按现有方式报错退出（显式选择要能被信任）
+     *   --transport browser → 只用 browser
+     *
+     * `argOf()` 的默认值会掩盖「有没有传」这件事，所以这里单独判断原始参数。
+     */
+    const explicit = argOf('transport', null);
+    const requested = String(explicit ?? 'node').toLowerCase();
     if (requested !== 'node' && requested !== 'browser') {
       throw new Error(`--transport 只支持 node / browser，收到 ${requested}`);
     }
 
     let result;
-    if (requested === 'node') {
+    if (explicit === null) {
+      // 没指定：默认 node，失败降级。
+      log('取数路径：纯 Node（未指定 --transport，失败会降级到浏览器）');
       try {
         result = await runTransport('node');
       } catch (e) {
         /*
          * 降级。**必须打一行说明为什么** —— 静默换路会让用户以为走的是纯 Node，
-         * 实际弹出一个浏览器要扫码，完全无法理解。
+         * 实际弹出一个浏览器要扫，完全无法理解。
          */
         log('');
         log(`⚠️  纯 Node 取数失败：${e.message.split('\n')[0]}`);
         log('→ 降级到浏览器路径（官方页面扫码 + 页内 fetch）。');
+        log('  想只用纯 Node、失败即退出，请显式指定 --transport node。');
         log('');
+        log('取数路径：浏览器（降级）');
         result = await runTransport('browser');
       }
     } else {
-      result = await runTransport('browser');
+      log(`取数路径：${requested === 'node' ? '纯 Node' : '浏览器'}（--transport ${requested} 指定，失败不降级）`);
+      result = await runTransport(requested);
     }
 
     const { uid, nickname, files, meta } = result;

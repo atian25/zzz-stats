@@ -42,6 +42,8 @@
 
 import { randomUUID } from 'node:crypto';
 import { encodeQrDataUrl } from './qr.mjs';
+import { collectFiles, buildMeta } from './collect.mjs';
+import { createNodeTransport, ACT_API } from './transport-node.mjs';
 
 /** passport 域（登录），与 act 域（取数）不是同一个。 */
 const PASSPORT = 'https://passport-api.mihoyo.com/account/ma-cn-passport/web';
@@ -227,7 +229,14 @@ export async function loginWithQr({
           '   可能原因：cookie 名变了（见文件头 AUTH_COOKIE_NAMES），或 token 不再随 Confirmed 一次性下发。',
         );
       }
-      return { cookie, deviceId: DEVICE_ID };
+      /*
+       * 顺带把米游社账号 ID（`user_info.aid`）也带出去。
+       *
+       * **它不是游戏 UID**（坑③），两个值不能混用；但调用方有时需要它
+       * （日志、对账）。拿不到就给 null —— 不为一个顺带字段报错。
+       */
+      const accountId = body.data?.user_info?.aid ? String(body.data.user_info.aid) : null;
+      return { cookie, deviceId: DEVICE_ID, accountId };
     }
 
     await sleep(pollMs);
@@ -278,4 +287,109 @@ export async function resolveGameUid({ cookie, region = 'prod_gf_cn', fetchImpl 
     region: hit.region,
     regionName: hit.region_name,
   };
+}
+
+/**
+ * 纯 Node 扫码登录：一张二维码 → 一套 Cookie + 游戏 UID。**只做国服。**
+ *
+ * 这是 SDK 对外的**并列入口之一**（另一条是浏览器的 `loginByQrBrowser`）。
+ * 它只管把这件事做成或抛错：**不判断该不该换一条路、不重试、不降级**。
+ * 换路的策略在 CLI（`scripts/collect.mjs`）里 —— 服务那边将来可能完全不同
+ * （只用浏览器、或纯粹失败即报错），策略不该被 SDK 写死。
+ *
+ * @param {object} args
+ * @param {(qr: {dataUrl: string, url: string, ticket: string}) => void|Promise<void>} args.onQr
+ *        拿到二维码时回调。调用方负责落盘/展示（SDK 不碰磁盘）。
+ * @param {string} [args.region] 目前只接受 `prod_gf_cn`，其它直接抛错
+ * @returns {Promise<{cookieHeader: string, uid: string, gameUid: string, nickname: string|null, region: string}>}
+ *        `cookieHeader` 可直接放进后续请求的 `Cookie` 头；
+ *        `uid` 是米游社账号 ID（可能为 null 之外的空串），`gameUid` 才是游戏接口要的那个。
+ */
+export async function loginByQrNode({
+  onQr,
+  region = 'prod_gf_cn',
+  log = () => {},
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+  pollMs = 2000,
+  maxWaitMs = 3 * 60 * 1000,
+  now = () => Date.now(),
+  fetchImpl = fetch,
+  encodeQr = encodeQrDataUrl,
+} = {}) {
+  /*
+   * 国际服直接抛错，**不在这里偷偷换成浏览器**。
+   * 这句报错就是调用方决定要不要降级的依据 —— 换不换是 CLI 的事。
+   */
+  if (!/^prod_gf_cn$/i.test(region)) {
+    throw new Error(
+      `纯 Node 扫码登录只做国服（prod_gf_cn），收到 ${region}。` +
+      '国际服的 passport/biz 是另一套，未实测，请改用浏览器路径。',
+    );
+  }
+
+  const { cookie, accountId } = await loginWithQr({
+    onQr, log, sleep, pollMs, maxWaitMs, now, fetchImpl, encodeQr,
+  });
+  const role = await resolveGameUid({ cookie, region, fetchImpl });
+  log(`UID ${role.uid}（${role.regionName ?? role.region}）`);
+
+  return {
+    cookieHeader: cookie,
+    uid: accountId ?? '',
+    gameUid: role.uid,
+    nickname: role.nickname ?? null,
+    region: role.region,
+  };
+}
+
+/**
+ * 纯 Node 取数：Cookie + gameUid → 14 个键的 Map。**只做国服。**
+ *
+ * 与 `loginByQrNode()` 是并列的两个动作，不是它的后续步骤 —— 调用方可以把
+ * 「登录」和「取数」分开做（例如复用已有 Cookie 重取一次数据）。
+ * 同样**不降级**：接口失败就抛。
+ *
+ * @param {object} args
+ * @param {string} args.cookieHeader `loginByQrNode()` 返回的 Cookie 头
+ * @param {string} args.uid          游戏 UID（不是米游社账号 ID）
+ * @param {string} [args.region]
+ * @param {string|null} [args.nickname] 已有昵称就带上，省得再去别处找
+ * @returns {Promise<{files: Map<string, unknown>, summary: object, meta: object}>}
+ */
+export async function collectViaNode({
+  cookieHeader,
+  uid,
+  region = 'prod_gf_cn',
+  api = null,
+  nickname = null,
+  channels = null,
+  cfg = null,
+  log = () => {},
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+  fetchImpl = fetch,
+  fetchedAt = undefined,
+} = {}) {
+  if (!/^prod_gf_cn$/i.test(region)) {
+    throw new Error(
+      `纯 Node 取数只做国服（prod_gf_cn），收到 ${region}。请改用浏览器路径。`,
+    );
+  }
+  if (!cookieHeader) throw new Error('collectViaNode 需要 cookieHeader');
+  if (!uid) throw new Error('collectViaNode 需要 uid（游戏 UID）');
+
+  const transport = createNodeTransport({
+    uid, cookie: cookieHeader, region, api, nickname, fetchImpl,
+  });
+  const { files, summary, index } = await collectFiles({ transport, channels: channels ?? cfg?.channels, log, sleep });
+  const meta = buildMeta({
+    /*
+     * `meta.source` 记的是「数据从哪个接口基址来的」。
+     * 没显式给 api 时用 transport 实际在打的那个基址（`ACT_API.cn`），
+     * 而不是留空 —— 空串在产物里显示成「来源未知」，排障时最没用。
+     */
+    index, uid: String(uid), nickname, region, api: api ?? ACT_API.cn,
+    summary, fetchedAt, isCn: true,
+  });
+
+  return { files, summary, meta };
 }

@@ -28,7 +28,6 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createNodeTransport } from './transport-node.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SKILL_DIR = resolve(HERE, '..');
@@ -207,36 +206,43 @@ export async function collectData({
   const isCn = /^prod_gf_cn$/i.test(region);
   const progress = (stage, message, data) => onProgress?.({ stage, message, data });
 
+  /*
+   * 这个函数**只做一件事**：按你给的 transport 调对应那一个。
+   *
+   * 它**不判断该不该换一条路**：没有任何 catch、没有重试、没有
+   * 「node 失败就 browser」的分支。降级策略在 CLI（`scripts/collect.mjs`）里，
+   * 因为策略会随部署形态变（服务里可能只用浏览器、或失败即报错），
+   * 把它写进 SDK 就等于替所有调用方做了决定。
+   *
+   * 两条路各自的两个动作（登录 / 取数）是并列的独立函数，见
+   * `loginByQrNode` / `collectViaNode` / `loginByQrBrowser` / `collectViaBrowser`。
+   * 这里只是为了兼容「一次拿到全部结果」的用法把它们串起来，不替代它们。
+   */
   if (transport === 'node') {
-    if (!isCn) {
-      /*
-       * 国际服的 passport/biz 是另一套，没实测过。与其猜一个半对的实现，
-       * 不如明确退回去 —— 外壳会打一行「为什么降级」，用户不会莫名拿到错数据。
-       */
-      throw new Error('纯 Node 取数只做国服（prod_gf_cn）。国际服账号请用 --transport browser。');
-    }
-    const { loginWithQr, resolveGameUid } = await import('./login-node.mjs');
+    const { loginByQrNode, collectViaNode } = await import('./login-node.mjs');
     progress('login', '申请二维码');
-    const { cookie } = await loginWithQr({
+    const { cookieHeader, gameUid, nickname } = await loginByQrNode({
       onQr: async (qr) => { await onQr?.(qr); },
+      region,
       log,
       sleep,
       fetchImpl,
     });
-    progress('login', '已登录，查游戏角色');
-    const role = await resolveGameUid({ cookie, region, fetchImpl });
-    log(`UID ${role.uid}（${role.regionName ?? role.region}）`);
-    const t = createNodeTransport({
-      uid: role.uid, cookie, region, api, nickname: role.nickname, fetchImpl,
-    });
     progress('collect', '开始取数');
-    const { files, summary, index } = await collectFiles({ transport: t, channels: CHANNELS, log, sleep });
-    const meta = buildMeta({
-      index, uid: role.uid, nickname: role.nickname, region, api: api ?? t.apiBase ?? '',
-      summary, fetchedAt, isCn,
+    const { files, summary, meta } = await collectViaNode({
+      cookieHeader,
+      uid: gameUid,
+      region,
+      api,
+      nickname,
+      channels: CHANNELS,
+      log,
+      sleep,
+      fetchImpl,
+      fetchedAt,
     });
     progress('done', '采集完成');
-    return { uid: role.uid, nickname: role.nickname, files, summary, meta };
+    return { uid: gameUid, nickname, files, summary, meta };
   }
 
   if (transport === 'browser') {

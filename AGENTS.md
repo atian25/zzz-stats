@@ -142,13 +142,19 @@
   已随粘贴面板一起删除，见下），重跑构建即可：配色与文案在构建期注入，图标在构建期编码内嵌。
 - **「改配置就生效」是硬约定**：不要在 CSS / JS 里另写一份硬编码色值。
 - **算法进 `lib/`，命令行只做外壳。** 分层见 `skills/zzz-stats/lib/index.mjs` 文件头：
-  `lib/collect.mjs`（采集编排）、`lib/build.mjs`（出 HTML）、`lib/login-node.mjs`（纯 Node 扫码）、
-  `lib/login-browser.mjs`（浏览器登录）、`lib/transport-node.mjs`（纯 Node 取数）、`lib/qr.mjs`。
+  `lib/collect.mjs`（采集编排）、`lib/build.mjs`（出 HTML）、
+  `lib/login-node.mjs`（`loginByQrNode` / `collectViaNode`）、
+  `lib/login-browser.mjs`（`loginByQrBrowser` / `collectViaBrowser`）、
+  `lib/transport-node.mjs`（纯 Node 取数的 transport 实现）、`lib/qr.mjs`。
   `scripts/collect.mjs` / `scripts/build-report.mjs` 只解析参数、调 SDK、落盘、打日志、定退出码。
-  三条别破坏：
+  四条别破坏：
   - **SDK 不写盘**（只返回 `files: Map` / `html`），落盘位置是外壳的决定；
   - **SDK 不读 `process.argv`、不调 `process.exit`**；`buildReport()` 的 `fatal` 是返回数组；
-  - **口径不许写在外壳里**，写进去就只在构建期生效，产物里现算的那份没有。
+  - **口径不许写在外壳里**，写进去就只在构建期生效，产物里现算的那份没有；
+  - **SDK 不做降级**。登录/取数各有 node 与 browser 两个并列函数，各管各的、只抛错，
+    **不 catch、不重试、不判断该不该换一条路**。「node 失败就切 browser」这种策略只在
+    `scripts/collect.mjs` 里（判据是「用户有没有显式传 `--transport`」）。服务端将来可能
+    策略完全不同，写进 SDK 就等于替所有调用方做了决定。`test-lib-transport.mjs` 会拦。
 - 改 `lib/login-node.mjs` / `lib/transport-node.mjs` → 那是**私有接口的逆向结论**
   （`x-rpc-app_id` / cookie 名 / `game_biz`）。改了会静默失败（回业务错误码，不是「接口不存在」）。
   出问题按这个顺序怀疑：app_id → cookie 名 → game_biz。别先怀疑网络。
@@ -246,6 +252,7 @@ node skills/zzz-stats/scripts/test-verify-cleanup.mjs   # 27 项，不需要浏�
 node skills/zzz-stats/scripts/test-image-server.mjs      # 25 项，只起一个 127.0.0.1 临时端口
 node skills/zzz-stats/scripts/test-qr-wait.mjs           # 75 项，刷新通道 + 真实等待循环
 node skills/zzz-stats/scripts/test-preview-privacy.mjs   # 53 项（output/ 在场时 55 项），--preview 的隐私分流（见下）
+node skills/zzz-stats/scripts/test-lib-transport.mjs    # 15 项，lib/ 四个并列入口 + 「降级只在 CLI」纪律
 node skills/zzz-stats/scripts/test-core-pure.mjs         # 47 项，core.js 纯度 + 转换规则 + 面板已删 + 图标资产
 node skills/zzz-stats/scripts/test-report-browser.mjs    # 30 项，需要 chrome；产物现算的 __REPORT__ 与 Node 口径逐字段相同
 ```
