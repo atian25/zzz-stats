@@ -19,7 +19,10 @@
   **不要**按 SKILL.md §0 的浏览器优先级去现拼 Chrome 命令行——那是采集期「找能扫码登录的浏览器」的语义，
   跟「截一张本地 HTML 的图」是两件事。`--user-data-dir` 脚本里已焊死，别再踩。
 - **README 预览图走 `node skills/zzz-stats/scripts/screenshot.mjs --preview`，不要手截。**
-  出的是 `docs/preview.png`：1440 逻辑宽、DPR 2、整页（当前实测 `2880×2840`，高度跟内容走）。
+  出的是 `docs/preview.png`：1440 逻辑宽、DPR 2、整页（当前实测 `2880×3588`，高度跟内容走）。
+  **详情列表默认只留前 2 个版本组**（`--detail-versions 2`，`--preview` 的默认值），
+  右栏角色汇总不截断——整页原样截会有 16 个版本组、4342px 高，README 上根本看不完。
+  显式 `--detail-versions N` 以传值为准，`0` 或不带 `--preview` 就是不截断。
   隐私按数据集来源分流：产物里 `meta.synthetic === true`（`fixtures/` 里的模拟数据）**不打码**，
   截图前反向断言昵称/UID **不含** `*`；其余一切**强制打码到 2**，断言 `eye=2` 且昵称/UID 含 `*`。
   **没有标记一律当真实数据**（fail-safe），两条分支断言不过都中止、不写文件。
@@ -64,7 +67,7 @@
   collect / save-in-page-json 用它决定**往哪写**，build-report / sync-icons / screenshot 用它决定**去哪读**。
   五处各写一遍必然漂移，而漂移的后果不是报错，是「写得进去、读不出来」。
 - **fixtures 里的数据必须脱敏后再入库。** 这是公开仓库：`meta.json` 的 `uid` 是假值
-  （`10000001` / `10000002`），昵称也用**中性占位名**（「玩家A / 玩家B」，不要写真实昵称）。真实 UID 永不入库——
+  （`10000001` / `10000002`），昵称也用**中性占位名**（「绳匠A / 绳匠B」，不要写真实昵称）。真实 UID 永不入库——
   采集脚本写出的原始 `data/` 带真 UID，那整份目录在 `.gitignore` 里。
 - **`baseline` 是对外展示基线，`multigold` 是测试数据。** README 头图（`docs/preview.png`）、发布说明、
   任何人看得到的图一律用 `fixtures/baseline` 出；`fixtures/multigold` 只用来验证多金分档（双金 + 三金，
@@ -78,7 +81,7 @@
   `grep -rl "<真实UID>" .` 确认零命中。要留下看的产物就留在仓库外，不要顺手 `git add`。
 - **但用 `fixtures/` 构建的产物不要删——它是交付给用户看的那份。**
   本机跑着 `python3 -m http.server 8899`（根目录 = 仓库根），用户点开的地址就是
-  `http://127.0.0.1:8899/output/玩家A/report.html`。删掉 `output/` 这个地址立刻 404，
+  `http://127.0.0.1:8899/output/绳匠A/report.html`。删掉 `output/` 这个地址立刻 404，
   用户看到的就是「url 挂了」（真实发生过两次，都是我提交前 `rm -rf output` 导致的）。
   判据是**数据来源**，不是目录名：`fixtures/*` 构建出来的（`meta.synthetic === true`、
   uid 是 `1000000x`）可以留在 `output/` 里持续服务；真实采集出来的必须清。

@@ -110,11 +110,11 @@ sum(cur_records[].count) + type_stats[].next_s_cur_times == type_stats[].total_c
 
 | 产物里的 `meta.synthetic` | 截图前 | 截图前的断言 | 结果 |
 |---|---|---|---|
-| **严格布尔 `true`** | 不点眼睛，保持状态 0 | 昵称/UID **不含** `*`；且都不能为空 | `玩家A` / `UID 10000001` 原样进图 |
-| **其它一切**（`false` / `"true"` 字符串 / `1` / 缺失 / 产物读不出 report） | 强制点到 **2** | 原有那条：`eye==='2'` 且昵称、UID 都**含** `*` | 遮成 `玩*` / `UID 100***01` |
+| **严格布尔 `true`** | 不点眼睛，保持状态 0 | 昵称/UID **不含** `*`；且都不能为空 | `绳匠A` / `UID 10000001` 原样进图 |
+| **其它一切**（`false` / `"true"` 字符串 / `1` / 缺失 / 产物读不出 report） | 强制点到 **2** | 原有那条：`eye==='2'` 且昵称、UID 都**含** `*` | 遮成 `绳*` / `UID 100***01` |
 
 - **改之前**：`const EFFECTIVE_PRIVACY = PREVIEW ? 2 : PRIVACY` —— 无条件强制 2，断言无条件要求含 `*`。
-  连 `fixtures/baseline`（`玩家A` / `10000001`，本来就是编的）也被遮成「玩*****」。
+  连 `fixtures/baseline`（`绳匠A` / `10000001`，本来就是编的）也被遮成「绳*****」。
 - **改之后**：先读产物里的标记再决定。`synthetic: true` 的数据集不遮；其余维持原样。
 - **为什么**：模拟名字遮了不保护任何人，只是让预览图难看、并且掩盖真实排版
   （用户原话：「github 截图没更新，既然是模拟名字的话，就不用打星号了」）。
@@ -130,7 +130,7 @@ sum(cur_records[].count) + type_stats[].next_s_cur_times == type_stats[].total_c
 实现分两处：判定逻辑在 `scripts/preview-privacy.mjs`（纯函数，`extractReport()` /
 `previewPrivacyPolicy()` / `checkPreviewGuard()`），接线在 `scripts/screenshot.mjs`。
 回归用例：`node skills/zzz-stats/scripts/test-preview-privacy.mjs`（不需要浏览器）。
-基线是 **53 项**；本机因为 `output/` 下同时有 `玩家A` 与 `玩家B` 两个数据集目录，
+基线是 **53 项**；本机因为 `output/` 下同时有 `绳匠A` 与 `绳匠B` 两个数据集目录，
 第 5 节对每个目录各跑一条，实际是 **55 项**——数字随 `output/` 里的账号目录数变化，
 不是回归。
 
@@ -2053,7 +2053,7 @@ README 头图（`docs/preview.png`）、发布说明、任何人看得到的图�
 - 版本：`1.0～2.6`，版本过滤只给 `1.x` / `2.x` 两档（该号没有 3.x）。
 - 横轴去重后：角色池 14 个版本号、音擎 14 个。
 
-构建命令：`node skills/zzz-stats/scripts/build-report.mjs --data fixtures/multigold`（产物是 `output/玩家B/report.html`，目录名取自它的 `meta.json` 昵称）。
+构建命令：`node skills/zzz-stats/scripts/build-report.mjs --data fixtures/multigold`（产物是 `output/绳匠B/report.html`，目录名取自它的 `meta.json` 昵称）。
 `fixtures/multigold/` 是**另一份同级数据集**（只用于跑生成报表环节，不走登录采集），与 `fixtures/baseline/` 平级，**都入库**。
 仓库自己开发期的测试数据放 `fixtures/`；用户运行期采集出来的 `data/` 是另一回事，那个整目录在 git 忽略内、
 且带真实 UID，永不入库。`fixtures/` 里的 `meta.json` 已把 `uid` 换成假值。
@@ -2255,12 +2255,65 @@ node skills/zzz-stats/scripts/screenshot.mjs --chart 音擎            # 截频�
 node skills/zzz-stats/scripts/screenshot.mjs --filter 2             # 截版本过滤生效后的状态（多个写 --filter 1,2）
 node skills/zzz-stats/scripts/screenshot.mjs --html p.html --out-dir /tmp/x   # 指定产物与输出位置
 node skills/zzz-stats/scripts/screenshot.mjs --preview --html output/<账号名>/report.html   # README 预览图 → docs/preview.png（整页 2x）
+node skills/zzz-stats/scripts/screenshot.mjs --preview --detail-versions 3 --html output/<账号名>/report.html   # 详情列表留 3 个版本组
 ```
 
 **`--preview` 和两档验收图是两个用途，不要混用。** 两档图（`1440x900` / `1280x800`，1x）
 是**验收**用的：确认首屏装不装得下、图例有没有折行，看的是「这个尺寸下会不会破版」。
 `--preview` 出的是**对外展示**用的 README 头图：1440 逻辑宽、DPR 2、整页（不止首屏），
-所以它是 `2880×2840` 这样的长图（高度跟内容走，不固定），别拿它跟 900 比高度。
+高度跟内容走、不固定，别拿它跟 900 比高度。当前实测 **`2880×3588`**。
+
+#### `--detail-versions <n>`：详情列表只留前 N 个版本组
+
+用户原话：「README 的截图，抽卡详情那部分不要截太长，2 个版本够了」。
+
+**改前**：`--preview` 原样截整页，详情列表把十几金的**全部 16 个版本组**都列出来
+（独家 41 行、横跨 v1.0~v3.3），图高 **4342px**。摊在 README 上就是一条细长的东西，
+读者根本看不完，也看不出「这里想展示的是什么」。
+
+**改后**：`--preview` 默认 `--detail-versions 2`，只保留 `#detail-list` 下前 2 个 `.detail-group`：
+
+| | 版本组 | 详情行数 | 图高 |
+|---|---|---|---|
+| 改前 | 16 组（v1.0~v3.3） | 41 | 2880×**4342** |
+| 改后 | **2 组**（v3.3 2 行 + v3.1 4 行） | **6** | 2880×**3588** |
+
+短了 **754px**。
+
+**按版本组截、不按行截**：`.detail-group` 自带左侧竖括号和版本号，半组会在图里留下一个
+没有版本号的光秃行段。用户说的是「2 个版本够了」，单位就是版本组。实测切断点落在
+v3.1 组的完整边界上（组内 4 行都在），行高仍是 `[26]`、没有半行。
+
+**右栏「角色汇总」不截断**：用户只说了「抽卡详情那部分」。而且右栏是独立分栏、
+跟着全账号走（跨全部频段合并），截了「这个号一共拿到过哪些角色」这个答案就缺一块。
+
+**默认值分两种情况**，这是刻意的：
+
+| 场景 | 默认 | 理由 |
+|---|---|---|
+| `--preview` 且没显式传 | **2** | README 那张图就是干这个的，不传也该是短的 |
+| 其它（两档验收图） | **null，不截断** | 验收要看完整列表，包括 41 行那个最长的频道 |
+| 显式 `--detail-versions N` | N | 以传值为准，`--preview` 下也一样 |
+| 显式 `0` 或负数 | null，不截断 | 避免把 0 解释成「一行都不要」截出个空壳 |
+
+**实现走注入，不改产物文件**：和 `--privacy` / `--chart` 同一段 `withState()` 注入脚本，
+只改这个临时页。用户手上的 `report.html` 一行不动。
+
+两个坑：
+
+1. **必须同时写 `hidden` 和 `style.display = 'none'`。** `.detail-group { display: flex }`
+   的优先级高于浏览器对 `[hidden]` 的默认 `display: none`，只设 `hidden` 的话元素照样显示、
+   图一点都不会变短，而且没有任何报错——看起来像「参数没生效」。
+2. **必须在切 tab 之后执行。** 切 tab 会重画整个列表（`list.innerHTML = ''`），
+   提前隐藏会被冲掉。注入脚本里这一段排在 `--detail` 之后。
+
+**截断后左栏会短于右栏，底部留白是 `stretch` 的必然结果、不是 bug。**
+实测（1440，截 2 组）：左栏 `#detail-list` 高 **188**，右栏 `.detail-chars` 高 **854**
+（25 行 × 34 + 4），grid `align-items: stretch` 让行高取较高者，于是左栏下方空出 **666px**。
+页高由右栏的 854 决定（`docH 1794`）。想让左栏不被拉长只能改 `start`，
+但实测两种取值下 `charsH` 都是 854、`docH` 都是 1794——**页高由右栏内容决定，与 align 无关**，
+改它只会让分隔竖线断在半空（那是 §6.1 已经推翻过的做法）。**不要为这个空白去动 `align-items`。**
+
 
 **为什么必须由脚本出**：这张图以前是**手工截好随仓库带**的。结果是代码一路改（折线从黄变红绿蓝、
 图例删了尾注、右轴从 60% 固定到 100%、加了版本过滤 chip），图一直停在初始化那一版，

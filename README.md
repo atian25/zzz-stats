@@ -99,13 +99,22 @@ node skills/zzz-stats/scripts/screenshot.mjs --chart 音擎                     
 node skills/zzz-stats/scripts/screenshot.mjs --filter 2                        # 截版本过滤生效之后
 node skills/zzz-stats/scripts/screenshot.mjs --html p.html --out-dir /tmp/x     # 指定产物与输出位置
 node skills/zzz-stats/scripts/screenshot.mjs --preview --html output/<账号名>/report.html   # → docs/preview.png（顶部头图，整页 2x）
+node skills/zzz-stats/scripts/screenshot.mjs --preview --detail-versions 3 --html output/<账号名>/report.html   # 详情列表留 3 个版本组
 ```
 
 `--html` 不传时会在 `output/*/report.html` 里找唯一的那个；有多份会报错退出，不猜（截错账号的图比失败更糟）。
 
 两档图是**验收**用的（看首屏装不装得下、图例有没有折行）；`--preview` 出的是**对外展示**用的头图，
-1440 逻辑宽、DPR 2、整页，所以是 `2880×2840` 这样的长图（高度跟内容走，不固定）。这张图以前是手工截的，
-代码改了它不会跟着变，README 上就挂着一张和实际产物对不上的截图，现在统一由脚本出，别手截。
+1440 逻辑宽、DPR 2、整页。当前实测 `2880×3588`（高度跟内容走，不固定）。
+
+`--preview` 默认把**抽卡详情列表截到前 2 个版本组**（`--detail-versions 2`），右栏角色汇总不截断。
+改前是整页原样截——详情列表铺满十几金的十几个版本组，图高 **4342px**、摊在 README 上就是一条细长的东西；
+改后 2 个版本组（v3.3 的 2 行 + v3.1 的 4 行 = 6 行），图高 **3588px**，短了 754px。
+显式传 `--detail-versions N` 以传值为准，传 `0` 或不传（非 `--preview` 模式）就是不截断。
+**右栏不截断**是有意的：它是全账号跨频段的汇总，截了「这个号一共拿到过哪些角色」就缺一块。
+
+这张图以前是手工截的，代码改了它不会跟着变，README 上就挂着一张和实际产物对不上的截图，
+现在统一由脚本出，别手截。
 
 `--preview` 的隐私按数据集来源分两条路，判据是产物里的 `report.meta.synthetic`：
 严格布尔 `true` 的数据集（`fixtures/` 里那些名字本来就是编的）**不打码**，其余一切**强制全打码**并断言。
