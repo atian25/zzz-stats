@@ -2252,16 +2252,76 @@ html 了，会把对应的渲染都计算好。现在是生成 html，html 里�
 关键区别：**要变的不是「有没有前端入口」，而是「产物里内嵌的是结果还是原料」**。
 skill 的调用方式、CLI 参数、日志、退出码全都没变，变的只是 `report.html` 的内部。
 
+### 第三轮：把「登录 + 采集 + 出报表」抽成 `lib/` SDK（2026-11-24）
+
+前两轮解决的是**产物内部**（内嵌原料还是结果）。这一轮解决的是**代码复用**：
+改前采集与出报表各自是一份千行脚本，算法和命令行混在一起，想从服务里复用只能整份复制。
+
+| | 改前 | 改后 |
+|---|---|---|
+| 采集算法在哪 | `scripts/collect.mjs`（1027 行，含参数解析 / 落盘 / 信号处理） | `lib/collect.mjs` + `lib/login-*.mjs` + `lib/transport-node.mjs` |
+| 出报表算法在哪 | `scripts/build-report.mjs`（1002 行，含读盘 / 写文件 / `process.exit`） | `lib/build.mjs` |
+| 外壳还剩什么 | ——（本来就没有分层） | 参数、日志、目录、落盘、退出码、二维码图片服务、信号处理 |
+| SDK 会不会写盘 | —— | **不会**。`collectData()` / `buildReport()` 只返回数据 |
+| 取数路径 | 只有浏览器（页面内扫码 + 页内 fetch） | `node`（默认，纯 HTTP）/ `browser`（原路），节点失败自动降级并打一行 |
+
+两条边界写在 `lib/index.mjs` 的文件头，改之前先读：
+
+1. **SDK 只返回数据，不写盘。** 落盘位置、目录名、失败时写不写文件都是外壳的决定 ——
+   服务里没有 `exit`，用例里不该落文件。
+2. **SDK 不读 `process.argv`、不调 `process.exit`。** `buildReport()` 的 `fatal` 是
+   **返回数组**而不是抛异常：外壳照旧打印 `✖` 再 exit 1，服务可以返回 422，用例能断言具体条目。
+
+`files` 的键必须与 `output/<账号名>/data/` 下的文件名完全一致（14 个）。用 `Map` 保留插入顺序，
+写出来的目录和改前一样。`buildReport()` 同时收 `Map` 与普通对象（Node 外壳读盘给对象）。
+
+#### 纯 Node 那条路是逆向结论，不是公开 API
+
+`lib/login-node.mjs` / `lib/transport-node.mjs` 里的常量（`x-rpc-app_id: cieb8o6xs1kw`、
+`x-rpc-client_type: 4`、`x-rpc-game_biz: nap_cn`、`x-rpc-sdk_version: 2.57.0`、cookie 名、
+`game_biz=nap_cn`）全部抄自官方页面当时的真实请求。**它会静默失败**：接口变了不会报
+「接口不存在」，而是回一个业务错误码。出问题按这个顺序怀疑：
+
+1. `x-rpc-app_id` —— 用 `unknown` 或旧值会一直 `-3005`「参数不合法」（看着像 cookie 坏了）
+2. cookie 名（`cookie_token_v2` / `ltoken_v2` / …）—— 改名就登不上
+3. `x-rpc-game_biz` —— `nap_cn` 只对应国服；国际服是另一套域名与 biz，本实现不做
+
+另外两个数据流事实（当时排查成本极高，必须记住）：
+
+- **token 不在 `data.tokens` 里**（永远空数组），在 `Set-Cookie` 响应头；且**只在第一次拿到
+  `Confirmed` 的那次响应**里下发，再查一次就没了。所以必须在同一个响应里当场抓 set-cookie，
+  不能「先返回再补查」。
+- **游戏 UID ≠ 米游社账号 ID。** `game_uid` 要另查 `getUserGameRolesByCookie`；
+  拿 `queryQRLoginStatus` 的 `user_info.aid` 去打游戏接口会一直 `-100`「请先登录」。
+- 拼 Cookie 头时**排除 `aliyungf_tc`**（阿里云 CDN 的会话 cookie，与登录无关）。
+
+实测（2026-11-24）：`loginWithQr()` 在真实网络下能拿到 ticket 并编出 320px 二维码，
+轮询进入 `Created`。**扫码确认这一段需要人操作，没有自动化验证过** —— 这一点别在文档里
+写成「已端到端验证」。
+
+#### 降级：默认 node，失败降到 browser
+
+`--transport node|browser`，默认 `node`。node 失败（国际服 / 私有 header 失效）**自动降到
+browser，并明确打一行说明为什么降级**。静默换路最难查：用户以为走的是纯 Node，
+实际弹出一个浏览器要扫。`--transport node` 显式指定时**不降级**，失败就报错 ——
+显式选择要能被信任。
+
 ### 结构
 
 ```
-assets/report/core.js                    computeReport({files, cfg, icons, generatedAt})
-      ↑ import                                    │
-scripts/build-report.mjs                          │ scripts/core-inline.mjs 构建期转换
-Node 外壳：读盘 → sha1 内嵌图标 → 拼模板 → 校验 → 写 HTML
-                                                  ↓
-                                       产物里的第 ② 段脚本（经典同步）
+assets/report/core.js                 computeReport({files, cfg, icons, generatedAt})
+      ↑ import                                 │
+lib/build.mjs                                 │ lib/core-inline.mjs 构建期转换
+构建内核：内嵌图标 → 拼模板 → 跑校验（不写盘）
+                                               ↓
+                                    产物里的第 ② 段脚本（经典同步）
+      ↑ 调用
+scripts/build-report.mjs   外壳：解析参数 → 读盘成 files → 调内核 → 写文件 → 摘要 → 退出码
 ```
+
+（改前 `build.mjs` 这一层就是 `scripts/build-report.mjs` 本体，1002 行里混着参数解析、
+读盘、写文件、`process.exit`。**口径不许写在外壳里**：写进去就只在构建期生效，
+产物里现算的那份没有。）
 
 删掉的东西（**不要加回来**）：`assets/report/app.html`、`app.js`、`config.json`、
 `icons/manifest.json`、`scripts/build-icons-manifest.mjs`、`scripts/test-app-browser.mjs`。
@@ -2281,7 +2341,7 @@ Node 外壳：读盘 → sha1 内嵌图标 → 拼模板 → 校验 → 写 HTML
 **页面一片空白、console 干净**。而 `screenshot.mjs` 只等 `DOMContentLoaded + setTimeout(0)`，
 四套用例也都在这个时机读页面，异步化会让它们间歇性扑空，且极难定位。
 
-`scripts/core-inline.mjs` 的转换规则（写死在一处，不要在别处再写一份）：
+`lib/core-inline.mjs` 的转换规则（写死在一处，不要在别处再写一份）：
 
 1. 顶层 `export function foo(` → `function foo(`。core.js 只有这一种 export 形式，
    多一种就当场抛错，不静默留下半份 ESM。
@@ -2326,7 +2386,7 @@ Node 外壳：读盘 → sha1 内嵌图标 → 拼模板 → 校验 → 写 HTML
 `scripts/test-core-pure.mjs`（47 项）先**剥掉注释再 grep** 这些词：
 不剥注释的话，文件头那句「不许出现 `node:` import」会把自己的断言判红（实测过一次）。
 
-`cssVarBlock` / `textSubs` / `escapeHtml` 已从 core **搬回构建期**（`scripts/template-tokens.mjs`）。
+`cssVarBlock` / `textSubs` / `escapeHtml` 已从 core **搬回构建期**（`lib/template-tokens.mjs`）。
 理由：它们唯一的调用方是 Node 外壳（产物是拼好的静态 HTML，浏览器既不写 `<style>` 也不做文案替换）。
 留在 core 里的副作用是 token 字面量（`'/*__COPY_CHART_TITLE__*/'`）会随 core 源码内嵌进产物，
 让「产物里不许残留 `/*__` 占位符」那条断言永远命中自己。

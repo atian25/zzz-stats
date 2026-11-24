@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * 把 ESM 的 `core.js` 转换成**经典同步脚本**里可以内嵌的形式。
  *

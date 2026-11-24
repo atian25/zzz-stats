@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * 模板占位符的填充值：CSS 变量块、文案表、HTML 转义。
  *

@@ -989,11 +989,79 @@ UP 抽数是该角色**各轮 total 累加**（含期间歪出的）、非 UP �
 |---|---|---|
 | **配置** | `config/report.json` | 称号分档、标签阈值与去重、配色值、文案、图例、频道定义、保底抽数（`channels[].pityCap`）、隐私规则。**90% 的调整都在这层**，改完重跑构建即生效 |
 | **口径内核** | `assets/report/core.js` | 轮次模型、不歪率、称号、标签、详情行、右栏汇总、分母。**纯 JS，Node 与浏览器跑的是同一份源码**（产物里是它的构建期转换版）。改这层要同步 `report-rules.md` |
-| **一个外壳** | `scripts/build-report.mjs` | 算参数、读盘、把数据与 core 一起塞进模板、跑校验、写文件。**口径不许写在外壳里** |
+| **逻辑 SDK** | `lib/` | `collectData()` / `buildReport()`。登录、采集、出报表的**纯逻辑**：只返回数据，不写盘、不读参数、不调 `process.exit` |
+| **两个外壳** | `scripts/collect.mjs` / `scripts/build-report.mjs` | 算参数、读盘、调 SDK、写文件、打日志、退出码。**口径不许写在外壳里** |
 | **资源** | `assets/report/icons/` | 里面是 `avatars/`（圆头像）与 `items/`（方图标）两套，**都只有 64px 一套**。**构建时内嵌进 HTML 用的就是它**，没有第二份 96px 原图了。缺图**不要手动找**，跑 `scripts/sync-icons.mjs` |
 | **规范** | `references/report-rules.md` | 记录「为什么这样算、为什么这样画」以及踩过的坑。**不要为了改行为去改它**；它是给维护者看的 |
 
 改配置不需要读规范；改实现必须先读规范、改完再回来同步。
+
+#### 逻辑 SDK：`lib/` 与外壳的分工
+
+**改前**：采集与出报表各自是一份 1000 行上下的脚本，算法和命令行混在一起
+（`collect.mjs` 1027 行、`build-report.mjs` 1002 行）。想从别处复用就只能整份复制，
+两份必然漂移。
+
+**改后**：算法进 `lib/`，命令行退化成薄壳。
+
+```
+lib/index.mjs            统一导出
+lib/collect.mjs          collectData()  采集编排（登录 → uid → 取数 → meta）
+lib/build.mjs            buildReport()  出 HTML
+lib/login-node.mjs       纯 Node 扫码登录（passport → Cookie）
+lib/login-browser.mjs    浏览器登录 + 页内取数（改前 collect.mjs 的主体）
+lib/transport-node.mjs   纯 Node 取数（Cookie 直连 act 接口）
+lib/qr.mjs               二维码编码（借 dsh 自带的 qrcode，不加 npm 依赖）
+lib/core-inline.mjs      ESM → 经典同步脚本的构建期转换
+lib/template-tokens.mjs  CSS 变量块 / 文案表 / HTML 转义
+```
+
+两条硬界限：
+
+- **SDK 只返回数据，不写盘。** `collectData()` 返回 `{ uid, nickname, files: Map, summary, meta }`，
+  `buildReport()` 返回 `{ html, report, metrics, tags, warnings, fatal, icons }`。
+  落盘位置、目录名、失败时写不写文件，全是**外壳**的决定 —— 服务里没有 `exit`，
+  用例里不该落文件。
+- **SDK 不读 `process.argv`、不调用 `process.exit`。** 参数解析与退出码留在 `scripts/`。
+  `buildReport()` 的 `fatal` 是**返回数组**而不是抛异常：外壳照旧打印 `✖` 再 exit 1，
+  服务可以返回 422，用例可以断言具体条目。
+
+`files` 的键必须与 `output/<账号名>/data/` 下的文件名完全一致（14 个）：
+`index.json` / `meta.json` / `cur_pool_stat_<id>.json` / `hist_pool_stat_<id>.json`
+（id = 1,2,3,5,102,103）。用 `Map` 是为了保留插入顺序（index 在前、然后按频道顺序），
+写出来的目录列出来和以前一样。
+
+#### 两条取数路径：纯 Node 与浏览器
+
+**改前**：只有浏览器一条路（官方页面里扫码 + 页内 `fetch`），必须有浏览器、必须有人扫。
+
+**改后**：`--transport node|browser`，默认 `node`。
+
+| | `node` | `browser` |
+|---|---|---|
+| 登录 | passport 扫码（纯 HTTP） | 页面跨域 iframe 里扫码 / 短信 |
+| 取数 | Cookie 直连 act 接口 | 页内 `fetch`（官方源放行） |
+| 需要 | 只要网络 | 要本机 Chrome；要人等扫码 |
+| 范围 | **仅国服**（`prod_gf_cn`） | 国服 + 国际服 |
+| 风险 | 依赖逆向的私有 header（见下） | 官方改一次 DOM 就失效 |
+
+默认 `node`，**失败自动降到 `browser`，并明确打一行说明为什么降级**。
+静默换路是最难查的一类问题：用户以为走的是纯 Node，实际弹出一个浏览器要扫。
+`--transport node` 显式指定时**不降级**，失败就报错 —— 显式选择要能被信任。
+
+纯 Node 那条路是**私有接口的逆向结论**，不是带文档的公开 API。改了会**静默失败**
+（回业务错误码，不是「接口不存在」）。出问题按这个顺序怀疑：
+
+1. `x-rpc-app_id`（当前 `cieb8o6xs1kw`）—— 用 `unknown` 或旧值会一直 `-3005`「参数不合法」
+2. cookie 名（`cookie_token_v2` / `ltoken_v2` / …）—— 改名就登不上
+3. `x-rpc-game_biz`（当前 `nap_cn`）—— 国际服是另一套，本实现不做
+
+另外两个必须知道的数据流事实（都在 `lib/login-node.mjs` 的注释里写全了）：
+
+- **token 不在 `data.tokens` 里**（那个字段永远是空数组），在 `Set-Cookie` 响应头里；
+  且**只在第一次拿到 `Confirmed` 的那次响应**里下发，再查一次就没了。
+- **游戏 UID ≠ 米游社账号 ID**。`game_uid` 要另查 `getUserGameRolesByCookie`；
+  拿 `user_info.aid` 去打游戏接口会一直 `-100`「请先登录」，看着像 cookie 坏了。
 
 #### 为什么口径内核要单独成文件
 
@@ -1005,9 +1073,9 @@ UP 抽数是该角色**各轮 total 累加**（含期间歪出的）、非 UP �
 
 ```
 assets/report/core.js   ← 口径（纯 JS，零 Node 依赖），既有 ESM 也有构建期转换版
-   ↑ import                              ↓ scripts/core-inline.mjs 转换
-scripts/build-report.mjs                   产物里的第 ② 段脚本
-（Node 外壳：读盘→内嵌图标→拼模板→写 HTML）   （经典同步脚本，浏览器现算 → window.__REPORT__）
+   ↑ import                              ↓ lib/core-inline.mjs 转换
+lib/build.mjs                              产物里的第 ② 段脚本
+（构建内核：内嵌图标→拼模板→跑校验，不写盘）    （经典同步脚本，浏览器现算 → window.__REPORT__）
 ```
 
 `core.js` 的约束是硬性的：**不许出现 `node:` import、`process`、`Buffer`、`fs`、`__dirname`、`import.meta`**。
@@ -1048,7 +1116,7 @@ scripts/build-report.mjs                   产物里的第 ② 段脚本
 **页面一片空白、console 干净**。`screenshot.mjs` 只等 `DOMContentLoaded + setTimeout(0)`，
 四套用例也都在这个时机读页面，异步化会让它们间歇性扑空。
 
-转换规则写死在 `scripts/core-inline.mjs`：剥掉顶层 `export function` 前缀、包进 IIFE、
+转换规则写死在 `lib/core-inline.mjs`：剥掉顶层 `export function` 前缀、包进 IIFE、
 末尾调 `computeReport` 并挂 `window.__REPORT__`。遇到别的 export 形式**直接抛错**，
 不静默留下半份 ESM。产物里还会断言「`export ` 出现 0 次、取得到 `computeReport`、
 没有 `import` / `await`、数据里没有裸的 `</script`」。

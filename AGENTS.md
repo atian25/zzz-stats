@@ -131,8 +131,8 @@
 - 改口径 / 阈值 / 称号 / 文案 / 配色 → 只改 `skills/zzz-stats/config/report.json`。
 - 改算法（口径）→ `skills/zzz-stats/assets/report/core.js`，并同步 `references/report-rules.md`。
   **纯 JS，Node 与产物里的浏览器跑同一份源码**（产物里是它的构建期转换版，见
-  `scripts/core-inline.mjs`），不许出现 `node:` / `process` / `fs` / `require` / `import.meta`
-  （`test-core-pure.mjs` 会 grep）。**只**有 `scripts/build-report.mjs` 这一个外壳，
+  `lib/core-inline.mjs`），不许出现 `node:` / `process` / `fs` / `require` / `import.meta`
+  （`test-core-pure.mjs` 会 grep）。**只**有 `scripts/build-report.mjs` 这一个外壳（build 内核在 `lib/build.mjs`），
   口径**不许写在外壳里** —— 写进去就只在构建期生效，产物里现算的那份没有。
   改完除了 `test-core-pure.mjs`，还要跑 `test-report-browser.mjs`：转换环节坏了 Node 端毫无反应。
 - 改视觉 → `skills/zzz-stats/assets/report/charts.{js,css}` / `assets/report/template.html`，
@@ -141,6 +141,17 @@
 - 改了 `config/report.json` 或 `assets/report/icons/` → **不用再跑任何清单脚本**（那两份静态副本
   已随粘贴面板一起删除，见下），重跑构建即可：配色与文案在构建期注入，图标在构建期编码内嵌。
 - **「改配置就生效」是硬约定**：不要在 CSS / JS 里另写一份硬编码色值。
+- **算法进 `lib/`，命令行只做外壳。** 分层见 `skills/zzz-stats/lib/index.mjs` 文件头：
+  `lib/collect.mjs`（采集编排）、`lib/build.mjs`（出 HTML）、`lib/login-node.mjs`（纯 Node 扫码）、
+  `lib/login-browser.mjs`（浏览器登录）、`lib/transport-node.mjs`（纯 Node 取数）、`lib/qr.mjs`。
+  `scripts/collect.mjs` / `scripts/build-report.mjs` 只解析参数、调 SDK、落盘、打日志、定退出码。
+  三条别破坏：
+  - **SDK 不写盘**（只返回 `files: Map` / `html`），落盘位置是外壳的决定；
+  - **SDK 不读 `process.argv`、不调 `process.exit`**；`buildReport()` 的 `fatal` 是返回数组；
+  - **口径不许写在外壳里**，写进去就只在构建期生效，产物里现算的那份没有。
+- 改 `lib/login-node.mjs` / `lib/transport-node.mjs` → 那是**私有接口的逆向结论**
+  （`x-rpc-app_id` / cookie 名 / `game_biz`）。改了会静默失败（回业务错误码，不是「接口不存在」）。
+  出问题按这个顺序怀疑：app_id → cookie 名 → game_biz。别先怀疑网络。
 - 任何改动后跑 §8 回归基线与 §9.3 验收，确认控制台数字与截图。
 
 ## 改完必须回填文档与模板

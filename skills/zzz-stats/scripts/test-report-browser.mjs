@@ -47,7 +47,7 @@ import { wantsHelp, printHelp } from './cli-help.mjs';
 import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { computeReport } from '../assets/report/core.js';
-import { PAYLOAD_ID } from './core-inline.mjs';
+import { PAYLOAD_ID } from '../lib/core-inline.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SKILL_DIR = resolve(HERE, '..');
