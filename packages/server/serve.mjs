@@ -319,13 +319,8 @@ async function execute(run) {
      */
     const result = await collectData({
       transport: 'node',
-      /*
-       * cfg 与 vendor 路径都必传 —— SDK 搬到 `packages/sdk/` 之后不再猜资源在哪。
-       * 漏传会在**这里**抛一条说清原因的错（而不是在 readFileSync 深处 ENOTFOUND），
-       * 落进 catch 之后原样显示在页面上，见下方 `message`。
-       */
+      // 配置由外壳读取；二维码使用 SDK 自带的 npm 依赖。
       cfg: CFG,
-      qrVendorPath: join(SKILL_DIR, 'assets/vendor/qrcode/core/qrcode.js'),
       log,
       fetchImpl: (url, init) => fetch(url, { ...(init ?? {}), signal: run.ac.signal }),
       onQr: async (qr) => {

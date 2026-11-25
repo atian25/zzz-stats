@@ -109,11 +109,7 @@ const loginNode = await import('../login-node.mjs');
     await collectMod.collectData({
       transport: 'node',
       cfg: MIN_CFG,
-      /*
-       * `loginWithQr()` 要求 encodeQr / qrVendorPath 二者之一，
-       * 不给会在入口就抛「需要 encodeQr 或 qrVendorPath」而不是那条 FAKE_NETWORK_DOWN。
-       * 这里用 encodeQr 接管编码，**不碰 vendor** —— 这条用例不该依赖 skill 资源。
-       */
+      // 接管编码以隔离网络分支测试；默认编码器另有 PNG 解码回归。
       encodeQr: fakeEncodeQr,
       fetchImpl: fakeFetch,
       onQr: async () => { calls.push('node-onQr'); },

@@ -45,32 +45,6 @@ import { encodeQrDataUrl } from './qr.mjs';
 import { collectFiles, buildMeta } from './collect.mjs';
 import { createNodeTransport, ACT_API } from './transport-node.mjs';
 
-/**
- * 按 vendor 路径造一个二维码编码器。
- *
- * 存在的理由：`encodeQrDataUrl()` 现在要求显式传 vendor 路径（SDK 搬到 `packages/sdk/`
- * 之后不再猜 `assets/vendor/qrcode/` 在哪），而 `loginWithQr()` 的 `encodeQr` 参数
- * 是个「只收文本」的回调。这个适配器把两者接上，让调用方可以二选一：
- *
- *   - 只给 `qrVendorPath`：用默认编码器（正常用法）
- *   - 直接给 `encodeQr`：完全接管编码（用例用它，不碰 vendor）
- *
- * 只给一半会立刻报错，而不是等到申请二维码那一步才抛一个看不懂的 ENOSYS。
- *
- * @param {string|null} vendorPath
- * @returns {(text: string) => Promise<string>}
- */
-function makeQrEncoder(vendorPath) {
-  if (!vendorPath) {
-    throw new Error(
-      'loginWithQr(): 需要 encodeQr 或 qrVendorPath 之一。' +
-      '正常用法传 qrVendorPath（assets/vendor/qrcode/core/qrcode.js 的绝对路径），' +
-      '用例可以直接传 encodeQr 接管编码。',
-    );
-  }
-  return (text) => encodeQrDataUrl(text, vendorPath);
-}
-
 /** passport 域（登录），与 act 域（取数）不是同一个。 */
 const PASSPORT = 'https://passport-api.mihoyo.com/account/ma-cn-passport/web';
 /** 取游戏角色的接口（需要 cookie，用来换 game_uid）。 */
@@ -177,15 +151,9 @@ export async function loginWithQr({
   now = () => Date.now(),
   fetchImpl = fetch,
   encodeQr = null,
-  qrVendorPath = null,
 } = {}) {
-  /*
-   * 编码器：可以整只注入（用例就这么做，不碰 vendor），
-   * 也可以只给 vendor 路径、由这里构造默认的。
-   * **两条都不给就报错** —— 早先默认值直接绑了 `encodeQrDataUrl`，
-   * 而那个函数现在要求显式 vendor 路径（SDK 搬走后不再猜 vendor 在哪）。
-   */
-  const doEncode = encodeQr ?? makeQrEncoder(qrVendorPath);
+  // 默认使用 SDK 的 qrcode；保留异步编码器注入供调用方与测试接管。
+  const doEncode = encodeQr ?? encodeQrDataUrl;
 
   /*
    * 1) 申请一张二维码。
@@ -350,7 +318,6 @@ export async function loginByQrNode({
   now = () => Date.now(),
   fetchImpl = fetch,
   encodeQr = null,
-  qrVendorPath = null,
 } = {}) {
   /*
    * 国际服直接抛错，**不在这里偷偷换成浏览器**。
@@ -364,7 +331,7 @@ export async function loginByQrNode({
   }
 
   const { cookie, accountId } = await loginWithQr({
-    onQr, log, sleep, pollMs, maxWaitMs, now, fetchImpl, encodeQr, qrVendorPath,
+    onQr, log, sleep, pollMs, maxWaitMs, now, fetchImpl, encodeQr,
   });
   const role = await resolveGameUid({ cookie, region, fetchImpl });
   log(`UID ${role.uid}（${role.regionName ?? role.region}）`);

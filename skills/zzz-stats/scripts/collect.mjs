@@ -73,17 +73,8 @@ if (wantsHelp()) {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SKILL_DIR = resolve(HERE, '..');
-/*
- * 采集层在 `packages/sdk/`，与 skill 目录已分离，所以它需要的两样东西
- * 必须由这里显式给齐（SDK 不猜自己在哪）：
- *
- *   cfg            `config/report.json` 的解析结果（采集层只用得到 channels）
- *   qrVendorPath   二维码编码器的 vendor 路径
- *
- * 这两条路径是**外壳**的布局知识，留在外壳里是对的。
- */
+/* 配置由外壳读取并传给 SDK；二维码编码依赖由 SDK 自己管理。 */
 const CFG_PATH = join(SKILL_DIR, 'config/report.json');
-const QR_VENDOR_PATH = join(SKILL_DIR, 'assets/vendor/qrcode/core/qrcode.js');
 /** 配置读一次就够：下面 `cfg` 与「完整性校验」用的是同一份。 */
 const CFG = JSON.parse(readFileSync(CFG_PATH, 'utf8'));
 const args = process.argv.slice(2);
@@ -149,7 +140,6 @@ async function runTransport(kind) {
     region: REGION,
     api: API,
     cfg: CFG,
-    qrVendorPath: QR_VENDOR_PATH,
     log,
     sleep,
     onQr: async (qr) => {

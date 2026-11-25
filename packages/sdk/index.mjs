@@ -11,7 +11,7 @@
  * | `login-node.mjs` | 纯 Node 扫码登录（passport + Cookie） | 否 |
  * | `login-browser.mjs` | 浏览器登录（页面 iframe 扫码 / 短信） | 否 |
  * | `transport-node.mjs` | 纯 Node 取数（act 接口直连） | 否 |
- * | `qr.mjs` | 二维码编码 → data URL | 否（vendor 路径由调用方传） |
+ * | `qr.mjs` | 二维码编码 → data URL | 否（npm qrcode） |
  * | `drivers.mjs` | 浏览器驱动适配层（playwright / cdp） | 否 |
  * | `qr-wait.mjs` | 换码通道 + 二维码计时 | 否 |
  *
@@ -68,4 +68,4 @@ export {
 } from './login-node.mjs';
 export { loginByQrBrowser, collectViaBrowser, closeBrowserSession } from './login-browser.mjs';
 export { createNodeTransport } from './transport-node.mjs';
-export { encodeQrDataUrl, dataUrlToBuffer, loadQrcode } from './qr.mjs';
+export { encodeQrDataUrl, dataUrlToBuffer } from './qr.mjs';

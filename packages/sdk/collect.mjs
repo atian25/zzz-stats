@@ -185,9 +185,6 @@ export function buildMeta({ index, uid, nickname, region, api, summary, fetchedA
  * @param {object} args
  * @param {object} args.cfg                          `config/report.json` 的解析结果。**必传**
  *        （SDK 不猜配置路径：它不知道自己在哪个仓库布局里）。`channels` 不给时用它的 channels。
- * @param {string} [args.qrVendorPath]               vendor qrcode 内核的绝对路径
- *        （`assets/vendor/qrcode/core/qrcode.js`）。node 路径生成二维码要用它；
- *        也可以改成传 `encodeQr` 完全接管编码。
  * @param {Function} [args.encodeQr]                自定义二维码编码器（收文本、返回 dataUrl）
  * @param {'node'|'browser'} [args.transport]        用哪条路，默认 node
  * @param {object} [args.browser]                    浏览器路径的参数（见 packages/sdk/login-browser.mjs）
@@ -209,7 +206,6 @@ export async function collectData({
   region = 'prod_gf_cn',
   api = null,
   cfg = null,
-  qrVendorPath = null,
   encodeQr = null,
   onQr = null,
   onProgress = null,
@@ -253,7 +249,6 @@ export async function collectData({
       sleep,
       fetchImpl,
       encodeQr,
-      qrVendorPath,
     });
     progress('collect', '开始取数');
     const { files, summary, meta } = await collectViaNode({
