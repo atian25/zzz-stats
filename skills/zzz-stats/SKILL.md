@@ -1143,7 +1143,7 @@ HTML 存在该 run 上，`/report?runId=` 从内存返回；run 结束 + 超过 
 SDK **不做降级、不 catch、不重试、不判断该不该换一条路**。`collectData({ transport })`
 只是「按你给的那条调」，没有 switch 到另一条的逻辑。原因是策略会随部署形态变
 （服务里可能只用浏览器、或 node 失败就整体报错），写进 SDK 就等于替所有调用方做了决定。
-`test-lib-transport.mjs` 把这条钉成断言（含「node 失败时浏览器一次都不许被调到」）。
+`packages/sdk/test/test-sdk-transport.mjs` 把这条钉成断言（含「node 失败时浏览器一次都不许被调到」）。
 
 CLI 的三种情形：不传 `--transport` → 先 node、抛错就打一行说明再走 browser；
 `--transport node` / `--transport browser` → 只用那一个，失败按现有方式报错退出。
@@ -1280,7 +1280,7 @@ DPR2 需要 52px，64px 够用；DPR3 下详情图标会略虚，这是确认接
 | 接口返回 `-100` | 登录态失效，回第 3 步重新扫码 |
 | 接口返回 `-400005 参数错误` | `vers` 超过 10 个或用了不属于该频道的版本，分片重来 |
 | 接口返回非 0 且非 -100 | 原样把 `retcode` / `message` 报给用户，不盲目重试 |
-| 页面改版、接口路径变了 | 看 `index_*.js` 里的 `/api/zzz/*` 路径，更新本文件与 `references/api.md` |
+| 页面改版、接口路径变了 | 看 `index_*.js` 里的 `/api/zzz/*` 路径，更新本文件与 `packages/sdk/docs/api.md` |
 | 误报「已在扫码模式」，用户扫了没反应 | 用 `location.hash` 判断，别用图片尺寸 —— 短信页有张 232×80 的横幅会骗过尺寸判断 |
 | 换图后新码立刻显示「已过期」 | 刷新时忘了重置计时起点（`issuedAt`），新码还在用旧时间算 |
 | 用户扫的还是上一张废码 | 二维码覆盖了同名文件，浏览器/组件缓存了旧图；用**最新打印的那条 `?t=` 地址**（盘上固定名，靠查询串破缓存） |
@@ -1327,7 +1327,7 @@ output/
 
 `output/` 整体被 `.gitignore` 忽略（含账号目录与那三个凭据文件）。
 
-字段说明见 `references/api.md`，口径与呈现见 `references/report-rules.md`。
+字段说明见 `packages/sdk/docs/api.md`，口径与呈现见 `references/report-rules.md`。
 
 ## 安全说明
 

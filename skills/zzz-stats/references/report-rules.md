@@ -382,7 +382,7 @@ formatter 返回的是**纯文本多行**，必须显式保留换行：`extraCss
 - **该频段进度为 0 时不画**（如独家 / 音擎：刚出完金或没垫）。显示一条空条只会让人以为坏了。
 - **空频段也要画**（如音擎回响：垫了 12 抽、一金未出）。只写「这个频段还没有 S 级记录」
   等于把唯一有信息量的数藏起来。
-- **保底上限在 `config/report.json` 的 `channels[].pityCap`**，按频段不同（见 `references/api.md` §5）：
+- **保底上限在 `config/report.json` 的 `channels[].pityCap`**，按频段不同（见 `packages/sdk/docs/api.md` §5）：
   常驻 / 独家 / 独家重映 90，音擎 / 音擎回响 80，邦布 80。
   **不要用 `new_s_max_times`**：那是官方 UI 的区间展示值，不是硬保底
   （实测常驻该值 32，而该频道最长出金间隔是 80）。
@@ -2321,9 +2321,9 @@ SDK 暴露四个并列函数，各管各的、只抛错：
 不降级。把策略写进 SDK，等于替所有调用方做了决定，而且调用方**再也没法知道**
 「node 这条路其实失败了」（它只会看到成功）。
 
-`test-lib-transport.mjs`（19 项）把这条钉成断言，其中关键一条是
+`packages/sdk/test/test-sdk-transport.mjs`（15 项，第 3、4 段）把这条钉成断言，其中关键一条是
 「`transport=node` 失败时浏览器的扫码回调一次都不许被调到」。反向验证过：
-在 SDK 的 node 分支里注入一个 `catch` 后改走 browser，用例立刻 14/15、exit 1。
+在 SDK 的 node 分支里注入一个 `catch` 后改走 browser，用例立刻报红、exit 1。
 
 CLI 的判据是「用户有没有显式传 `--transport`」。注意 `argOf()` 的默认值会掩盖这件事
 （`argOf('transport','node')` 对「没传」和「传了 node」返回同一个字符串），
@@ -2723,6 +2723,55 @@ skill 被单独安装、或服务被拷到别处时，`docs/preview.png` 根本�
 > `test-lib-transport.mjs` 的 9 条新断言包括一条方向性的：
 > 「把 `build.mjs` 复制回 `packages/sdk/` 会明确报红」——
 > 反向验证过，不是靠「现在恰好没有那个文件」通过的。
+> （该文件在第九轮已按层拆成两份，见下。）
+
+
+### 第九轮：用例按层拆分，`api.md` 跟着采集走（2026-11-25）
+
+第八轮的分层做完了，但**用例和文档还混在一起**：一份 `test-lib-transport.mjs` 里同时测采集与渲染，
+`references/api.md` 记的是米游社接口逆向结论，却留在只该放「怎么出报表」的 `references/` 下。
+
+| | 改前 | 改后 |
+|---|---|---|
+| 采集层用例 | `skills/zzz-stats/scripts/test-lib-transport.mjs`（28 项混在一起） | **`packages/sdk/test/test-sdk-transport.mjs`（15 项）** |
+| 渲染层用例 | 同上 | **`skills/zzz-stats/scripts/test-render-contract.mjs`（13 项）** |
+| 接口文档 | `skills/zzz-stats/references/api.md` | **`packages/sdk/docs/api.md`** |
+| `references/` 还剩什么 | `api.md` + `report-rules.md` | 只留 `report-rules.md`（「怎么出报表」的规范） |
+
+#### 拆分的判据：它读不读 `skills/zzz-stats/`
+
+这是**可执行的**判据，不是「看着像哪层」：把 `packages/sdk/` 整个拷到别处、
+父目录里没有 `skills/`，那份用例还能不能跑。
+
+搬的时候撞到一个真实冲突：第 3 段原本 `readFileSync(join(SKILL_DIR,'config/report.json'))`
+读 skill 的配置、还指 `assets/vendor/qrcode/core/qrcode.js`。**照搬过去就不是纯采集测试了。**
+改法是让这两样都由用例自己给：
+
+```js
+const MIN_CFG = { channels: [] };                        // 内联最小 cfg
+const fakeEncodeQr = async () => 'data:image/png;base64,FAKE';  // 接管编码，不碰 vendor
+```
+
+**断言判据一个字都没改**（还是 `/FAKE_NETWORK_DOWN|申请二维码失败/` 与「没走浏览器回调」），
+只是让被测的东西不再依赖 skill 资源。这也顺带证明了 `collectData()` 的 `cfg` 与 `encodeQr`
+确实是**注入式**的 —— 不传才报错，传了就完全不看 skill 目录。
+
+#### 段号重编
+
+原来有两段都叫「6」（`6. buildReport 收 Map` 与 `6. 目录边界`）。拆开后各自从 1 连续编：
+
+- `test-sdk-transport.mjs`：1 四个并列入口 / 2 源码无换路痕迹 / 3 只调给定 transport / 4 国际服抛错 / 5 入口自检
+- `test-render-contract.mjs`：1 Map 与对象等价 / 2 目录边界
+
+#### 验收（2026-11-25 实跑）
+
+| 验收项 | 结果 |
+|---|---|
+| `packages/sdk/test/test-sdk-transport.mjs` | **通过 15 / 失败 0** |
+| `skills/zzz-stats/scripts/test-render-contract.mjs` | **通过 13 / 失败 0** |
+| 合计 | **28**，与拆分前逐段对齐（15 + 13） |
+| 采集测试独立性 | 拷到 `/tmp/sdk-only-probe/sdk/`（父目录只有 `sdk`、无 `skills/`）后跑，**仍是 15/0** |
+
 
 
 ### 结构

@@ -166,7 +166,7 @@
   - **SDK 不做降级**。登录/取数各有 node 与 browser 两个并列函数，各管各的、只抛错，
     **不 catch、不重试、不判断该不该换一条路**。「node 失败就切 browser」这种策略只在
     `scripts/collect.mjs` 里（判据是「用户有没有显式传 `--transport`」）。服务端将来可能
-    策略完全不同，写进 SDK 就等于替所有调用方做了决定。`test-lib-transport.mjs` 会拦。
+    策略完全不同，写进 SDK 就等于替所有调用方做了决定。`packages/sdk/test/test-sdk-transport.mjs` 会拦。
 - 改 `packages/sdk/login-node.mjs` / `packages/sdk/transport-node.mjs` → 那是**私有接口的逆向结论**
   （`x-rpc-app_id` / cookie 名 / `game_biz`）。改了会静默失败（回业务错误码，不是「接口不存在」）。
   出问题按这个顺序怀疑：app_id → cookie 名 → game_biz。别先怀疑网络。
@@ -322,7 +322,8 @@ node skills/zzz-stats/scripts/test-verify-cleanup.mjs   # 27 项，不需要浏�
 node skills/zzz-stats/scripts/test-image-server.mjs      # 25 项，只起一个 127.0.0.1 临时端口
 node skills/zzz-stats/scripts/test-qr-wait.mjs           # 75 项，刷新通道 + 真实等待循环
 node skills/zzz-stats/scripts/test-preview-privacy.mjs   # 53 项（output/ 在场时 55 项），--preview 的隐私分流（见下）
-node skills/zzz-stats/scripts/test-lib-transport.mjs    # 28 项，采集/渲染两层边界 + 「降级只在 CLI」纪律 + Map/对象两种入参产物一致
+node packages/sdk/test/test-sdk-transport.mjs            # 15 项，采集层：四个并列入口 + 「降级只在 CLI」纪律 + 国际服抛错。**不需要 skill 目录**
+node skills/zzz-stats/scripts/test-render-contract.mjs   # 13 项，渲染层：Map/对象入参产物一致 + 采集/渲染两层目录边界
 node skills/zzz-stats/scripts/test-core-pure.mjs         # 47 项，core.js 纯度 + 转换规则 + 面板已删 + 图标资产
 node skills/zzz-stats/scripts/test-report-browser.mjs    # 30 项，需要 chrome；产物现算的 __REPORT__ 与 Node 口径逐字段相同
 ```

@@ -186,20 +186,30 @@ ZZZ_CHROME_ARGS='--no-sandbox --headless=new' node skills/zzz-stats/scripts/coll
 ```
 skills/zzz-stats/SKILL.md          # 入口：浏览器能力契约、采集流程、失败处理
 skills/zzz-stats/config/report.json # 口径与文案的唯一来源：称号、标签、配色、KPI、频道、保底抽数
-skills/zzz-stats/scripts/collect.mjs       # 采集：浏览器驱动 → 页内 fetch → output/<账号名>/data/*.json + 完整性校验
-skills/zzz-stats/scripts/drivers.mjs       # 浏览器驱动适配层：playwright / cdp 两套实现，接口一致
+packages/sdk/collect.mjs           # 采集编排：登录 → 定 uid/昵称 → 按频道取数 → 返回 Map（不写盘）
+packages/sdk/login-node.mjs        # 纯 Node 扫码登录（passport + Cookie）
+packages/sdk/login-browser.mjs     # 浏览器登录：页面 iframe 扫码 / 短信
+packages/sdk/transport-node.mjs    # 纯 Node 取数（act 接口直连）
+packages/sdk/qr.mjs                # 二维码编码 → data URL
+packages/sdk/drivers.mjs           # 浏览器驱动适配层：playwright / cdp 两套实现，接口一致
+packages/sdk/qr-wait.mjs           # 换码通道 + 二维码计时
+packages/sdk/docs/api.md           # 接口与字段说明（含十连多金判定、完整性等式）
+packages/sdk/test/test-sdk-transport.mjs  # 采集层用例（15 项，不需要 skill 目录）
+packages/server/serve.mjs          # 本地 Web 服务：浏览器里扫码 → 取数 → 出报表
+skills/zzz-stats/lib/build.mjs     # 报表渲染器：files + cfg → 单文件 HTML
+skills/zzz-stats/scripts/collect.mjs       # 采集外壳：参数 → 调 SDK → output/<账号名>/data/*.json
 skills/zzz-stats/scripts/sync-icons.mjs    # 按接口里的 icon URL 自动补齐缺失图标，下载即裁 64px（需 Pillow）
 skills/zzz-stats/scripts/fetch-in-page.js  # 只借「页内执行 JS」一个能力的取数脚本（无 Node 环境也能用）
 skills/zzz-stats/scripts/save-in-page-json.mjs # 把上面那段脚本的结果落成 output/<账号名>/data/
-skills/zzz-stats/scripts/build-report.mjs  # 出图：output/<账号名>/data + config → output/<账号名>/report.html
+skills/zzz-stats/scripts/build-report.mjs  # 出图外壳：output/<账号名>/data + config → output/<账号名>/report.html
 skills/zzz-stats/scripts/datasets.mjs      # 账号目录名与 output/ 结构的共用实现（五个脚本共用一份）
 skills/zzz-stats/scripts/image-server.mjs  # 二维码只读图片服务（白名单只服务 login-qr.png）
 skills/zzz-stats/scripts/verify-cleanup.mjs # 凭据临时文件清理（登录成功即删）
 skills/zzz-stats/scripts/screenshot.mjs    # 开发期验收：出 1440x900 / 1280x800 两档截图（复用本机 Chrome，无依赖）
+skills/zzz-stats/scripts/test-render-contract.mjs # 渲染层用例（13 项：Map/对象契约 + 两层目录边界）
 skills/zzz-stats/assets/report/            # 报表模板（template.html / charts.js / charts.css）
 skills/zzz-stats/assets/report/icons/      # 图标唯一一套 64px（avatars/ 圆形 + items/ 方形），构建时 base64 内嵌
 skills/zzz-stats/assets/vendor/echarts.min.js # ECharts 5.6.0（随仓库分发，不用 CDN）
-skills/zzz-stats/references/api.md         # 接口与字段说明（含十连多金判定、完整性等式）
 skills/zzz-stats/references/report-rules.md # 报表口径与呈现约定（规范层，维护者读）
 fixtures/baseline/          # 开发期基线数据集（对外展示用这份，UID 与昵称均已脱敏）
 fixtures/multigold/         # 开发期测试数据集（双金 + 三金分档用，不对外截图）
@@ -260,7 +270,7 @@ AGENTS.md                   # 开发期铁律：改哪类东西要同步什么�
 
 ## 数据与隐私
 
-- 只取官方页面的三个响应体：`index`、`cur_pool_stat`、`hist_pool_stat`；接口见 [references/api.md](references/api.md)。
+- 只取官方页面的三个响应体：`index`、`cur_pool_stat`、`hist_pool_stat`；接口见 [packages/sdk/docs/api.md](packages/sdk/docs/api.md)。
 - **不索取账号密码、验证码、cookie、token**，登录由用户自己扫码完成；脚本不读 cookie、不存请求头。
 - 数据只落本地 `output/<账号名>/`（`output/` 已 gitignore），不上传；仓库里不含任何账号数据。
 - 报表头部自带隐私开关：点 UID 旁的眼睛，在「全显示 → 仅打码 UID → 昵称与 UID 全打码」三态间循环；**对外截图请先切到全打码**。
