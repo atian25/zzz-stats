@@ -7,12 +7,12 @@
  *
  * ## 为什么留着这条路
  *
- * 纯 Node 那条路（`lib/login-node.mjs`）只做国服、且依赖逆向来的私有 header。
+ * 纯 Node 那条路（`packages/sdk/login-node.mjs`）只做国服、且依赖逆向来的私有 header。
  * 浏览器这条路是**官方页面自己发请求**，签名/CORS/风控全由官方前端处理，
  * 只要页面还能登录就还能用。所以它是默认降级目标：
  *
  *   默认 transport = node；node 失败（比如国际服、或 app_id 失效）→ 自动降到 browser，
- *   并在日志里明确打一行说明为什么降级（`lib/collect.mjs` 的调用方负责打）。
+ *   并在日志里明确打一行说明为什么降级（`packages/sdk/collect.mjs` 的调用方负责打）。
  *
  * ## 这段代码的特点
  *

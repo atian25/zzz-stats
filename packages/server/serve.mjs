@@ -351,7 +351,7 @@ async function execute(run) {
      * 内存直通：`collectData()` 的 files（Map）交给 `buildReport()`。
      *
      * **必须先把 meta 塞进 files**：`collectData()` 返回的 `files` 只有 13 个键，
-     * **`meta.json` 不在里面** —— 它是单独一个 `meta` 字段（见 `lib/collect.mjs` 文件头：
+     * **`meta.json` 不在里面** —— 它是单独一个 `meta` 字段（见 `packages/sdk/collect.mjs` 文件头：
      * 「产出 14 个键的 Map（不含 meta.json —— 那个要昵称，由外层补）」）。
      * 少了它，报表拿不到昵称/UID/采集时间：产物照样能构建、`fatal` 是空的，
      * 只是**页面上昵称和 UID 全是空的**。CLI 那边是写盘时手动补的，

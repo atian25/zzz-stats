@@ -12,7 +12,7 @@
  *
  * ## 为什么单独成文件
  *
- * `collectData()` 只认一个 `transport` 接口（见 lib/collect.mjs）。
+ * `collectData()` 只认一个 `transport` 接口（见 packages/sdk/collect.mjs）。
  * 两种取数方式各是一个 transport 实现，编排逻辑因此只有一份 ——
  * 否则「先 index 再每频道 cur/hist」这套顺序会写成两份，必然漂移。
  */

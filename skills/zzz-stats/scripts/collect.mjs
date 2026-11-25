@@ -2,8 +2,8 @@
 /**
  * zzz-stats 采集器 —— **命令行外壳**。
  *
- * 真正的采集逻辑在 `lib/collect.mjs`（编排）、`lib/login-node.mjs`（纯 Node 扫码）、
- * `lib/login-browser.mjs`（浏览器登录 + 页内取数）。本文件只做外壳该做的事：
+ * 真正的采集逻辑在 `packages/sdk/collect.mjs`（编排）、`packages/sdk/login-node.mjs`（纯 Node 扫码）、
+ * `packages/sdk/login-browser.mjs`（浏览器登录 + 页内取数）。本文件只做外壳该做的事：
  *
  *   解析参数 → 建目录 → 调 SDK → 落盘 → 打日志 → 清理凭据 → 退出码
  *

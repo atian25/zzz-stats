@@ -9,11 +9,11 @@
  *
  * 现在：
  *
- *   lib/collect.mjs          ← 本文件：登录 → 定 uid/昵称 → 按频道取数 → 返回 Map
- *   lib/login-node.mjs       纯 Node 扫码登录
- *   lib/login-browser.mjs    浏览器登录（扫码走页面 iframe，短信也在这里）
- *   lib/transport-node.mjs   纯 Node 取数
- *   scripts/collect.mjs      薄壳：参数、日志、图片服务、落盘、退出码
+ *   packages/sdk/collect.mjs          ← 本文件：登录 → 定 uid/昵称 → 按频道取数 → 返回 Map
+ *   packages/sdk/login-node.mjs       纯 Node 扫码登录
+ *   packages/sdk/login-browser.mjs    浏览器登录（扫码走页面 iframe，短信也在这里）
+ *   packages/sdk/transport-node.mjs   纯 Node 取数
+ *   skills/zzz-stats/scripts/collect.mjs  薄壳：参数、日志、图片服务、落盘、退出码
  *
  * ## 为什么返回「文件名 → 内容」的 Map
  *
@@ -190,7 +190,7 @@ export function buildMeta({ index, uid, nickname, region, api, summary, fetchedA
  *        也可以改成传 `encodeQr` 完全接管编码。
  * @param {Function} [args.encodeQr]                自定义二维码编码器（收文本、返回 dataUrl）
  * @param {'node'|'browser'} [args.transport]        用哪条路，默认 node
- * @param {object} [args.browser]                    浏览器路径的参数（见 lib/login-browser.mjs）
+ * @param {object} [args.browser]                    浏览器路径的参数（见 packages/sdk/login-browser.mjs）
  * @param {Array} [args.channels]                    频道表，默认取 args.cfg.channels
  * @param {string} [args.region]                     默认 prod_gf_cn
  * @param {string} [args.api]                        硬覆盖 act 基址
