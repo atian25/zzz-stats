@@ -78,7 +78,7 @@ const ASSET_DIR = HERE;
 /*
  * 两边要的东西不一样，别混：
  *
- *   config/report.json  采集层（packages/sdk）与渲染器都用得到，这里读一次就够了
+ *   config/report.json  只供报表渲染器使用，SDK 内置采集频道表
  *   模板 / charts / core / icons / vendor
  *                       只有渲染器要。它**就在 skill 里**，照旧按自己的
  *                       `SKILL_DIR = resolve(HERE, '..')` 定位，服务不需要灌路径。
@@ -306,18 +306,26 @@ async function execute(run) {
      * 只有这一处调 SDK。`transport` 固定 node：服务里不做浏览器降级，
      * 失败就把真实错误给用户（页面上有、控制台里也有）。
      */
+    let qrDataUrl;
     const result = await collectData({
-      transport: 'node',
-      // 配置由外壳读取；二维码使用 SDK 自带的 npm 依赖。
-      cfg: CFG,
+      channel: 'node',
+      // 采集频道由 SDK 内置；CFG 只供下方报表渲染。
       log,
-      fetchImpl: (url, init) => fetch(url, { ...(init ?? {}), signal: run.ac.signal }),
-      onQr: async (qr) => {
-        emit(run, 'qr', { dataUrl: qr.dataUrl, ttlMs: 120000 });
-        stage('二维码已生成，等待扫码');
+      signal: run.ac.signal,
+      login: {
+        method: 'qr',
+        onQr: async ({ dataUrl }) => {
+          qrDataUrl = dataUrl; // 等 SDK 的 qr-issued 提供协议 TTL 再发送
+        },
       },
       onProgress: (ev) => {
-        if (ev.stage === 'collect') {
+        if (ev.stage === 'login' && ev.status === 'qr-issued' && qrDataUrl) {
+          emit(run, 'qr', { dataUrl: qrDataUrl, ttlMs: ev.ttlMs });
+          qrDataUrl = undefined;
+          stage('二维码已生成，等待扫码');
+        } else if (ev.stage === 'login' && ev.status === 'scanned') {
+          stage('已扫码，等待确认');
+        } else if (ev.stage === 'collect' && ev.status === 'started') {
           stage('已登录并查到角色', 'ok');
           stage('开始取数');
         } else if (ev.stage === 'done') {
@@ -326,7 +334,7 @@ async function execute(run) {
       },
     });
 
-    run.uid = String(result.uid);
+    run.uid = result.gameUid;
     run.nickname = result.nickname ?? null;
     emit(run, 'account', { uid: run.uid, nickname: run.nickname });
 
@@ -381,7 +389,7 @@ async function execute(run) {
      * 单独发一个 cancelled，让还连着的那一页知道「你这次不用等了」，
      * 而不是看到一个吓人的 AbortError。
      */
-    if (run.cancelled || e?.name === 'AbortError' || e?.code === 'ABORT_ERR') {
+    if (run.cancelled || e?.name === 'AbortError' || e?.code === 'ABORT_ERR' || e?.code === 'ABORTED') {
       emit(run, 'cancelled', { reason: run.cancelled ?? '已取消' });
       stage('已取消', 'muted');
       return;

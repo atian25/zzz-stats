@@ -225,7 +225,8 @@
       setQrMasked(false);
       reissueBtn.hidden = false;
       runTitle.textContent = '等待扫码';
-      startCountdown(r, d.ttlMs || 120000);
+      if (Number.isFinite(d.ttlMs) && d.ttlMs > 0) startCountdown(r, d.ttlMs);
+      else stopTick(r);
     });
 
     on(r, 'account', function (d) {
