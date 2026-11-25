@@ -61,28 +61,17 @@ import { join, dirname, resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { networkInterfaces } from 'node:os';
 /* 采集层在 packages/sdk；报表渲染器留在 skill 的 lib —— 两个出口，别混 */
-import { collectData } from '../sdk/index.mjs';
-import { buildReport } from '../../skills/zzz-stats/lib/index.mjs';
+import { collectData } from '@atian25/zzz-stats-sdk';
+import { buildReport } from '@atian25/zzz-stats-skill/report';
 
 // ---------------------------------------------------------------- 参数
 
-/*
- * 三层目录，各自含义不同，搬动本文件时必须一起重算：
- *
- *   HERE        packages/server/
- *   SKILL_DIR   skills/zzz-stats/      ← 模板、图标、vendor、config 都在这里
- *   REPO_DIR    仓库根                 ← 只为了读 docs/preview.png（介绍页背景）
- *
- * 本文件从 `skills/zzz-stats/scripts/` 搬到 `packages/server/` 之后，
- * 两个相对层级**各差一层且方向不同**：skill 从 `..` 变成 `../../skills/zzz-stats`，
- * 仓库根从 `../..` 变成 `../..`（碰巧还是两级）。所以这里不写 `../..` 这种
- * 「数点」的写法，改成从 HERE 逐段拼、看得见名字。
+/* 配置与 renderer 通过包出口加载；前端资源仍与本服务同目录。
+ * 预览图暂时从 checkout 读取，独立 server 资源分发在后续步骤处理。
  */
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** packages/server/ → packages/ → 仓库根 */
 const REPO_DIR = resolve(HERE, '..', '..');
-/** 仓库根 → skills/zzz-stats */
-const SKILL_DIR = join(REPO_DIR, 'skills/zzz-stats');
 /** 前端三个文件与后端同目录（一起搬过来的） */
 const ASSET_DIR = HERE;
 
@@ -94,7 +83,7 @@ const ASSET_DIR = HERE;
  *                       只有渲染器要。它**就在 skill 里**，照旧按自己的
  *                       `SKILL_DIR = resolve(HERE, '..')` 定位，服务不需要灌路径。
  */
-const CFG = JSON.parse(readFileSync(join(SKILL_DIR, 'config/report.json'), 'utf8'));
+const CFG = JSON.parse(readFileSync(fileURLToPath(import.meta.resolve('@atian25/zzz-stats-skill/config')), 'utf8'));
 
 /**
  * 介绍页背景图。

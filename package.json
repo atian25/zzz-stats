@@ -1,0 +1,6 @@
+{
+  "name": "zzz-stats-workspace",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" }
+}

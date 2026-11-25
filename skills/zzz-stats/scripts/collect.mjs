@@ -178,12 +178,6 @@ async function runTransport(kind) {
         code: argOf('code', null), codeFile: argOf('code-file', null),
       } }),
       purge,
-      sms: {
-        phone: argOf('phone', null),
-        phoneFile: argOf('phone-file', null),
-        code: argOf('code', null),
-        codeFile: argOf('code-file', null),
-      },
     },
   });
 }

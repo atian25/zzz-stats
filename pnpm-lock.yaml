@@ -1,12 +1,14 @@
 lockfileVersion: '9.0'
 
 settings:
-  autoInstallPeers: true
+  autoInstallPeers: false
   excludeLinksFromLockfile: false
 
 importers:
 
-  .:
+  .: {}
+
+  packages/sdk:
     dependencies:
       qrcode:
         specifier: 1.5.4
@@ -18,6 +20,17 @@ importers:
       pngjs:
         specifier: 5.0.0
         version: 5.0.0
+
+  packages/server:
+    dependencies:
+      '@atian25/zzz-stats-sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      '@atian25/zzz-stats-skill':
+        specifier: workspace:*
+        version: link:../../skills/zzz-stats
+
+  skills/zzz-stats: {}
 
 packages:
 

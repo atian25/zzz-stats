@@ -1,0 +1,6 @@
+packages:
+  - 'packages/*'
+  - 'skills/zzz-stats'
+
+# Playwright 是可选 peer，由调用方安装，不在 workspace 安装时自动补齐。
+autoInstallPeers: false

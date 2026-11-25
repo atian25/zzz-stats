@@ -4,6 +4,14 @@
   "private": true,
   "type": "module",
   "engines": { "node": ">=22" },
+  "exports": {
+    ".": "./index.mjs",
+    "./qr": "./qr.mjs",
+    "./drivers": "./drivers.mjs"
+  },
+  "files": ["*.mjs", "docs"],
+  "peerDependencies": { "playwright-core": ">=1.50.0 <2" },
+  "peerDependenciesMeta": { "playwright-core": { "optional": true } },
   "dependencies": { "qrcode": "1.5.4" },
   "devDependencies": { "jsqr": "1.4.0", "pngjs": "5.0.0" }
 }

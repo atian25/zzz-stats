@@ -1,0 +1,13 @@
+{
+  "name": "@atian25/zzz-stats-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "bin": { "zzz-stats-server": "./serve.mjs" },
+  "files": ["serve.mjs", "index.html", "app.js", "style.css", "assets"],
+  "dependencies": {
+    "@atian25/zzz-stats-sdk": "workspace:*",
+    "@atian25/zzz-stats-skill": "workspace:*"
+  }
+}

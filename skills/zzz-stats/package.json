@@ -1,0 +1,12 @@
+{
+  "name": "@atian25/zzz-stats-skill",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "exports": {
+    "./report": "./lib/index.mjs",
+    "./config": "./config/report.json"
+  },
+  "files": ["SKILL.md", "scripts", "lib", "config", "assets", "references", "runtime"]
+}
