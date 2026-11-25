@@ -1,50 +1,39 @@
 /**
- * zzz-stats 逻辑 SDK —— 统一入口。
+ * `skills/zzz-stats/lib/` —— **出报表这一层**的统一出口。
  *
- * ## 这里有什么、没有什么
+ * 与 `packages/sdk/index.mjs`（只放采集）是一对：那边采集，这边渲染。
  *
- * **有**：登录、采集、出报表三件事的纯逻辑。全部返回数据，**不写盘、不读参数、
- * 不调用 process.exit**。同一份内核因此能被 CLI、未来的 HTTP 服务、用例共用。
+ * ## 为什么这一层不跟着搬进 packages
  *
- * **没有**：文件系统布局（`output/<账号名>/data/`）、日志格式、退出码、二维码图片服务、
- * 信号处理。那些都是「外壳」的事，留在 `scripts/` 下：
+ * 判据是「它依赖 skill 资源吗」。这三份文件跟 `assets/report/**` 绑死：
  *
- *   scripts/collect.mjs        采集 CLI
- *   scripts/build-report.mjs   构建 CLI
- *   scripts/screenshot.mjs     截图 CLI
+ *   build.mjs           读 template.html / charts.js / charts.css / core.js /
+ *                       icons/ / vendor/echarts.min.js —— 十处
+ *   core-inline.mjs     把 core.js 转成产物里能跑的那段脚本
+ *   template-tokens.mjs 模板占位符与配色变量
  *
- * ## 两条采集路径
+ * 它们本质上是 **zzz-stats 这份报表的渲染器**，不是通用 SDK。
+ * 搬进 packages 只是把耦合换个地方，还得再加一套资源注入参数 —— 没有真正解耦。
+ * 所以它留在 skill 里，用 `SKILL_DIR = resolve(HERE, '..')` 自己定位资源。
  *
- *   transport = 'node'     纯 Node：passport 扫码 → Cookie → act 接口直连
- *                          优点：不需要浏览器、快；缺点：只做国服、依赖逆向的私有 header
- *   transport = 'browser'  浏览器：官方页面里点登录/扫码 → 页内 fetch
- *                          优点：风控与签名交给官方前端；缺点：要浏览器、要人等扫码
- *
- * CLI 默认 node，失败自动降到 browser 并打一行说明。这个「降级」在外壳里做
- * （见 `scripts/collect.mjs`），SDK 只管把失败原因原样抛出来。
- *
- * ## 典型用法
+ * ## 用法
  *
  * ```js
- * import { collectData, buildReport } from './lib/index.mjs';
+ * import { buildReport } from '../lib/index.mjs';   // 相对路径按调用方算
  *
- * // 采集（不写盘）
- * const { uid, nickname, files, meta } = await collectData({
- *   transport: 'node',
- *   onQr: async ({ dataUrl }) => { /＊ 自己决定怎么展示 /落盘 ＊/ },
- *   onProgress: (ev) => console.log(ev.stage, ev.message),
- * });
- * files.set('meta.json', meta);
- *
- * // 出报表（不写盘）
- * const { html, fatal, warnings } = buildReport({ files });
- * if (!fatal.length) await writeFile('report.html', html);
+ * const { html, fatal } = buildReport({ files, cfg });
  * ```
+ *
+ * `buildReport()` 收 `cfg` 可选：不传就自己读 `config/report.json`
+ * （它知道 skill 目录在哪）。这与采集层相反 —— `collectData()` 的 `cfg` 是**必传**。
  */
 
-export { collectData, collectFiles, buildMeta, sortVersionsDesc, chunk, MAX_VERS, REQUEST_GAP_MS } from './collect.mjs';
 export { buildReport } from './build.mjs';
-export { loginWithQr, resolveGameUid, cookiesFromSetCookie, loginByQrNode, collectViaNode } from './login-node.mjs';
-export { loginByQrBrowser, collectViaBrowser, closeBrowserSession } from './login-browser.mjs';
-export { createNodeTransport } from './transport-node.mjs';
-export { encodeQrDataUrl, dataUrlToBuffer } from './qr.mjs';
+export { cssVarBlock, textSubs, escapeHtml, templatePlaceholders } from './template-tokens.mjs';
+export {
+  PAYLOAD_ID,
+  escapeJsonForScript,
+  buildCorePlusBoot,
+  checkInlinedScript,
+  stripExports,
+} from './core-inline.mjs';

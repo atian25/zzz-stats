@@ -1,5 +1,5 @@
 /*
- * 本地采集页（assets/serve/）的样式。
+ * 本地采集页的样式（与 serve.mjs、index.html、app.js 同在 packages/server/）。
  *
  * 三块：介绍页 / 进行中（二维码 + 进度）/ 完成。
  *

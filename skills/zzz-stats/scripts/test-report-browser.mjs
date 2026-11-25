@@ -42,7 +42,7 @@ import { readFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { findChrome, chromeArgs } from './drivers.mjs';
+import { findChrome, chromeArgs } from '../../../packages/sdk/drivers.mjs';
 import { wantsHelp, printHelp } from './cli-help.mjs';
 import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';

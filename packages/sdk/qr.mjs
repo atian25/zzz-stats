@@ -30,32 +30,37 @@
 
 import { createRequire } from 'node:module';
 import { deflateSync } from 'node:zlib';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-/** vendor 的 qrcode 内核（CommonJS，用 createRequire 加载）。 */
-const VENDOR_QRCODE = join(HERE, '..', 'assets/vendor/qrcode/core/qrcode.js');
-
-let cachedQrCode = null;
+/*
+ * vendor 的 qrcode 内核是 skill 的资产（`assets/vendor/qrcode/core/qrcode.js`），
+ * **路径由调用方注入**：本文件在 `packages/sdk/`，不再知道自己相对 skill 资源在哪。
+ * 早先写死 `resolve(HERE, '..', 'assets/vendor/...')`，搬一层就 404。
+ *
+ * 缓存按路径存：同一次进程里换一个 vendor 路径（用例会这么做）不能拿到旧的。
+ */
+const qrCodeCache = new Map();
 
 /**
  * 加载 vendor 的二维码内核。
  *
  * vendor 目录随 skill 一起走，**不依赖任何用户路径或 node_modules**。
- * 找不到就是仓库坏了（文件缺失），所以这里不降级、直接报错。
+ * 找不到就是调用方给的路径不对或仓库坏了，所以这里不降级、直接报错。
  *
+ * @param {string} vendorPath `assets/vendor/qrcode/core/qrcode.js` 的绝对路径
  * @returns {{create: (text: string, opts?: object) => {modules: object}}}
  */
-export function loadQrcode() {
-  if (cachedQrCode) return cachedQrCode;
-  const req = createRequire(import.meta.url);
-  const mod = req(VENDOR_QRCODE);
-  if (typeof mod?.create !== 'function') {
-    throw new Error(`vendor 的 qrcode 内核不可用（${VENDOR_QRCODE} 没有导出 create）`);
+export function loadQrcode(vendorPath) {
+  if (!vendorPath) {
+    throw new Error('loadQrcode(): 必须传 vendorPath（assets/vendor/qrcode/core/qrcode.js 的绝对路径）');
   }
-  cachedQrCode = mod;
-  return cachedQrCode;
+  if (qrCodeCache.has(vendorPath)) return qrCodeCache.get(vendorPath);
+  const req = createRequire(import.meta.url);
+  const mod = req(vendorPath);
+  if (typeof mod?.create !== 'function') {
+    throw new Error(`vendor 的 qrcode 内核不可用（${vendorPath} 没有导出 create）`);
+  }
+  qrCodeCache.set(vendorPath, mod);
+  return mod;
 }
 
 /**
@@ -154,11 +159,12 @@ function buildPng(width, height, raw) {
  * margin 不能是 0 —— 贴边在部分扫码器上识别率会下降。
  *
  * @param {string} text 二维码实际内容（登录接口返回的 `data.url`）
+ * @param {string} vendorPath vendor qrcode 内核的绝对路径（**必传**，见 `loadQrcode()`）
  * @returns {Promise<string>} `data:image/png;base64,...`
  */
-export async function encodeQrDataUrl(text) {
+export async function encodeQrDataUrl(text, vendorPath) {
   if (typeof text !== 'string' || !text) throw new Error('二维码内容为空');
-  const { create } = loadQrcode();
+  const { create } = loadQrcode(vendorPath);
   const qr = create(text, { errorCorrectionLevel: 'M' });
   const png = matrixToPng(qr.modules, { scale: 8, margin: 4 });
   return `data:image/png;base64,${png.toString('base64')}`;

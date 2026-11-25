@@ -2,8 +2,8 @@
 /**
  * zzz-stats 本地 Web 服务 —— 在浏览器里走完「扫码 → 取数 → 出报表」。
  *
- *   node skills/zzz-stats/scripts/serve.mjs            # 默认 0.0.0.0:3000
- *   node skills/zzz-stats/scripts/serve.mjs --port 8080
+ *   node packages/server/serve.mjs            # 默认 0.0.0.0:3000
+ *   node packages/server/serve.mjs --port 8080
  *
  * 打开页面 → 点「开始扫码」→ 页面上出现二维码 → 米游社 App 扫码确认
  * → SSE 实时推进度 → 取完数在内存里构建 → 自动跳到 /report?runId=… 看报表。
@@ -33,11 +33,14 @@
  * run 结束（成功/失败/被回收）后内存里的 files 与 html 一起释放；
  * 结束的 run 只保留一小段时间与少量事件，供「刚跑完那一瞬间的刷新」重放。
  *
- * ## 前端在 assets/serve/ 下
+ * ## 前端与后端同目录
  *
- * `index.html` / `app.js` / `style.css` 与 `assets/report/template.html`、`charts.css`
- * 同一个惯例：静态资源进 `assets/`，脚本只管后端。背景示例图用仓库里的
- * `docs/preview.png`（就是 README 那张报表预览），由这里按 `/assets/preview.png` 提供。
+ * `index.html` / `app.js` / `style.css` 就放在本文件旁边（`packages/server/`）——
+ * 它们只服务这一个进程，不像报表模板那样要随 skill 分发，所以不塞进 `assets/`。
+ *
+ * 背景示例图用**仓库根**的 `docs/preview.png`（README 那张报表预览），
+ * 由这里按 `/assets/preview.png` 提供。它在 skill 之外，**skill 单独安装时不存在**，
+ * 所以启动时探一次：没有就回 204 并在横幅里说明，见 `HAS_PREVIEW`。
  *
  * ## 凭据不进日志
  *
@@ -57,15 +60,56 @@ import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { join, dirname, resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { networkInterfaces } from 'node:os';
-import { collectData } from '../lib/collect.mjs';
-import { buildReport } from '../lib/build.mjs';
+/* 采集层在 packages/sdk；报表渲染器留在 skill 的 lib —— 两个出口，别混 */
+import { collectData } from '../sdk/index.mjs';
+import { buildReport } from '../../skills/zzz-stats/lib/index.mjs';
 
 // ---------------------------------------------------------------- 参数
 
+/*
+ * 三层目录，各自含义不同，搬动本文件时必须一起重算：
+ *
+ *   HERE        packages/server/
+ *   SKILL_DIR   skills/zzz-stats/      ← 模板、图标、vendor、config 都在这里
+ *   REPO_DIR    仓库根                 ← 只为了读 docs/preview.png（介绍页背景）
+ *
+ * 本文件从 `skills/zzz-stats/scripts/` 搬到 `packages/server/` 之后，
+ * 两个相对层级**各差一层且方向不同**：skill 从 `..` 变成 `../../skills/zzz-stats`，
+ * 仓库根从 `../..` 变成 `../..`（碰巧还是两级）。所以这里不写 `../..` 这种
+ * 「数点」的写法，改成从 HERE 逐段拼、看得见名字。
+ */
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SKILL_DIR = resolve(HERE, '..');
-const REPO_DIR = resolve(SKILL_DIR, '..', '..');
-const ASSET_DIR = join(SKILL_DIR, 'assets/serve');
+/** packages/server/ → packages/ → 仓库根 */
+const REPO_DIR = resolve(HERE, '..', '..');
+/** 仓库根 → skills/zzz-stats */
+const SKILL_DIR = join(REPO_DIR, 'skills/zzz-stats');
+/** 前端三个文件与后端同目录（一起搬过来的） */
+const ASSET_DIR = HERE;
+
+/*
+ * 两边要的东西不一样，别混：
+ *
+ *   config/report.json  采集层（packages/sdk）与渲染器都用得到，这里读一次就够了
+ *   模板 / charts / core / icons / vendor
+ *                       只有渲染器要。它**就在 skill 里**，照旧按自己的
+ *                       `SKILL_DIR = resolve(HERE, '..')` 定位，服务不需要灌路径。
+ */
+const CFG = JSON.parse(readFileSync(join(SKILL_DIR, 'config/report.json'), 'utf8'));
+
+/**
+ * 介绍页背景图。
+ *
+ * 它在**仓库根**的 `docs/preview.png`，不在 skill 里 —— 所以 skill 被单独安装、
+ * 或者本文件被拷到别处时，这张图根本不存在。早先直接 `join(REPO_DIR, 'docs/preview.png')`
+ * 服务它，404 之后介绍页上半屏就是一块空白（而且前端没有任何提示）。
+ *
+ * 现在启动时探一次：
+ *   - 有：正常服务 `/assets/preview.png`
+ *   - 没有：路由回 204（前端 `.intro-bg` 的背景图加载失败 → 自然留白），
+ *     并在启动横幅里打一行说明，而不是静默 404。
+ */
+const PREVIEW_FILE = join(REPO_DIR, 'docs/preview.png');
+const HAS_PREVIEW = existsSync(PREVIEW_FILE);
 
 const argv = process.argv.slice(2);
 const argOf = (name, fallback) => {
@@ -78,7 +122,7 @@ const argOf = (name, fallback) => {
 if (argv.includes('--help') || argv.includes('-h')) {
   console.log(`zzz-stats 本地 Web 服务：扫码 → 取数 → 出报表
 
-用法：node skills/zzz-stats/scripts/serve.mjs [选项]
+用法：node packages/server/serve.mjs [选项]
 
   --port <n>      端口，默认 3000
   --host <h>      监听地址，默认 0.0.0.0（手机要走局域网 IP 就保持默认）
@@ -275,6 +319,13 @@ async function execute(run) {
      */
     const result = await collectData({
       transport: 'node',
+      /*
+       * cfg 与 vendor 路径都必传 —— SDK 搬到 `packages/sdk/` 之后不再猜资源在哪。
+       * 漏传会在**这里**抛一条说清原因的错（而不是在 readFileSync 深处 ENOTFOUND），
+       * 落进 catch 之后原样显示在页面上，见下方 `message`。
+       */
+      cfg: CFG,
+      qrVendorPath: join(SKILL_DIR, 'assets/vendor/qrcode/core/qrcode.js'),
       log,
       fetchImpl: (url, init) => fetch(url, { ...(init ?? {}), signal: run.ac.signal }),
       onQr: async (qr) => {
@@ -320,7 +371,6 @@ async function execute(run) {
       ordered.set(k, v);
     }
 
-    const CFG = JSON.parse(readFileSync(join(SKILL_DIR, 'config/report.json'), 'utf8'));
     const built = buildReport({
       files: ordered,
       cfg: CFG,
@@ -380,14 +430,18 @@ const MIME = {
 /**
  * 静态资源白名单：URL → 磁盘路径。
  *
- * 用**固定表**而不是「把 /assets/ 拼成路径」：后者一旦有人请求 `/assets/../lib/build.mjs`
+ * 用**固定表**而不是「把 /assets/ 拼成路径」：后者一旦有人请求 `/assets/../sdk/build.mjs`
  * 就会把源码吐出去。表里的每一项都是明确要提供的文件，没有第二层推断。
  */
 const ASSET_ROUTES = new Map([
   ['/assets/app.js', join(ASSET_DIR, 'app.js')],
   ['/assets/style.css', join(ASSET_DIR, 'style.css')],
-  // 介绍页的背景示例图：就是 README 那张报表预览，不另存一份副本
-  ['/assets/preview.png', join(REPO_DIR, 'docs/preview.png')],
+  /*
+   * 介绍页的背景示例图：就是 README 那张报表预览，不另存一份副本。
+   * **只有它可能不存在**（它在仓库根的 docs/ 下，不在 skill 里），
+   * 所以单独记一个标记，路由那里回 204 而不是 404 —— 见 HAS_PREVIEW 的注释。
+   */
+  ['/assets/preview.png', PREVIEW_FILE],
 ]);
 
 function serveFile(res, file, { immutable = false } = {}) {
@@ -520,7 +574,7 @@ a{color:#3d5ad4}
 // ---------------------------------------------------------------- 路由
 
 function readHomeHtml() {
-  // 每次读盘：改了 assets/serve/ 下的东西刷新就能看到，不用重启
+  // 每次读盘：改了同目录下的 index.html / app.js / style.css，刷新就能看到，不用重启
   return readFileSync(join(ASSET_DIR, 'index.html'), 'utf8');
 }
 
@@ -541,6 +595,17 @@ const server = createServer((req, res) => {
     }
 
     if (method === 'GET' && ASSET_ROUTES.has(path)) {
+      /*
+       * 介绍页背景图在仓库根的 docs/ 下，**skill 被单独安装时它不存在**。
+       * 这里回 204（无内容）而不是 404：
+       *   - 前端 `.intro-bg` 的背景图请求失败 → 自然留白，页面照常可用；
+       *   - 但网络面板里不出现一条红色 404，console 也不会打 error。
+       * 启动横幅会说明「没有示例图」，所以不是静默。
+       */
+      if (path === '/assets/preview.png' && !HAS_PREVIEW) {
+        res.writeHead(204);
+        return res.end();
+      }
       const file = ASSET_ROUTES.get(path);
       return serveFile(res, file, { immutable: path.endsWith('.png') });
     }
@@ -655,6 +720,9 @@ server.listen(PORT, HOST, () => {
     `  多人同时用：每次点「开始扫码」是一个独立 run，同时最多 ${MAX_RUNS} 个（--max-runs 可调）`,
     '  报表只在内存里，不写磁盘；要归档请用 collect.mjs + build-report.mjs',
     '  取数路径：纯 Node（不降级）。扫码要真人，页面会等你。',
+    HAS_PREVIEW
+      ? '  介绍页示例图：docs/preview.png（仓库根）'
+      : `  ⚠️  没有介绍页示例图（${PREVIEW_FILE} 不存在）：页面照常可用，上半屏留白。`,
     hostNote(HOST),
     '',
   );

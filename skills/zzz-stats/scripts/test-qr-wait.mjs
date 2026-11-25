@@ -29,7 +29,7 @@ import {
   createRefreshInput,
   waitForLogin,
   REFRESH_SIGNAL_FILE,
-} from './qr-wait.mjs';
+} from '../../../packages/sdk/qr-wait.mjs';
 
 const ROOT = join(tmpdir(), `zzz-qr-wait-test-${process.pid}`);
 let seq = 0;

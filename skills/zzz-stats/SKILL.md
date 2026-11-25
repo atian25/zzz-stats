@@ -1006,13 +1006,19 @@ UP 抽数是该角色**各轮 total 累加**（含期间歪出的）、非 UP �
 **改后**：算法进 `lib/`，命令行退化成薄壳。
 
 ```
-lib/index.mjs            统一导出
-lib/collect.mjs          collectData()  采集编排（登录 → uid → 取数 → meta）
-lib/build.mjs            buildReport()  出 HTML
-lib/login-node.mjs       loginByQrNode() / collectViaNode()  纯 Node 登录与取数（各自独立）
-lib/login-browser.mjs    loginByQrBrowser() / collectViaBrowser()  浏览器登录与取数（各自独立）
-lib/transport-node.mjs   纯 Node 取数的 transport 实现（Cookie 直连 act 接口）
-lib/qr.mjs               二维码编码（自带 vendor 的 qrcode，不加 npm 依赖）
+# 采集层（仓库根的 packages/sdk/，与 skill 资源无关，可独立复用）
+packages/sdk/index.mjs            采集层统一出口（**没有 buildReport**）
+packages/sdk/collect.mjs          collectData()  采集编排（登录 → uid → 取数 → meta）
+packages/sdk/login-node.mjs       loginByQrNode() / collectViaNode()  纯 Node 登录与取数
+packages/sdk/login-browser.mjs    loginByQrBrowser() / collectViaBrowser()  浏览器登录与取数
+packages/sdk/transport-node.mjs   纯 Node 取数的 transport 实现（Cookie 直连 act 接口）
+packages/sdk/qr.mjs               二维码编码（自带 vendor 的 qrcode，不加 npm 依赖）
+packages/sdk/drivers.mjs          浏览器驱动适配层（login-browser 的依赖）
+packages/sdk/qr-wait.mjs          换码通道 + 二维码计时（login-browser 的依赖）
+
+# 报表渲染器（留在 skill 里，跟 assets/report/** 绑死）
+lib/index.mjs            报表层统一出口（导出 buildReport）
+lib/build.mjs            buildReport()  出 HTML，自己按 SKILL_DIR 定位资源
 lib/core-inline.mjs      ESM → 经典同步脚本的构建期转换
 lib/template-tokens.mjs  CSS 变量块 / 文案表 / HTML 转义
 ```
@@ -1040,8 +1046,8 @@ lib/template-tokens.mjs  CSS 变量块 / 文案表 / HTML 转义
 **改后**：另有一个**本地 Web 服务**，把「扫码 → 取数 → 出报表」做成一个页面：
 
 ```bash
-node skills/zzz-stats/scripts/serve.mjs          # 默认 0.0.0.0:3000
-node skills/zzz-stats/scripts/serve.mjs --port 8080 --max-runs 4
+node packages/server/serve.mjs          # 默认 0.0.0.0:3000
+node packages/server/serve.mjs --port 8080 --max-runs 4
 ```
 
 打开 `http://127.0.0.1:3000/`（手机用局域网 IP）。**首页是介绍页**：一张报表示例图、

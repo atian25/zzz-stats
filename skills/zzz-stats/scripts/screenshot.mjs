@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { findChrome, chromeArgs } from './drivers.mjs';
+import { findChrome, chromeArgs } from '../../../packages/sdk/drivers.mjs';
 import { wantsHelp, printHelp, WORK_DIR_NOTE } from './cli-help.mjs';
 import { listOutputReports } from './datasets.mjs';
 import { extractReport, previewPrivacyPolicy, checkPreviewGuard } from './preview-privacy.mjs';

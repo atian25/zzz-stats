@@ -141,11 +141,23 @@
 - 改了 `config/report.json` 或 `assets/report/icons/` → **不用再跑任何清单脚本**（那两份静态副本
   已随粘贴面板一起删除，见下），重跑构建即可：配色与文案在构建期注入，图标在构建期编码内嵌。
 - **「改配置就生效」是硬约定**：不要在 CSS / JS 里另写一份硬编码色值。
-- **算法进 `lib/`，命令行只做外壳。** 分层见 `skills/zzz-stats/lib/index.mjs` 文件头：
-  `lib/collect.mjs`（采集编排）、`lib/build.mjs`（出 HTML）、
-  `lib/login-node.mjs`（`loginByQrNode` / `collectViaNode`）、
-  `lib/login-browser.mjs`（`loginByQrBrowser` / `collectViaBrowser`）、
-  `lib/transport-node.mjs`（纯 Node 取数的 transport 实现）、`lib/qr.mjs`。
+- **算法分层：采集进 `packages/sdk/`，报表留 `skills/zzz-stats/lib/`。**
+  判据是「**它依赖 skill 资源吗**」，不是「名字里有没有 lib」：
+  - **`packages/sdk/`（只放采集）**：`collect.mjs`（采集编排）、`login-node.mjs`、
+    `login-browser.mjs`、`transport-node.mjs`、`qr.mjs`、`drivers.mjs`、`qr-wait.mjs`
+    —— 全是登录/取数/二维码编码，**不读任何 `assets/`**。
+    `drivers.mjs` / `qr-wait.mjs` 跟着走是因为 `login-browser.mjs` 静态依赖它们
+    （不是为了「都在 packages 下」凑数），且它们自身不读 skill 资源。
+  - **`skills/zzz-stats/lib/`（报表渲染器）**：`build.mjs`、`core-inline.mjs`、`template-tokens.mjs`
+    —— `build.mjs` 有 **9 处**读 `assets/report/template.html`、`charts.{js,css}`、`core.js`、
+    `icons/`、`assets/vendor/echarts.min.js`。它是**这份报表的渲染器**，不是通用 SDK；
+    搬到 packages 只是把耦合换个地方，还得再加一套资源注入参数。
+  - **两个出口别混**：`packages/sdk/index.mjs` **没有** `buildReport`；
+    要出报表从 `skills/zzz-stats/lib/index.mjs` 引。
+  - **配置与资源的给法也不同**：`collectData({ cfg })` 的 `cfg` **必传**
+    （采集层跟 skill 目录已分离，`resolve(HERE,'..')` 在 `packages/` 下猜不到）；
+    `buildReport({ files, cfg })` 的 `cfg` 可选，不传就自己读 `config/report.json`
+    —— 它就在 skill 里，`SKILL_DIR = resolve(HERE, '..')` 天然正确。
   `scripts/collect.mjs` / `scripts/build-report.mjs` 只解析参数、调 SDK、落盘、打日志、定退出码。
   四条别破坏：
   - **SDK 不写盘**（只返回 `files: Map` / `html`），落盘位置是外壳的决定；
@@ -158,15 +170,16 @@
 - 改 `lib/login-node.mjs` / `lib/transport-node.mjs` → 那是**私有接口的逆向结论**
   （`x-rpc-app_id` / cookie 名 / `game_biz`）。改了会静默失败（回业务错误码，不是「接口不存在」）。
   出问题按这个顺序怀疑：app_id → cookie 名 → game_biz。别先怀疑网络。
-- **`scripts/serve.mjs` 是「第三个外壳」，规则同上：只调 SDK、不改 SDK。**
-  本地 Web 服务（`node skills/zzz-stats/scripts/serve.mjs`，默认 `0.0.0.0:3000`），
+- **`packages/server/serve.mjs` 是「第三个外壳」，规则同上：只调 SDK、不改 SDK。**
+  本地 Web 服务（`node packages/server/serve.mjs`，默认 `0.0.0.0:3000`），
   浏览器里走完「扫码 → 取数 → 出报表」。它是**多人同时用**的服务，不是单人玩具。
   七条约束，改之前先看：
-  - **前端在 `assets/serve/`，不内联进 serve.mjs。** `index.html` / `app.js` / `style.css`
-    与 `assets/report/template.html`、`charts.css` 同一个惯例：静态资源进 `assets/`，脚本只管后端。
+  - **前端与后端同目录（`packages/server/`），不内联进 serve.mjs。**
+    `index.html` / `app.js` / `style.css` 三个文件与 `serve.mjs` 并排放在 `packages/server/` 下。
     （这条一度被定成「全内联单文件」，用户明确撤销了：仓库惯例是拆出去。
     前端只提供三个白名单资源，路径用**固定表**而不是拼接 —— 拼接会让
-    `/assets/../lib/build.mjs` 把源码吐出去。）
+    `/assets/../../skills/zzz-stats/lib/build.mjs` 把源码吐出去。
+    这三个文件不随 skill 分发，所以不放进 `assets/`。）
   - **「零 npm 依赖」只对 skill 本体成立，不对服务成立。** 这条也被用户撤销了：
     本服务是本机开发服务，不需要守；能用内置模块解决就用内置，但不必为此自我设限。
   - **多人隔离：每个 run 独立，按 runId 取自己那一份。** 不要再引入任何全局单例

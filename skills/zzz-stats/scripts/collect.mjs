@@ -36,7 +36,7 @@ import { wantsHelp, printHelp, WORK_DIR_NOTE } from './cli-help.mjs';
 import { purgeAndLog } from './verify-cleanup.mjs';
 import { startImageServer, stopImageServer, qrUrl, IMAGE_SERVER_FILE } from './image-server.mjs';
 import { outputRoot, resolveAccountName, accountDataDir } from './datasets.mjs';
-import { collectData } from '../lib/collect.mjs';
+import { collectData } from '../../../packages/sdk/index.mjs';
 
 if (wantsHelp()) {
   printHelp('collect', {
@@ -72,6 +72,19 @@ if (wantsHelp()) {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SKILL_DIR = resolve(HERE, '..');
+/*
+ * 采集层在 `packages/sdk/`，与 skill 目录已分离，所以它需要的两样东西
+ * 必须由这里显式给齐（SDK 不猜自己在哪）：
+ *
+ *   cfg            `config/report.json` 的解析结果（采集层只用得到 channels）
+ *   qrVendorPath   二维码编码器的 vendor 路径
+ *
+ * 这两条路径是**外壳**的布局知识，留在外壳里是对的。
+ */
+const CFG_PATH = join(SKILL_DIR, 'config/report.json');
+const QR_VENDOR_PATH = join(SKILL_DIR, 'assets/vendor/qrcode/core/qrcode.js');
+/** 配置读一次就够：下面 `cfg` 与「完整性校验」用的是同一份。 */
+const CFG = JSON.parse(readFileSync(CFG_PATH, 'utf8'));
 const args = process.argv.slice(2);
 const has = (f) => args.includes(`--${f}`);
 const argOf = (f, d) => {
@@ -134,6 +147,8 @@ async function runTransport(kind) {
     transport: kind,
     region: REGION,
     api: API,
+    cfg: CFG,
+    qrVendorPath: QR_VENDOR_PATH,
     log,
     sleep,
     onQr: async (qr) => {
@@ -258,7 +273,6 @@ async function main() {
     // 完整性：金抽数 + 垫抽 == 官方总抽（6/6 频道实测成立）
     const index = files.get('index.json');
     let bad = 0;
-    const CFG = JSON.parse(readFileSync(join(SKILL_DIR, 'config/report.json'), 'utf8'));
     for (const ch of CFG.channels) {
       const stat = (index.data.type_stats ?? []).find((t) => t.gacha_type === ch.enum);
       if (!stat) continue;

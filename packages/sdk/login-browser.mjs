@@ -25,8 +25,8 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdout } from 'node:process';
-import { openDriver } from '../scripts/drivers.mjs';
-import { createRefreshInput, createQrClock, waitForLogin, refreshChannelHint, REFRESH_SIGNAL_FILE } from '../scripts/qr-wait.mjs';
+import { openDriver } from './drivers.mjs';
+import { createRefreshInput, createQrClock, waitForLogin, refreshChannelHint, REFRESH_SIGNAL_FILE } from './qr-wait.mjs';
 import { collectFiles, buildMeta, MAX_VERS } from './collect.mjs';
 
 export { MAX_VERS };

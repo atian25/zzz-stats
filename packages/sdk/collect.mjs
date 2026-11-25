@@ -25,12 +25,21 @@
  * 属于外壳。服务里可能根本不想落盘，只想把 Map 存进数据库。
  */
 
-import { readFileSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-const SKILL_DIR = resolve(HERE, '..');
+/*
+ * 这里**没有**任何 `import.meta.url` / `resolve(__dirname, '..')`。
+ *
+ * 采集层在 `packages/sdk/`，报表渲染器在 `skills/zzz-stats/lib/build.mjs` ——
+ * 两者分属不同目录，采集层**不可能**再靠层级猜出 skill 资源在哪
+ * （`resolve(HERE, '..')` 在这里指向 `packages/`）。
+ *
+ * 好在这层真正需要的 skill 配置只有一样：`config/report.json` 里的 `channels`
+ * （6 个频道的 id / enum / label / 保底）。配置与资源路径一律由调用方注入，
+ * SDK 不猜、不兜底、不读环境变量。
+ *
+ * 对照：报表渲染器（`lib/build.mjs`）**留在 skill 里**，它跟 `assets/report/**`
+ * 是绑死的（模板、charts、core、icons、echarts 十处读取），
+ * 所以它照旧用 `resolve(HERE, '..') = SKILL_DIR` 自己定位，不需要注入。
+ */
 
 /** 单次 hist_pool_stat 最多带 10 个版本（接口上限，超了报 -400005）。 */
 export const MAX_VERS = 10;
@@ -174,9 +183,15 @@ export function buildMeta({ index, uid, nickname, region, api, summary, fetchedA
  *   - `{ kind: 'browser' }` 浏览器页面里扫码 + 页内 fetch（改前的老路，保留作降级）
  *
  * @param {object} args
+ * @param {object} args.cfg                          `config/report.json` 的解析结果。**必传**
+ *        （SDK 不猜配置路径：它不知道自己在哪个仓库布局里）。`channels` 不给时用它的 channels。
+ * @param {string} [args.qrVendorPath]               vendor qrcode 内核的绝对路径
+ *        （`assets/vendor/qrcode/core/qrcode.js`）。node 路径生成二维码要用它；
+ *        也可以改成传 `encodeQr` 完全接管编码。
+ * @param {Function} [args.encodeQr]                自定义二维码编码器（收文本、返回 dataUrl）
  * @param {'node'|'browser'} [args.transport]        用哪条路，默认 node
  * @param {object} [args.browser]                    浏览器路径的参数（见 lib/login-browser.mjs）
- * @param {Array} [args.channels]                    频道表，默认读 config/report.json
+ * @param {Array} [args.channels]                    频道表，默认取 args.cfg.channels
  * @param {string} [args.region]                     默认 prod_gf_cn
  * @param {string} [args.api]                        硬覆盖 act 基址
  * @param {(qr: {dataUrl: string, file?: string, url?: string}) => any} [args.onQr]
@@ -194,6 +209,8 @@ export async function collectData({
   region = 'prod_gf_cn',
   api = null,
   cfg = null,
+  qrVendorPath = null,
+  encodeQr = null,
   onQr = null,
   onProgress = null,
   log = () => {},
@@ -201,7 +218,15 @@ export async function collectData({
   fetchImpl = fetch,
   fetchedAt = undefined,
 } = {}) {
-  const CFG = cfg ?? JSON.parse(readFileSync(join(SKILL_DIR, 'config/report.json'), 'utf8'));
+  /*
+   * cfg 必传。这里**不再兜底去读** `config/report.json` —— 那需要知道 skill 目录在哪，
+   * 而 SDK 已经搬到 `packages/sdk/`，猜出来的路径必然错。
+   * 报错信息要说清「该传什么」，而不是让人去翻 ENOENT 的路径。
+   */
+  if (!cfg) {
+    throw new Error('collectData(): 必须传 cfg（config/report.json 的解析结果）——SDK 不再自己猜配置路径');
+  }
+  const CFG = cfg;
   const CHANNELS = channels ?? CFG.channels;
   const isCn = /^prod_gf_cn$/i.test(region);
   const progress = (stage, message, data) => onProgress?.({ stage, message, data });
@@ -227,6 +252,8 @@ export async function collectData({
       log,
       sleep,
       fetchImpl,
+      encodeQr,
+      qrVendorPath,
     });
     progress('collect', '开始取数');
     const { files, summary, meta } = await collectViaNode({

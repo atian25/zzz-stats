@@ -19,7 +19,7 @@ import { join, dirname, resolve, relative, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { wantsHelp, printHelp, WORK_DIR_NOTE } from './cli-help.mjs';
 import { outputRoot, listOutputDatasets, sanitizeSegment } from './datasets.mjs';
-import { buildReport } from '../lib/build.mjs';
+import { buildReport } from '../lib/index.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /*
@@ -54,6 +54,14 @@ if (wantsHelp()) {
 }
 
 const SKILL_DIR = resolve(HERE, '..');
+/*
+ * 报表渲染器就在 skill 里（`lib/build.mjs`），它自己按
+ * `SKILL_DIR = resolve(HERE, '..')` 定位模板 / charts / icons / vendor，
+ * 所以这里**不需要**再算一整套资源路径。
+ *
+ * 与采集层相反：`packages/sdk/` 的 `collectData()` 必须由调用方传 `cfg`，
+ * 因为它跟 skill 目录已经分离；渲染器没搬，照旧自己读。
+ */
 const args = process.argv.slice(2);
 /*
  * 读命令行参数。两种写法都支持：
