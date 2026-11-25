@@ -20,8 +20,7 @@
  */
 import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
-import { join, dirname, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { join } from 'node:path';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -290,9 +289,9 @@ class PlaywrightDriver {
  * 用 channel:'chrome' 驱动本机 Chrome —— 这样不需要 Playwright 下载自带浏览器，
  * 用户装了 Chrome 就能用。找不到 Chrome 才退回 Playwright 自带的 chromium。
  */
-async function launchPlaywright({ headless, log, modulePath, profile }) {
-  const mod = await import(modulePath);
-  const chromium = mod.chromium ?? mod.default?.chromium;
+async function launchPlaywright({ headless, log, modulePath, profile, chromium: injectedChromium }) {
+  const mod = injectedChromium ? null : await import(modulePath);
+  const chromium = injectedChromium ?? mod.chromium ?? mod.default?.chromium;
   if (!chromium) throw new Error('Playwright 模块里没有 chromium');
 
   const args = chromeArgs();
@@ -331,55 +330,14 @@ async function launchPlaywright({ headless, log, modulePath, profile }) {
   return new PlaywrightDriver(browser, page);
 }
 
-/**
- * 找 Playwright。找不到返回 null（只是没装，不是错误）。
- *
- * 难点：agent 常常把 Playwright 装在自己的 profile 里，而不是本 skill 的 node_modules，
- * 所以 `import.meta.resolve('playwright')` 会失败。这里按下面顺序试：
- *   1) 正常模块解析（skill 自己装了）
- *   2) ZZZ_PLAYWRIGHT_PATH 指定的路径
- *   3) 从 cwd / 各层父目录的 node_modules，以及常见 agent profile 里找
- */
-async function resolvePlaywright() {
-  const direct = [process.env.ZZZ_PLAYWRIGHT_PATH, 'playwright', 'playwright-core'].filter(Boolean);
-  for (const c of direct) {
-    try {
-      return await import.meta.resolve(c);
-    } catch {}
-  }
-
-  const { createRequire } = await import('node:module');
-  const req = createRequire(import.meta.url);
-
-  const searchPaths = [
-    ...(process.env.ZZZ_PLAYWRIGHT_PATHS ?? '').split(':').filter(Boolean),
-    // 从当前工作目录往上找
-    ...ancestorNodeModules(process.cwd()),
-    // 常见 agent 宿主把依赖装在这里
-    ...ancestorNodeModules(process.env.HOME ? `${process.env.HOME}/.dsh/profiles/desktop` : ''),
-  ];
-
+/** 正常模块解析或调用方显式指定模块；不搜索宿主 profile。 */
+async function resolvePlaywright(modulePath) {
+  const explicit = modulePath ?? process.env.ZZZ_PLAYWRIGHT_PATH;
+  if (explicit) return import.meta.resolve(explicit);
   for (const name of ['playwright', 'playwright-core']) {
-    try {
-      const p = req.resolve(name, { paths: searchPaths.length ? searchPaths : undefined });
-      if (p) return pathToFileURL(p).href;
-    } catch {}
+    try { return import.meta.resolve(name); } catch {}
   }
   return null;
-}
-
-/** 生成 dir、dir/..、dir/../.. 各层的 node_modules，用于 require.resolve({paths})。 */
-function ancestorNodeModules(start) {
-  if (!start) return [];
-  const out = [];
-  let cur = resolve(start);
-  for (let i = 0; i < 6; i += 1) {
-    out.push(join(cur, 'node_modules'));
-    const up = dirname(cur);
-    if (up === cur) break;
-    cur = up;
-  }
-  return out;
 }
 
 // ------------------------------------------------------------------ 统一入口
@@ -392,8 +350,8 @@ function ancestorNodeModules(start) {
  *
  * @returns {Promise<CdpDriver|PlaywrightDriver>}
  */
-export async function openDriver({ cdpUrl, driver, port, profile, headless = true, log = console.log }) {
-  const want = driver ?? (cdpUrl ? 'cdp' : null);
+export async function openDriver({ cdpUrl, driver, port, profile, chromium, playwrightModule, headless = true, log = console.log }) {
+  const want = driver ?? (cdpUrl ? 'cdp' : (chromium || playwrightModule ? 'playwright' : null));
 
   if (want === 'cdp' || cdpUrl) {
     if (cdpUrl) {
@@ -407,10 +365,10 @@ export async function openDriver({ cdpUrl, driver, port, profile, headless = tru
   }
 
   if (want === 'playwright' || want === null) {
-    const pw = await resolvePlaywright();
-    if (pw) {
+    const pw = chromium ? null : await resolvePlaywright(playwrightModule);
+    if (chromium || pw) {
       try {
-        return await launchPlaywright({ headless, log, modulePath: pw, profile });
+        return await launchPlaywright({ headless, log, modulePath: pw, profile, chromium });
       } catch (e) {
         if (want === 'playwright') throw e;
         log(`Playwright 启动失败，退回零依赖 CDP：${e.message.split('\n')[0]}`);
