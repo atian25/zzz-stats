@@ -989,7 +989,8 @@ UP 抽数是该角色**各轮 total 累加**（含期间歪出的）、非 UP �
 |---|---|---|
 | **配置** | `config/report.json` | 称号分档、标签阈值与去重、配色值、文案、图例、频道定义、保底抽数（`channels[].pityCap`）、隐私规则。**90% 的调整都在这层**，改完重跑构建即生效 |
 | **口径内核** | `assets/report/core.js` | 轮次模型、不歪率、称号、标签、详情行、右栏汇总、分母。**纯 JS，Node 与浏览器跑的是同一份源码**（产物里是它的构建期转换版）。改这层要同步 `report-rules.md` |
-| **逻辑 SDK** | `lib/` | `collectData()` / `buildReport()`。登录、采集、出报表的**纯逻辑**：只返回数据，不写盘、不读参数、不调 `process.exit` |
+| **逻辑 SDK（采集）** | `packages/sdk/` | `collectData()`。登录、取数、二维码编码的**纯逻辑**：只返回数据，不写盘、不读参数、不调 `process.exit` |
+| **报表渲染器** | `lib/` | `buildReport()`。把 files + cfg 装配成 HTML，自己按 `SKILL_DIR` 定位 `assets/report/**` |
 | **两个外壳** | `scripts/collect.mjs` / `scripts/build-report.mjs` | 算参数、读盘、调 SDK、写文件、打日志、退出码。**口径不许写在外壳里** |
 | **本地 Web 服务** | `packages/server/`（`serve.mjs` + `index.html` / `app.js` / `style.css`） | 浏览器里走完整流程（扫码 → 取数 → 出报表）。**多人同时用**：每个 run 独立、按 runId 隔离；**报表只在内存**，不落盘；走纯 Node 路且**不降级**；**只调 SDK，不改 SDK** |
 | **资源** | `assets/report/icons/` | 里面是 `avatars/`（圆头像）与 `items/`（方图标）两套，**都只有 64px 一套**。**构建时内嵌进 HTML 用的就是它**，没有第二份 96px 原图了。缺图**不要手动找**，跑 `scripts/sync-icons.mjs` |
@@ -997,13 +998,13 @@ UP 抽数是该角色**各轮 total 累加**（含期间歪出的）、非 UP �
 
 改配置不需要读规范；改实现必须先读规范、改完再回来同步。
 
-#### 逻辑 SDK：`lib/` 与外壳的分工
+#### 逻辑分层：采集进 `packages/sdk/`，渲染留 `lib/`
 
 **改前**：采集与出报表各自是一份 1000 行上下的脚本，算法和命令行混在一起
 （`collect.mjs` 1027 行、`build-report.mjs` 1002 行）。想从别处复用就只能整份复制，
 两份必然漂移。
 
-**改后**：算法进 `lib/`，命令行退化成薄壳。
+**改后**：算法按「它依赖 skill 资源吗」分成两层，命令行退化成薄壳。
 
 ```
 # 采集层（仓库根的 packages/sdk/，与 skill 资源无关，可独立复用）
@@ -1106,7 +1107,8 @@ HTML 存在该 run 上，`/report?runId=` 从内存返回；run 结束 + 超过 
 `serve.mjs` 只提供三个白名单资源（那两个文件 + `/assets/preview.png`），
 路径用固定表而不是拼接 —— 拼接会让 `/assets/../lib/build.mjs` 把源码吐出去。
 
-**不改 `lib/` 的接口**，只调用 `collectData()` / `buildReport()`。
+**不改两个 SDK 的接口**，只调用采集层的 `collectData()` 与渲染层的 `buildReport()`
+（前者从 `packages/sdk/index.mjs` 引，后者从 `lib/index.mjs` 引）。
 它不替代 `collect.mjs` —— 短信登录、`--data` 指定目录、`--keep-verify`、`--cwd` 落盘归档
 这些仍然只有 CLI 有。
 
@@ -1131,7 +1133,7 @@ HTML 存在该 run 上，`/report?runId=` 从内存返回；run 结束 + 超过 
 静默换路是最难查的一类问题：用户以为走的是纯 Node，实际弹出一个浏览器要扫。
 `--transport node` 显式指定时**不降级**，失败就报错 —— 显式选择要能被信任。
 
-**降级只在 CLI 这一层。** SDK（`lib/`）只暴露并列的四个函数，各管各的、只抛错：
+**降级只在 CLI 这一层。** SDK（`packages/sdk/`）只暴露并列的四个函数，各管各的、只抛错：
 
 | 动作 | 纯 Node | 浏览器 |
 |---|---|---|
@@ -1153,7 +1155,7 @@ CLI 的三种情形：不传 `--transport` → 先 node、抛错就打一行说�
 2. cookie 名（`cookie_token_v2` / `ltoken_v2` / …）—— 改名就登不上
 3. `x-rpc-game_biz`（当前 `nap_cn`）—— 国际服是另一套，本实现不做
 
-另外两个必须知道的数据流事实（都在 `lib/login-node.mjs` 的注释里写全了）：
+另外两个必须知道的数据流事实（都在 `packages/sdk/login-node.mjs` 的注释里写全了）：
 
 - **token 不在 `data.tokens` 里**（那个字段永远是空数组），在 `Set-Cookie` 响应头里；
   且**只在第一次拿到 `Confirmed` 的那次响应**里下发，再查一次就没了。

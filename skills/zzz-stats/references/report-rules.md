@@ -2653,6 +2653,78 @@ var PRESCAN_STAGES = ['申请二维码', '二维码已生成，等待扫码'];
 它量的是 1440×900，新规则在那里给 450）。
 
 
+### 第八轮：目录重构——采集进 `packages/`，渲染器留在 skill（2026-11-25）
+
+前三轮把算法从外壳里抽出来，但**全抽进了 `skills/zzz-stats/lib/`**。这一轮按一条判据重新分：
+**它依赖 skill 资源吗？**
+
+判据不是「名字里有没有 lib」。`build.mjs` 有 9 处读 `assets/report/template.html`、
+`charts.{js,css}`、`core.js`、`icons/`、`assets/vendor/echarts.min.js` —— 它是**这份报表的渲染器**，
+不是通用 SDK。采集那一边（登录、取数、二维码编码）**一次都没读过 `assets/`**。
+
+| | 改前 | 改后 |
+|---|---|---|
+| 采集 | `skills/zzz-stats/lib/` | **`packages/sdk/`**（仓库根，与 skill 无关，可独立复用） |
+| 报表渲染器 | `skills/zzz-stats/lib/` | **留在 `skills/zzz-stats/lib/`** |
+| Web 服务 | `skills/zzz-stats/scripts/serve.mjs` + `assets/serve/` | **`packages/server/`**（`serve.mjs` 与前端三件套同目录） |
+| 两个出口 | `lib/index.mjs` 一个 | `packages/sdk/index.mjs`（**没有** `buildReport`）+ `lib/index.mjs`（渲染） |
+
+```
+packages/sdk/                 采集层（不读 assets/）
+  index.mjs                   统一出口 —— 没有 buildReport
+  collect.mjs  login-node.mjs  login-browser.mjs  transport-node.mjs
+  qr.mjs  drivers.mjs  qr-wait.mjs
+packages/server/              本地 Web 服务
+  serve.mjs  index.html  app.js  style.css
+skills/zzz-stats/
+  lib/                        报表渲染器（读 assets/report/**）
+    index.mjs  build.mjs  core-inline.mjs  template-tokens.mjs
+  assets/report/  assets/vendor/  config/  references/  scripts/
+```
+
+#### 配置的给法也跟着分开了，这是接口变更
+
+`collectData({ cfg })` 的 `cfg` **变成必传**：采集层搬出 skill 之后，
+`resolve(HERE, '..')` 在 `packages/` 下指向 `packages/`，猜不到 `config/report.json` 在哪。
+不传就在入口抛一条说清原因的错误（**不兜底、不读环境变量**）。
+
+`buildReport({ files, cfg })` 的 `cfg` **仍是可选**：渲染器就在 skill 里，
+`SKILL_DIR = resolve(HERE, '..')` 天然正确。两个出口在这点上的不对称是刻意的，不是漏改。
+
+#### `docs/preview.png` 缺失时的降级
+
+`serve.mjs` 搬进 `packages/server/` 后，到仓库根多了一层。顺手修了老问题：
+skill 被单独安装、或服务被拷到别处时，`docs/preview.png` 根本不存在。
+早先直接 `join(REPO_DIR, 'docs/preview.png')` 读不到就 404，介绍页背景一片空白。
+
+现在**有就正常服务 `/assets/preview.png`，没有就回 204**：前端背景自然留白、console 无 error，
+启动横幅上打一行警告，不静默。
+
+#### 为什么 `drivers.mjs` / `qr-wait.mjs` 跟着搬
+
+不是为了「都在 packages 下」凑数：`login-browser.mjs` **静态依赖**这两个文件，
+且它们自身都不读 skill 资源（`drivers.mjs` 用 `createRequire` 找 playwright，
+`qr-wait.mjs` 的信号文件路径由入参给）。留在 skill 里会让 `packages/sdk/` 反向依赖 skill。
+
+#### 验收（2026-11-25 实跑）
+
+| 验收项 | 结果 |
+|---|---|
+| 七套用例 | **28 / 47 / 55 / 25 / 75 / 27 / 30** 全过（`test-lib-transport` 从 19 涨到 28，新增 9 条目录边界断言） |
+| 两个入口能导入 | `packages/sdk/index.mjs` 导出 19 个符号、`'buildReport' in m === false`；`lib/index.mjs` 含 `buildReport` |
+| 真构建两份产物 | `output/绳匠A/report.html` 2,318,338 字节、`output/绳匠B/report.html` 2,383,188 字节 |
+| 占位符残留 `/*__` | 两份均 **0** |
+| 服务静态资源 | `/` 200、`/assets/app.js` 200（`text/javascript`）、`/assets/style.css` 200、`/assets/preview.png` 200（681,185 字节）、`/favicon.ico` 204 |
+| 路径穿越 | `/assets/../skills/zzz-stats/lib/build.mjs`、`/assets/../../packages/sdk/collect.mjs`、`/assets/%2e%2e/...` 等 **6 种写法全 404，源码 0 泄漏** |
+| `/report` 不带 runId | `400`（不猜「最近一个」） |
+| 前端验收 | **29/29**（二维码 320×320、遮罩、390 窄屏无溢出、console 0 error） |
+| 多人隔离 | **24/24**（两码 994 / 1042 字符，各跳自己 runId，`output/` 全程 `绳匠A,绳匠B` 无新目录） |
+
+> `test-lib-transport.mjs` 的 9 条新断言包括一条方向性的：
+> 「把 `build.mjs` 复制回 `packages/sdk/` 会明确报红」——
+> 反向验证过，不是靠「现在恰好没有那个文件」通过的。
+
+
 ### 结构
 
 ```
