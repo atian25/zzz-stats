@@ -21,60 +21,11 @@
  * 所以这里的注释保留得比别处详细 —— 每一处「为什么这么写」都是踩过的坑。
  */
 
-import { existsSync, readFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
-import { createInterface } from 'node:readline/promises';
-import { stdout } from 'node:process';
 import { openDriver } from './drivers.mjs';
-import { createRefreshInput, createQrClock, waitForLogin, refreshChannelHint, REFRESH_SIGNAL_FILE } from './qr-wait.mjs';
+import { createQrClock, waitForLogin } from './qr-wait.mjs';
 import { collectFiles, buildMeta, MAX_VERS } from './collect.mjs';
 
 export { MAX_VERS };
-
-/*
- * 交互提问。
- *
- * 只在「用户自己在本机终端里手动跑」时才走这条路 —— 那是个合法场景，
- * 但**不是默认场景**。agent 代跑时用户根本不碰终端，
- * 所以固定输入必须能通过参数/文件送进来，不能指望 stdin。
- */
-async function ask(question, stdinStream) {
-  if (!stdinStream?.isTTY) {
-    throw new Error(
-      `需要交互输入（${question}），但当前不是终端环境。\n` +
-      '→ agent 代跑时请用 --phone=... 传手机号、--code-file=... 传验证码。'
-    );
-  }
-  const rl = createInterface({ input: stdinStream, output: stdout });
-  const answer = await rl.question(`${question} … `);
-  rl.close();
-  return answer;
-}
-
-/** 等用户给一个值（手机号/验证码），**不依赖终端**。改前在 collect.mjs 里，原样搬来。 */
-export async function readInputFile(file, { label, timeoutMs, validate, log, sleep }) {
-  const deadline = Date.now() + timeoutMs;
-  let complained = null;
-  while (Date.now() < deadline) {
-    if (existsSync(file)) {
-      let raw = '';
-      try { raw = readFileSync(file, 'utf8').trim(); } catch { /* 正在写，下一轮再读 */ }
-      if (raw) {
-        try { rmSync(file); } catch {}
-        if (!validate || validate(raw)) return raw;
-        if (complained !== raw) {
-          complained = raw;
-          log(`⚠️  ${label}格式不对（收到 ${raw.length} 位），已忽略，请重新写入。`);
-        }
-      }
-    }
-    await sleep(400);
-  }
-  throw new Error(
-    `${label}等待超时（${Math.round(timeoutMs / 1000)} 秒）。` +
-    `agent 应把用户给的值写入 ${file}。`
-  );
-}
 
 /*
  * 登录判定的唯一口径。
@@ -110,8 +61,8 @@ const pageState = `(() => {
 /**
  * 短信验证码登录（给没装米游社的用户）。
  *
- * 前提：必须在**真终端**里跑（stdin 是 TTY）。
- * 手机号和验证码都由用户在终端里输入 —— 脚本只负责填进官方表单，
+ * 输入通过 sms 值或 requestPhone / requestCode 回调提供。
+ * 手机号和验证码由调用方取得 —— SDK 只负责填进官方表单，
  * 不代填、不猜、不落盘。
  *
  * 三条硬约束：
@@ -119,7 +70,7 @@ const pageState = `(() => {
  *   2. 验证码由用户自己输入，脚本不接触短信通道
  *   3. 页面区号写死 `+86`，所以只支持国内手机号
  */
-async function smsLogin(drv, frame, { ask, log, sleep, LOGGED_IN, sms, purge, workDir, outputDir, stdinStream }) {
+export async function smsLogin(drv, frame, { log, sleep, LOGGED_IN, sms = {}, requestPhone, requestCode, purge }) {
   /*
    * 登录框是异步渲染的，刚进 frame 时表单往往还没进 DOM。
    * 这里轮询等它出现，而不是查一次就判失败 —— 早先那版会误报「页面结构变了」。
@@ -154,30 +105,8 @@ async function smsLogin(drv, frame, { ask, log, sleep, LOGGED_IN, sms, purge, wo
     return 'ok';
   })()`);
 
-  /*
-   * 手机号来源，优先级从高到低：
-   *   1. --phone=<号码>      agent 已经问到了，直接传
-   *   2. --phone-file=<路径>  号码写在文件里（对话里粘过的值可以先落文件）
-   *   3. 终端提问            仅当用户自己在本机手动跑；agent 代跑时没有 TTY，会明确报错
-   */
-  const phoneArg = sms.phone ?? process.env.ZZZ_PHONE ?? null;
-  let phone = phoneArg;
-  if (!phone) {
-    const phoneFile = sms.phoneFile ?? null;
-    if (phoneFile) {
-      phone = await readInputFile(resolve(workDir, phoneFile), {
-        label: '手机号', timeoutMs: 5 * 60 * 1000, log, sleep,
-        validate: (v) => /^\d{11}$/.test(v),
-      });
-    } else if (stdinStream?.isTTY) {
-      phone = (await ask('请输入手机号（11 位，仅用于填入官方登录框）', stdinStream)).trim();
-    } else {
-      throw new Error(
-        '需要手机号但没有来源。agent 代跑时请传 --phone=<11 位>（推荐），' +
-        '或在对话里问到后写入文件再传 --phone-file=<路径>。'
-      );
-    }
-  }
+  // 输入来源由调用方决定；SDK 只接收值或 requestPhone 回调。
+  let phone = sms.phone ?? await requestPhone?.();
   phone = String(phone).trim();
   if (!/^\d{11}$/.test(phone)) {
     throw new Error(`手机号格式不对（需要 11 位数字，收到 ${phone.length} 位），已中止。`);
@@ -202,31 +131,8 @@ async function smsLogin(drv, frame, { ask, log, sleep, LOGGED_IN, sms, purge, wo
   })()`);
   log(sent === 'clicked' ? '已请求发送验证码（只请求一次，不会重复发）' : `发送验证码：${sent}`);
 
-  /*
-   * 验证码来源，优先级同手机号：
-   *   1. --code=<验证码>
-   *   2. --code-file=<路径>（默认就是它：短信到了才知道码，agent 写文件最顺手）
-   *   3. 终端提问（用户本机手动跑）
-   *
-   * 默认文件路径固定成 output/sms-code.txt，
-   * 这样 agent 不用额外协商路径，按约定写就行。
-   * 放 output/ 根而不是账号目录：账号名此刻还不知道（昵称要等采集完），
-   * 而验证码在登录过程中就要用。登录成功即删，见 verify-cleanup.mjs。
-   */
-  const codeFile = resolve(workDir, sms.codeFile ?? join(outputDir, 'sms-code.txt'));
-  let code = sms.code ?? process.env.ZZZ_SMS_CODE ?? null;
-  if (!code) {
-    if (stdinStream?.isTTY) {
-      code = (await ask('请输入收到的验证码（通常 60 秒内有效）', stdinStream)).trim();
-    } else {
-      mkdirSync(dirname(codeFile), { recursive: true });
-      log(`等待验证码…（短信约 60 秒失效，收到请尽快写入 ${codeFile}）`);
-      code = await readInputFile(codeFile, {
-        label: '验证码', timeoutMs: 5 * 60 * 1000, log, sleep,
-        validate: (v) => /^\d{4,8}$/.test(v),
-      });
-    }
-  }
+  // 验证码的文件/终端等待在 CLI；不在 SDK 保存凭据中转文件。
+  let code = sms.code ?? await requestCode?.();
   code = String(code).trim();
   if (!/^\d{4,8}$/.test(code)) throw new Error('验证码格式不对，已中止。');
   if (await fill('验证码', code) !== 'ok') throw new Error('验证码填不进去。');
@@ -268,20 +174,18 @@ function detectLoginMode() {
   return 'qr';
 }
 
-async function loginFlow(drv, opts = {}) {
+export async function loginFlow(drv, opts = {}) {
   const {
     // 登录方式：qr（默认）/ sms
     mode: modeIn = null,
+    sms = {},
     // 扫码阶段的回调与落点（原先是 collect.mjs 里的 saveQr / 图片服务 / OUTPUT_DIR）
     onQr = null,
     saveQrFile,
     qrUrlFor = () => null,
-    outputDir,
-    refreshSignalFile,
+    input = {},
     purge,
     waitMode = 'a',
-    stdinRaw = false,
-    stdinStream = null,
     // 二维码不落盘时的提示（服务的调用方可能只想把 dataUrl 发出去）
     persistQr = true,
     maxRefresh = 3,
@@ -295,7 +199,7 @@ async function loginFlow(drv, opts = {}) {
     log = () => {},
     sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
   } = opts;
-  const mode = String(modeIn || process.env.ZZZ_LOGIN_MODE || detectLoginMode()).toLowerCase();
+  const mode = String(modeIn || detectLoginMode()).toLowerCase();
   // 等到「已挂载 且 状态明确」：mounted 但既没 logged-out 也没 UID，说明还在加载
   const ready = await drv.waitFor(`(() => {
     const s = ${pageState};
@@ -346,7 +250,7 @@ async function loginFlow(drv, opts = {}) {
      * 现在改成：有 TTY 才等其他，否则直接抛错让 agent 处理
      * （agent 可以说「请在浏览器窗口里手动点登录」再重跑）。
      */
-    if (!stdinRaw) {
+    if (!input.ask) {
       throw new Error(
         '登录框（跨域 iframe）没出现。请在浏览器窗口里手动点「登录」，然后重跑一次脚本' +
         '（登录态会留在 profile 里，第二次会直接跳过登录）。'
@@ -354,7 +258,7 @@ async function loginFlow(drv, opts = {}) {
     }
     log('⚠️  登录框（跨域 iframe）没出现。');
     log('    请在浏览器里手动点「登录」并扫码，完成后回到这里按回车。');
-    await ask('按回车继续', stdinStream);
+    await input.ask('按回车继续');
     return;
   }
   log('已进入登录 frame');
@@ -364,7 +268,7 @@ async function loginFlow(drv, opts = {}) {
    * 登录框默认就停在短信登录页（#/login/captcha），所以走短信不需要切 tab。
    */
   if (mode === 'sms') {
-    await smsLogin(drv, frame, { ask, log, sleep, LOGGED_IN, sms, purge, workDir: outputDir, outputDir, stdinStream });
+    await smsLogin(drv, frame, { log, sleep, LOGGED_IN, sms, purge, ...input });
     return;
   }
 
@@ -507,7 +411,7 @@ async function loginFlow(drv, opts = {}) {
    */
   const MAX_QR_REFRESH = maxRefresh;
   const REFRESH_MIN_GAP_MS = minGapMs;
-  const REFRESH_SIGNAL = refreshSignalFile;
+
   // 次数上限与最短间隔由 waitForLogin() 执行，这里只负责把参数传下去
 
   /*
@@ -553,7 +457,7 @@ async function loginFlow(drv, opts = {}) {
   } else {
     log('扫码后会自动继续，不需要任何操作。');
   }
-  log(refreshChannelHint({ signalFile: REFRESH_SIGNAL, stdinRaw }));
+  if (input.refreshHint) log(input.refreshHint);
 
   // 心跳里附带的页面快照：出问题时能直接看出「扫码前后页面到底有没有变化」
   const snapshot = `(() => {
@@ -562,18 +466,11 @@ async function loginFlow(drv, opts = {}) {
   })()`;
 
   /*
-   * 刷新通道的接线：只在这里碰 stdin。
-   * 判断（哪条通道命中、要不要刷新、刷新限流、计时重置）全在 qr-wait.mjs 的
-   * waitForLogin() 里 —— 那段必须能被用例**真实执行**地测，不能再靠肉眼。
+   * 刷新通道由调用方订阅；CLI 的 stdin 与信号文件接线在 login-input.mjs。
+   * input.takeRefreshRequest 合并通道请求，waitForLogin() 负责刷新限流与计时重置。
+   * 等待结束时退订；真实循环与外壳适配器分别由回归用例覆盖。
    */
-  const input = createRefreshInput();
-  const onData = (buf) => input.press(buf);
-  if (stdinRaw && stdinStream) {
-    // raw 模式关掉了终端行编辑，每个按键都会进 data；isRefreshKey 只认单个 r/R
-    stdinStream.setRawMode?.(true);
-    stdinStream.resume();
-    stdinStream.on('data', onData);
-  }
+  const unsubscribe = input.subscribeRefresh?.() ?? (() => {});
 
   let result;
   try {
@@ -599,21 +496,15 @@ async function loginFlow(drv, opts = {}) {
       refreshQr,
       grabQr,
       saveQr,
-      input,
       clock,
       log,
-      signalFile: REFRESH_SIGNAL,
-      stdinRaw,
+      takeRefreshRequest: input.takeRefreshRequest,
+      expiredHint: input.expiredHint,
       maxRefresh: MAX_QR_REFRESH,
       minGapMs: REFRESH_MIN_GAP_MS,
     });
   } finally {
-    if (stdinRaw && stdinStream) {
-      // 必须 off：不摘监听器的话，后面采集阶段敲的每个键都还在往这个回调里送
-      stdinStream.off('data', onData);
-      stdinStream.setRawMode?.(false);
-      stdinStream.pause();
-    }
+    unsubscribe();
   }
 
   if (!result.ok) {
@@ -674,9 +565,8 @@ async function fetchJson(drv, api, region, uid, path, extra = '') {
  * @param {(qr: object) => void} [args.onQr]
  * @param {Function} [args.saveQrFile]  (dataUrl) => 落盘路径
  * @param {() => string|null} [args.qrUrlFor]
- * @param {string} [args.outputDir]  临时凭据目录（二维码 / 验证码）
- * @param {(o:{when:string}) => void} [args.purge]  清理凭据文件的回调
- * @param {NodeJS.ReadStream} [args.stdinStream]
+ * @param {object} [args.input] 手机号、验证码、刷新请求与订阅生命周期回调（见 SDK API 文档）
+ * @param {(o:{when:string}) => void} [args.purge] 由调用方清理凭据文件的回调
  */
 export async function collectWithBrowser({
   driver = {},
@@ -688,9 +578,8 @@ export async function collectWithBrowser({
   onQr = null,
   saveQrFile = null,
   qrUrlFor = () => null,
-  outputDir = null,
+  input = {},
   purge = () => {},
-  stdinStream = null,
   sms = {},
   onProgress = null,
   log = () => {},
@@ -708,12 +597,9 @@ export async function collectWithBrowser({
       onQr,
       saveQrFile,
       qrUrlFor,
-      outputDir,
-      refreshSignalFile: outputDir ? join(outputDir, REFRESH_SIGNAL_FILE) : null,
+      input,
       purge,
       waitMode: driver.waitMode ?? 'a',
-      stdinRaw: Boolean(stdinStream?.isTTY),
-      stdinStream,
       persistQr: Boolean(saveQrFile),
       sms,
       log,
@@ -780,9 +666,8 @@ export async function loginByQrBrowser({
   onQr = null,
   saveQrFile = null,
   qrUrlFor = () => null,
-  outputDir = null,
+  input = {},
   purge = () => {},
-  stdinStream = null,
   sms = {},
   log = () => {},
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
@@ -797,12 +682,9 @@ export async function loginByQrBrowser({
       onQr,
       saveQrFile,
       qrUrlFor,
-      outputDir,
-      refreshSignalFile: outputDir ? join(outputDir, REFRESH_SIGNAL_FILE) : null,
+      input,
       purge,
       waitMode: driver.waitMode ?? 'a',
-      stdinRaw: Boolean(stdinStream?.isTTY),
-      stdinStream,
       persistQr: Boolean(saveQrFile),
       sms,
       log,

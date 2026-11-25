@@ -23,11 +23,11 @@
  * `drivers.mjs` / `qr-wait.mjs` 跟着采集走，是因为 `login-browser.mjs` 静态依赖它们，
  * 不是为了「都在 packages 下」凑数：它们自身都**不读 skill 资源**
  * （`drivers.mjs` 用 `createRequire(import.meta.url)` 找 playwright，
- * `qr-wait.mjs` 的信号文件路径由入参给）。
+ * `qr-wait.mjs` 的刷新请求由回调提供）。
  *
  * ## 三条边界（改之前先读）
  *
- * 1. **SDK 不写盘。** 只返回 `files: Map`。写不写、往哪写是外壳的决定。
+ * 1. **SDK 不保存采集产物和凭据中转文件。** 只返回 `files: Map`；文件/stdin 在 CLI，浏览器 profile 由调用方管理。
  * 2. **SDK 不读 `process.argv`、不调 `process.exit`。**
  * 3. **配置由调用方给。** `collectData({ cfg })` —— 采集层与 skill 目录已分离，
  *    它不能靠 `resolve(HERE,'..')` 猜 `config/report.json` 在哪。

@@ -159,6 +159,18 @@
 **不要拿 `new_s_max_times` 当保底**：它是官方 UI 用来画区间的展示值，实测常驻是 32，
 而该频道真实最长出金间隔是 80 —— 两者不是一回事。
 
+## SDK 浏览器输入契约
+
+`loginByQrBrowser` / `collectWithBrowser` 接收 `input`，不读取文件或 stdin：
+
+- `requestPhone()` / `requestCode()`：返回手机号、验证码，可异步；也可直接传 `sms.phone` / `sms.code`。
+- `takeRefreshRequest()`：返回 `{ refresh: boolean }`，外壳负责消费文件或键盘事件。
+- `subscribeRefresh()`：开始监听，返回退订函数；SDK 在扫码等待结束或抛错时调用它。
+- `ask(question)`：可选的人工继续回调；不存在时登录 frame 缺失直接抛错。
+- `refreshHint` / `expiredHint`：外壳提供提示文字。
+
+CLI 的 `scripts/login-input.mjs` 管文件读取、消费与 TTY 接线。显式验证码文件优先于终端；默认文件仅在非 TTY 时等待。SDK 不保存采集产物或凭据中转文件；浏览器 profile 的位置与生命周期由调用方管理。
+
 ## 能力边界
 
 | 能力 | 是否支持 |

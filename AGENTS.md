@@ -160,7 +160,7 @@
     —— 它就在 skill 里，`SKILL_DIR = resolve(HERE, '..')` 天然正确。
   `scripts/collect.mjs` / `scripts/build-report.mjs` 只解析参数、调 SDK、落盘、打日志、定退出码。
   四条别破坏：
-  - **SDK 不写盘**（只返回 `files: Map` / `html`），落盘位置是外壳的决定；
+  - **SDK 不保存采集产物和凭据中转文件**（只返回 `files: Map`），文件读写与 stdin 在 CLI 输入适配器；浏览器 profile 由调用方决定位置及生命周期；
   - **SDK 不读 `process.argv`、不调 `process.exit`**；`buildReport()` 的 `fatal` 是返回数组；
   - **口径不许写在外壳里**，写进去就只在构建期生效，产物里现算的那份没有；
   - **SDK 不做降级**。登录/取数各有 node 与 browser 两个并列函数，各管各的、只抛错，

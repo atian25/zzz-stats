@@ -36,6 +36,7 @@ import { wantsHelp, printHelp, WORK_DIR_NOTE } from './cli-help.mjs';
 import { purgeAndLog } from './verify-cleanup.mjs';
 import { startImageServer, stopImageServer, qrUrl, IMAGE_SERVER_FILE } from './image-server.mjs';
 import { outputRoot, resolveAccountName, accountDataDir } from './datasets.mjs';
+import { createLoginInput } from './login-input.mjs';
 import { collectData } from '../../../packages/sdk/index.mjs';
 
 if (wantsHelp()) {
@@ -182,9 +183,11 @@ async function runTransport(kind) {
       loginMode: argOf('login', process.env.ZZZ_LOGIN_MODE || 'qr'),
       saveQrFile,
       qrUrlFor: () => qrUrl(IMAGE_SERVER_FILE),
-      outputDir: OUTPUT_DIR,
+      input: createLoginInput({ workDir: WORK_DIR, outputDir: OUTPUT_DIR, stdinStream: stdin, log, sleep, sms: {
+        phone: argOf('phone', null), phoneFile: argOf('phone-file', null),
+        code: argOf('code', null), codeFile: argOf('code-file', null),
+      } }),
       purge,
-      stdinStream: stdin,
       sms: {
         phone: argOf('phone', null),
         phoneFile: argOf('phone-file', null),

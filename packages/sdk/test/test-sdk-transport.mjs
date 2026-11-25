@@ -168,6 +168,45 @@ console.log('5. 入口自检：缺参数就抛，不静默');
   ok('collectViaBrowser 缺 drv 抛错', e3 !== null && /drv/.test(e3.message));
 }
 
+console.log('6. 短信登录真实函数：文件输入与直接输入');
+{
+  const { smsLogin, loginFlow } = await import('../login-browser.mjs');
+  const drv = {
+    waitFor: async () => ({ mounted: true, loggedOut: true, hasUid: false }),
+    loginFrame: async () => ({}),
+    evaluate: async () => 'logged-in',
+    evaluateInFrame: async (_frame, expression) => {
+      if (expression.includes('hasPhone:')) return { hasPhone: true, hasCode: true, areaCode: '+86' };
+      if (expression.includes('const setter')) return 'ok';
+      if (expression.includes('获取验证码')) return 'clicked';
+      return 'clicked';
+    },
+  };
+  for (const [label, sms] of [
+    ['直接传手机号与验证码', { phone: '13800000000', code: '123456' }],
+    ['手机号由回调提供', { code: '123456' }],
+    ['验证码由回调提供', { phone: '13800000000' }],
+  ]) {
+    let error = null;
+    try {
+      await smsLogin(drv, {}, {
+        sms, workDir: '/tmp', outputDir: '/tmp', stdinStream: null,
+        requestPhone: async () => '13800000000', requestCode: async () => '123456',
+        purge: () => {}, log: () => {}, sleep: async () => {}, LOGGED_IN: 'logged-in',
+      });
+    } catch (e) { error = e; }
+    ok(`短信登录：${label}`, error === null, error?.stack);
+  }
+  let flowError = null;
+  try {
+    await loginFlow(drv, {
+      mode: 'sms', input: { requestPhone: async () => '13800000000', requestCode: async () => '123456' },
+      purge: () => {}, sleep: async () => {},
+    });
+  } catch (e) { flowError = e; }
+  ok('loginFlow 短信分流实际接通回调且 sms 可省略', flowError === null, flowError?.stack);
+}
+
 console.log('');
 console.log(fail === 0 ? `结果：通过 ${pass} / 失败 0` : `结果：通过 ${pass} / 失败 ${fail}`);
 process.exit(fail === 0 ? 0 : 1);

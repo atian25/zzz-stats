@@ -24,7 +24,7 @@
  * TTY 与否只影响**提示文案**怎么写，不影响判断逻辑。判断逻辑里没有 stdinRaw 这个输入，
  * 这是故意的：它一旦重新参与判断，就又会变回二选一。
  */
-import { rmSync, statSync } from 'node:fs';
+
 
 /**
  * 换图信号文件名（固定名，落在 `output/` 根下）。
@@ -47,57 +47,6 @@ export const REFRESH_SIGNAL_FILE = 'qr-refresh';
 export function isRefreshKey(buf) {
   if (buf === null || buf === undefined) return false;
   return buf.toString().toLowerCase() === 'r';
-}
-
-/**
- * 检查一次刷新请求，并**顺手消费**信号文件。
- *
- * 两条通道同时看，不是 if/else：
- *   - `keyPressed`：stdin 的 `data` 事件置位的标志
- *   - 信号文件：存在（且是普通文件）就删掉并算一次请求
- *
- * 为什么要删：不删的话下一轮循环（3 秒后）还会命中同一个文件，
- * 一次请求变成连续两次重取 —— 直接吃掉 5 秒的最短间隔、加速撞 3 次上限。
- *
- * 幂等：文件不存在、同名的是个目录（用户自己造的）、删不掉，都不会抛错。
- * 同名目录当成**没有信号**处理：它删不掉，如果还算一次请求，就会每 3 秒重试一次刷新，
- * 把刷新次数白白刷到上限。
- *
- * @param {object} opts
- * @param {boolean} [opts.keyPressed] 终端里是不是按过 r
- * @param {string} [opts.signalFile]  `output/qr-refresh` 的绝对路径
- * @returns {{refresh: boolean, via: 'key'|'signal'|'key+signal'|null, removed: boolean}}
- */
-export function takeRefreshRequest({ keyPressed = false, signalFile } = {}) {
-  const result = { refresh: false, via: null, removed: false };
-
-  if (keyPressed) {
-    result.refresh = true;
-    result.via = 'key';
-  }
-
-  if (signalFile) {
-    let isFile = false;
-    try {
-      isFile = statSync(signalFile).isFile();
-    } catch {
-      // 不存在（最常见）：安静返回，不当成请求
-      isFile = false;
-    }
-    if (isFile) {
-      try {
-        rmSync(signalFile, { force: true });
-        result.removed = true;
-      } catch {
-        // 删不掉也还是把这次请求算上：不刷新才是用户真正会抱怨的那个结果
-        result.removed = false;
-      }
-      result.refresh = true;
-      result.via = result.via === 'key' ? 'key+signal' : 'signal';
-    }
-  }
-
-  return result;
 }
 
 /**
@@ -171,7 +120,7 @@ export function createQrClock({ ttlMs, now = () => Date.now() }) {
  * 「按键通道」的输入缓冲。
  *
  * 抽出来是为了让等待循环能在**不接 stdin** 的情况下被测：用例直接 `press('r')`。
- * TTY 接线仍在 collect.mjs 里（`stdin.on('data', (b) => input.press(b))`）——
+ * TTY 接线在 CLI 的 login-input.mjs（`stdin.on('data', (b) => input.press(b))`）——
  * 这里只管「有没有人按过刷新键」。
  */
 export function createRefreshInput() {
@@ -211,11 +160,10 @@ export async function waitForLogin({
   refreshQr,           // async () => 点了过期按钮之后的命中结果
   grabQr,              // async () => 二维码对象或 null
   saveQr,              // (qr) => { png, url }
-  input,               // createRefreshInput()
   clock,               // createQrClock()
   log,                 // (msg: string) => void
-  signalFile,
-  stdinRaw,
+  takeRefreshRequest = () => ({ refresh: false }),
+  expiredHint = '二维码已过期，请请求换码。',
   maxRefresh = 3,
   minGapMs = 5000,
   maxWaitMs = 10 * 60 * 1000,
@@ -236,10 +184,10 @@ export async function waitForLogin({
 
     /*
      * 两条通道都查，任一命中就刷新 —— 不是 if/else。
-     * 信号文件在这里被**消费掉**（删除），否则下一轮会再命中一次，
+     * 外壳回调消费刷新请求（文件读取与删除不在 SDK），否则下一轮会再命中一次，
      * 一次请求变成两次重取，白吃 5 秒最短间隔。
      */
-    const req = takeRefreshRequest({ keyPressed: input.take(), signalFile });
+    const req = await takeRefreshRequest();
     const wantRefresh = req.refresh;
 
     // 二维码本身的有效期，与整体等待上限无关
@@ -249,7 +197,7 @@ export async function waitForLogin({
       log('⚠️  二维码已过期（截取于 ' +
         new Date(clock.issuedAt).toLocaleTimeString('zh-CN', { hour12: false }) +
         `，已过 ${Math.round(qrAge / 1000)} 秒）`);
-      log(expiredRefreshHint({ signalFile, stdinRaw }));
+      log(expiredHint);
       log('    （不会自动刷新——避免没人看着时反复请求登录接口）');
       log('');
     }
