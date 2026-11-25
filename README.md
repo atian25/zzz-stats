@@ -178,7 +178,7 @@ ZZZ_CHROME_ARGS='--no-sandbox --headless=new' node skills/zzz-stats/scripts/coll
 > **没有任何 npm 依赖**，所以别人装了这套 skill 也不会被要求再装 Playwright 之类的东西。
 
 如果会话里已经有浏览器工具（任何能「在页面里执行 JS」的能力），
-连脚本都不用跑：把 [`scripts/fetch-in-page.js`](scripts/fetch-in-page.js) 的内容当表达式执行，
+连脚本都不用跑：把 [`fetch-in-page.js`](skills/zzz-stats/scripts/fetch-in-page.js) 的内容当表达式执行，
 再用 `node skills/zzz-stats/scripts/save-in-page-json.mjs` 落盘即可。取数逻辑本来就只是「1 次汇总 + 6 次当前池 + 若干次历史分片」。
 
 ## 目录结构
@@ -237,7 +237,7 @@ AGENTS.md                   # 开发期铁律：改哪类东西要同步什么�
 
 ## 称号与标签
 
-称号只看「角色池每 UP 均（含歪）」，基准 62.5 × 1.5 = 93.75 抽。10 档定义在 [`config/report.json`](config/report.json) 的 `titles.tiers`，按 2026-11 收集的 12 条工坊样本拟合，不是人群百分位；不歪率只是强相关，不能当判据。
+称号只看「角色池每 UP 均（含歪）」，基准 62.5 × 1.5 = 93.75 抽。10 档定义在 [`config/report.json`](skills/zzz-stats/config/report.json) 的 `titles.tiers`，按 2026-11 收集的 12 条工坊样本拟合，不是人群百分位；不歪率只是强相关，不能当判据。
 
 | 每 UP 均 | 称号 |
 |---|---|
