@@ -36,7 +36,7 @@ await loginWithQr({
   }),
 });
 check('登录默认编码器产生可解码图片', decode(qr.dataUrl).result?.data === text);
-check('登录回调保留原 URL', qr.url === text);
+check('登录回调严格只有 dataUrl', Object.keys(qr).join(',') === 'dataUrl');
 let injected = false;
 await loginWithQr({
   encodeQr: async value => { injected = value === text; return 'data:image/png;base64,FAKE'; },

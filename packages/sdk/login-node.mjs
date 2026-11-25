@@ -41,6 +41,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { SdkError, throwIfAborted } from './errors.mjs';
 import { encodeQrDataUrl } from './qr.mjs';
 import { collectFiles, buildMeta } from './collect.mjs';
 import { createNodeTransport, ACT_API } from './transport-node.mjs';
@@ -49,6 +50,8 @@ import { createNodeTransport, ACT_API } from './transport-node.mjs';
 const PASSPORT = 'https://passport-api.mihoyo.com/account/ma-cn-passport/web';
 /** 取游戏角色的接口（需要 cookie，用来换 game_uid）。 */
 const BINDING = 'https://api-takumi.mihoyo.com/binding/api/getUserGameRolesByCookie';
+/** 二维码有效期估计，事件 TTL 与本地过期判断共用。 */
+const QR_TTL_MS = 120_000;
 
 /*
  * 逆向得来的请求头。**改任何一个之前先读文件头**：这些值错了不会报「参数错误」，
@@ -134,7 +137,7 @@ function getSetCookies(res) {
  * 扫码登录，返回可用于后续请求的 Cookie 头。
  *
  * @param {object} args
- * @param {(qr: {dataUrl: string, url: string, ticket: string}) => void|Promise<void>} args.onQr
+ * @param {(qr: {dataUrl: string}) => void|Promise<void>} args.onQr
  *        拿到二维码时回调。调用方负责**落盘/展示**（SDK 自己不写盘）。
  * @param {(msg: string) => void} [args.log]          进度日志
  * @param {(ms: number) => Promise<void>} [args.sleep] 便于用例注入假时钟
@@ -151,6 +154,7 @@ export async function loginWithQr({
   now = () => Date.now(),
   fetchImpl = fetch,
   encodeQr = null,
+  signal, progress = async () => {},
 } = {}) {
   // 默认使用 SDK 的 qrcode；保留异步编码器注入供调用方与测试接管。
   const doEncode = encodeQr ?? encodeQrDataUrl;
@@ -165,22 +169,21 @@ export async function loginWithQr({
     headers: { ...PASSPORT_HEADERS, 'x-rpc-device_id': DEVICE_ID },
     body: '{}',
   });
-  const created = await createRes.json().catch(() => null);
+  if (createRes.ok === false) throw new SdkError('HTTP_ERROR', '申请二维码 HTTP 失败', { stage: 'login', httpStatus: createRes.status, endpoint: 'createQRLogin' });
+  const created = await createRes.json().catch(cause => { if (cause instanceof SdkError) throw cause; return null; });
   if (!created || created.retcode !== 0 || !created.data?.url) {
-    throw new Error(
-      `申请二维码失败：retcode=${created?.retcode} ${created?.message ?? ''}\n` +
-      '→ 优先怀疑 x-rpc-app_id 变了（用 unknown 或旧值会一直 -3005「参数不合法」），' +
-      '其次检查 x-rpc-game_biz / x-rpc-client_type。见本文件文件头的常量说明。',
-    );
+    throw new SdkError(created?.retcode ? 'UPSTREAM_ERROR' : 'INVALID_RESPONSE', '申请二维码失败',
+      { stage: 'login', retcode: created?.retcode, endpoint: 'createQRLogin' });
   }
   const ticket = created.data.ticket;
+  if (typeof ticket !== 'string' || !ticket) throw new SdkError('INVALID_RESPONSE', '二维码响应缺少 ticket', { stage: 'login', endpoint: 'createQRLogin' });
   const qrDataUrl = await doEncode(created.data.url);
   log('已生成二维码');
   /*
    * 交给调用方。**回调可以 await**：调用方可能要落盘、要起图片服务、要等它写成功
    * 再打印地址。SDK 自己不碰磁盘。
    */
-  await onQr?.({ dataUrl: qrDataUrl, url: created.data.url, ticket });
+  await onQr?.({ dataUrl: qrDataUrl });
 
   /*
    * 2) 轮询登录态，直到 Confirmed。
@@ -189,9 +192,14 @@ export async function loginWithQr({
    * 超时统一按「等待登录超时」处理，不区分「没扫」和「扫了没确认」——
    * 对调用方来说下一步都是「重来一次」。
    */
+  await progress('qr-issued', { ttlMs: QR_TTL_MS });
   const deadline = now() + maxWaitMs;
+  const expiresAt = now() + QR_TTL_MS;
+  let expired = false;
   let lastStatus = null;
   while (now() < deadline) {
+    throwIfAborted(signal);
+    if (!expired && now() >= expiresAt) { expired = true; await progress('expired'); }
     const res = await fetchImpl(`${PASSPORT}/queryQRLoginStatus`, {
       method: 'POST',
       headers: { ...PASSPORT_HEADERS, 'x-rpc-device_id': DEVICE_ID },
@@ -202,22 +210,22 @@ export async function loginWithQr({
      * ★★ 坑②：token 只在「第一次 Confirmed」的这次响应里。
      * 所以 set-cookie 必须在这个分支里当场摘走，不能等下一轮、也不能靠再查一次补。
      */
+    if (res.ok === false) throw new SdkError('HTTP_ERROR', '查询登录态 HTTP 失败', { stage: 'login', httpStatus: res.status, endpoint: 'queryQRLoginStatus' });
     const setCookies = getSetCookies(res);
-    const body = await res.json().catch(() => null);
+    const body = await res.json().catch(cause => { if (cause instanceof SdkError) throw cause; return null; });
     if (!body || body.retcode !== 0) {
-      throw new Error(
-        `查询登录态失败：retcode=${body?.retcode} ${body?.message ?? ''}\n` +
-        '→ 二维码可能已失效，重跑一次即可。若持续失败，见文件头关于 app_id 的说明。',
-      );
+      throw new SdkError(body?.retcode ? 'UPSTREAM_ERROR' : 'INVALID_RESPONSE', '查询登录态失败',
+        { stage: 'login', retcode: body?.retcode, endpoint: 'queryQRLoginStatus' });
     }
 
     const status = body.data?.status;
     if (status !== lastStatus) {
-      if (status === 'Scanned') log('已扫码，等待确认…');
-      if (status === 'Confirmed') log('已确认登录');
+      if (status === 'Scanned') { await progress('scanned'); log('已扫码，等待确认…'); }
+      if (status === 'Confirmed') { await progress('confirmed'); log('已确认登录'); }
       lastStatus = status;
     }
 
+    if (!['Created', 'Scanned', 'Confirmed'].includes(status)) throw new SdkError('INVALID_RESPONSE', '未知登录状态', { stage: 'login', endpoint: 'queryQRLoginStatus' });
     if (status === 'Confirmed') {
       const cookie = cookiesFromSetCookie(setCookies);
       if (!cookie) {
@@ -226,11 +234,7 @@ export async function loginWithQr({
          * （或者 set-cookie 被中间层吃掉）。这里必须报错而不是空着往下走 ——
          * 空 cookie 的后续表现是游戏接口 -100「请先登录」，与「cookie 坏了」无法区分。
          */
-        throw new Error(
-          '登录已确认，但响应里没有取到任何登录 cookie。\n' +
-          `→ 收到了 ${setCookies.length} 个 set-cookie（${setCookies.map((c) => String(c).split('=')[0]).join(', ') || '无'}）。\n` +
-          '   可能原因：cookie 名变了（见文件头 AUTH_COOKIE_NAMES），或 token 不再随 Confirmed 一次性下发。',
-        );
+        throw new SdkError('INVALID_RESPONSE', '登录已确认但缺少登录 Cookie', { stage: 'login', endpoint: 'queryQRLoginStatus' });
       }
       /*
        * 顺带把米游社账号 ID（`user_info.aid`）也带出去。
@@ -244,7 +248,7 @@ export async function loginWithQr({
 
     await sleep(pollMs);
   }
-  throw new Error(`等待扫码超时（${Math.round(maxWaitMs / 1000)} 秒，最后状态 ${lastStatus ?? '未知'}）。重跑一次可生成新二维码。`);
+  throw new SdkError('LOGIN_TIMEOUT', `等待扫码超时（${Math.round(maxWaitMs / 1000)} 秒）`, { stage: 'login' });
 }
 
 /**
@@ -267,22 +271,17 @@ export async function resolveGameUid({ cookie, region = 'prod_gf_cn', fetchImpl 
       Referer: 'https://act.mihoyo.com/',
     },
   });
-  const body = await res.json().catch(() => null);
+  if (res.ok === false) throw new SdkError('HTTP_ERROR', '查角色 HTTP 失败', { stage: 'login', httpStatus: res.status, endpoint: 'getUserGameRolesByCookie' });
+  const body = await res.json().catch(cause => { if (cause instanceof SdkError) throw cause; return null; });
   if (!body || body.retcode !== 0) {
-    throw new Error(
-      `查游戏角色失败：retcode=${body?.retcode} ${body?.message ?? ''}\n` +
-      '→ retcode=-100「请先登录」时先确认 cookie 拼对了（要 name=value，不带 Path 等属性）；' +
-      '若 cookie 正确，见文件头关于 header / app_id 的说明。',
-    );
+    throw new SdkError(body?.retcode === -100 ? 'AUTH_EXPIRED' : body?.retcode ? 'UPSTREAM_ERROR' : 'INVALID_RESPONSE',
+      '查游戏角色失败', { stage: 'login', retcode: body?.retcode, endpoint: 'getUserGameRolesByCookie' });
   }
-  const list = body.data?.list ?? [];
+  const list = body.data?.list;
+  if (!Array.isArray(list)) throw new SdkError('INVALID_RESPONSE', '角色响应缺少 list', { stage: 'login', endpoint: 'getUserGameRolesByCookie' });
   const hit = list.find((x) => x.region === region) ?? null;
   if (!hit?.game_uid) {
-    const got = list.map((x) => x.region).join(', ') || '（空）';
-    throw new Error(
-      `这台账号下没有 ${region} 的角色。返回的区服：${got}\n` +
-      '→ 国际服账号请用 --region 指定，并配合 --transport browser（纯 Node 这条路只做国服）。',
-    );
+    throw new SdkError('ROLE_NOT_FOUND', `账号没有 ${region} 的角色`, { stage: 'login' });
   }
   return {
     uid: String(hit.game_uid),
@@ -301,7 +300,7 @@ export async function resolveGameUid({ cookie, region = 'prod_gf_cn', fetchImpl 
  * （只用浏览器、或纯粹失败即报错），策略不该被 SDK 写死。
  *
  * @param {object} args
- * @param {(qr: {dataUrl: string, url: string, ticket: string}) => void|Promise<void>} args.onQr
+ * @param {(qr: {dataUrl: string}) => void|Promise<void>} args.onQr
  *        拿到二维码时回调。调用方负责落盘/展示（SDK 不碰磁盘）。
  * @param {string} [args.region] 目前只接受 `prod_gf_cn`，其它直接抛错
  * @returns {Promise<{cookieHeader: string, uid: string, gameUid: string, nickname: string|null, region: string}>}
@@ -318,6 +317,7 @@ export async function loginByQrNode({
   now = () => Date.now(),
   fetchImpl = fetch,
   encodeQr = null,
+  signal, progress = async () => {},
 } = {}) {
   /*
    * 国际服直接抛错，**不在这里偷偷换成浏览器**。
@@ -331,7 +331,7 @@ export async function loginByQrNode({
   }
 
   const { cookie, accountId } = await loginWithQr({
-    onQr, log, sleep, pollMs, maxWaitMs, now, fetchImpl, encodeQr,
+    onQr, log, sleep, pollMs, maxWaitMs, now, fetchImpl, encodeQr, signal, progress,
   });
   const role = await resolveGameUid({ cookie, region, fetchImpl });
   log(`UID ${role.uid}（${role.regionName ?? role.region}）`);
@@ -371,6 +371,7 @@ export async function collectViaNode({
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
   fetchImpl = fetch,
   fetchedAt = undefined,
+  signal, progress = async () => {},
 } = {}) {
   if (!/^prod_gf_cn$/i.test(region)) {
     throw new Error(
@@ -383,7 +384,7 @@ export async function collectViaNode({
   const transport = createNodeTransport({
     uid, cookie: cookieHeader, region, api, nickname, fetchImpl,
   });
-  const { files, summary, index } = await collectFiles({ transport, channels: channels ?? cfg?.channels, log, sleep });
+  const { files, summary, index } = await collectFiles({ transport, channels: channels ?? cfg?.channels, log, sleep, signal, progress });
   const meta = buildMeta({
     /*
      * `meta.source` 记的是「数据从哪个接口基址来的」。

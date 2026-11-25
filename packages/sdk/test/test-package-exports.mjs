@@ -8,8 +8,8 @@ let pass = 0;
 function check(name, value) { assert.ok(value, name); pass++; console.log(`✓ ${name}`); }
 for (const [name, symbol] of [
   ['@atian25/zzz-stats-sdk', 'collectData'],
-  ['@atian25/zzz-stats-sdk/qr', 'encodeQrDataUrl'],
-  ['@atian25/zzz-stats-sdk/drivers', 'openDriver'],
+  ['@atian25/zzz-stats-sdk', 'encodeQrDataUrl'],
+  ['@atian25/zzz-stats-sdk', 'login'],
   ['@atian25/zzz-stats-skill/report', 'buildReport'],
 ]) {
   const module = await import(requireFromServer.resolve(name));
@@ -19,11 +19,18 @@ const config = JSON.parse(readFileSync(requireFromServer.resolve('@atian25/zzz-s
 check('skill 配置出口包含频道表', Array.isArray(config.channels));
 assert.throws(() => requireFromServer.resolve('@atian25/zzz-stats-sdk/login-node.mjs'), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
 check('未公开 SDK 内部子路径不可通过包名读取', true);
+for (const suffix of ['qr', 'drivers', 'transport', 'qr-wait']) {
+  assert.throws(() => requireFromServer.resolve(`@atian25/zzz-stats-sdk/${suffix}`), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
+  check(`${suffix} 子路径被拒绝`, true);
+}
+const publicModule = await import(requireFromServer.resolve('@atian25/zzz-stats-sdk'));
+check('根入口恰好五个导出', Object.keys(publicModule).sort().join(',') === 'SdkError,collect,collectData,encodeQrDataUrl,login');
 for (const path of ['../package.json', '../../server/package.json', '../../../skills/zzz-stats/package.json']) {
   const manifest = JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
   check(`${manifest.name} 为 private ESM 包`, manifest.private === true && manifest.type === 'module');
 }
 const sdk = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+check('exports 只留根入口', JSON.stringify(sdk.exports) === '{".":"./index.mjs"}');
 check('Playwright 为 optional peer 非普通依赖', sdk.peerDependenciesMeta['playwright-core'].optional && !sdk.dependencies['playwright-core']);
 check('只有根 lockfile', existsSync(new URL('../../../pnpm-lock.yaml', import.meta.url)) && !existsSync(new URL('../pnpm-lock.yaml', import.meta.url)));
 console.log(`结果：通过 ${pass} / 失败 0`);

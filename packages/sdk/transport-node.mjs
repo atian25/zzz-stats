@@ -24,6 +24,8 @@
  * 纯 Node 这条路**只做国服**：国际服的 passport 与 biz 是另一套，没实测过，
  * 与其猜一个半对的实现，不如明确报错让调用方走浏览器。
  */
+import { SdkError } from './errors.mjs';
+
 export const ACT_API = {
   cn: 'https://act-api-takumi.mihoyo.com/event/nap_gacha_record/api/zzz',
   os: 'https://sg-act-public-api.hoyolab.com/event/nap_gacha_record/api/zzz',
@@ -85,15 +87,16 @@ export function createNodeTransport({
           Referer: 'https://act.mihoyo.com/zzz/event/gacha-record/index.html',
         },
       });
+      if (res.ok === false) throw new SdkError('HTTP_ERROR', `${path}: HTTP ${res.status}`, { stage: 'collect', httpStatus: res.status, endpoint: path });
       const text = await res.text();
       let json;
       try { json = JSON.parse(text); } catch {
-        throw new Error(`${path}: 返回的不是 JSON（HTTP ${res.status}）：${text.slice(0, 200)}`);
+        throw new SdkError('INVALID_RESPONSE', `${path}: 返回的不是 JSON`, { stage: 'collect', httpStatus: res.status, endpoint: path });
       }
+      if (!json || typeof json.retcode !== 'number' || json.retcode === 0 && !json.data) throw new SdkError('INVALID_RESPONSE', `${path}: 响应缺少必要字段`, { stage: 'collect', endpoint: path });
       if (json.retcode !== 0) {
-        const err = new Error(`${path}: retcode=${json.retcode} ${json.message ?? ''}`);
-        err.retcode = json.retcode;
-        throw err;
+        throw new SdkError(json.retcode === -100 ? 'AUTH_EXPIRED' : 'UPSTREAM_ERROR',
+          `${path}: 上游业务错误 ${json.retcode}`, { stage: 'collect', retcode: json.retcode, endpoint: path });
       }
       return json;
     },
@@ -106,12 +109,4 @@ export function createNodeTransport({
 
     async close() { /* 纯 Node 无需清理 */ },
   };
-}
-
-/**
- * 当前时间的 ISO 字符串。抽成函数是为了 `meta.generatedAt` 与 `fetched_at` 两处
- * 能用同一个值（用例里可以注入固定值做逐字节比对）。
- */
-export function nowIso() {
-  return new Date().toISOString();
 }

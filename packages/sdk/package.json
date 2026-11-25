@@ -5,9 +5,7 @@
   "type": "module",
   "engines": { "node": ">=22" },
   "exports": {
-    ".": "./index.mjs",
-    "./qr": "./qr.mjs",
-    "./drivers": "./drivers.mjs"
+    ".": "./index.mjs"
   },
   "files": ["*.mjs", "docs"],
   "peerDependencies": { "playwright-core": ">=1.50.0 <2" },

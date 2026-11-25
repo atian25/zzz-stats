@@ -1,27 +1,7 @@
-/**
- * 浏览器路径：登录（扫码 iframe / 短信）+ 页内取数。
- *
- * 这是改前 `scripts/collect.mjs` 的主体，原样搬过来，只把「命令行外壳」的依赖
- * 改成参数注入：`argOf()` / `OUTPUT_DIR` / `WORK_DIR` / `KEEP_VERIFY` / 全局 `stdin`
- * 都不再直接出现，由调用方（`scripts/collect.mjs` 或未来的服务）传进来。
- *
- * ## 为什么留着这条路
- *
- * 纯 Node 那条路（`packages/sdk/login-node.mjs`）只做国服、且依赖逆向来的私有 header。
- * 浏览器这条路是**官方页面自己发请求**，签名/CORS/风控全由官方前端处理，
- * 只要页面还能登录就还能用。所以它是默认降级目标：
- *
- *   默认 transport = node；node 失败（比如国际服、或 app_id 失效）→ 自动降到 browser，
- *   并在日志里明确打一行说明为什么降级（`packages/sdk/collect.mjs` 的调用方负责打）。
- *
- * ## 这段代码的特点
- *
- * 全是真实页面交互：点登录按钮、等跨域 iframe、切扫码 tab、读 data URL 二维码、
- * 轮询登录态、页内 fetch。**改动风险高**（官方改一次 DOM 就失效），
- * 所以这里的注释保留得比别处详细 —— 每一处「为什么这么写」都是踩过的坑。
- */
+/** 官方页面适配：浏览器 QR/SMS 登录与页内取数。宿主展示、文件和任务策略不在这里。 */
 
 import { openDriver } from './drivers.mjs';
+import { SdkError, abortable, throwIfAborted, guardDriver } from './errors.mjs';
 import { createQrClock, waitForLogin } from './qr-wait.mjs';
 import { collectFiles, buildMeta, MAX_VERS } from './collect.mjs';
 
@@ -70,7 +50,7 @@ const pageState = `(() => {
  *   2. 验证码由用户自己输入，脚本不接触短信通道
  *   3. 页面区号写死 `+86`，所以只支持国内手机号
  */
-export async function smsLogin(drv, frame, { log, sleep, LOGGED_IN, sms = {}, requestPhone, requestCode, purge }) {
+export async function smsLogin(drv, frame, { log, sleep, LOGGED_IN, sms = {}, requestPhone, requestCode, signal, now = Date.now, progress = async () => {} }) {
   /*
    * 登录框是异步渲染的，刚进 frame 时表单往往还没进 DOM。
    * 这里轮询等它出现，而不是查一次就判失败 —— 早先那版会误报「页面结构变了」。
@@ -89,9 +69,9 @@ export async function smsLogin(drv, frame, { log, sleep, LOGGED_IN, sms = {}, re
     if (form?.hasPhone && form?.hasCode) break;
     await sleep(500);
   }
-  if (!form?.hasPhone || !form?.hasCode) throw new Error('没找到短信登录表单（页面结构可能变了）。');
+  if (!form?.hasPhone || !form?.hasCode) throw new SdkError('BROWSER_PAGE_CHANGED', '没找到短信登录表单', { stage: 'login' });
 
-  log(`短信登录，区号 ${form.areaCode || '+86'}（页面写死，仅支持国内号码）`);
+  log('短信登录表单就绪');
 
   const fill = (which, value) => drv.evaluateInFrame(frame, `(() => {
     const inputs = [...document.querySelectorAll('input')];
@@ -109,9 +89,9 @@ export async function smsLogin(drv, frame, { log, sleep, LOGGED_IN, sms = {}, re
   let phone = sms.phone ?? await requestPhone?.();
   phone = String(phone).trim();
   if (!/^\d{11}$/.test(phone)) {
-    throw new Error(`手机号格式不对（需要 11 位数字，收到 ${phone.length} 位），已中止。`);
+    throw new SdkError('INVALID_ARGUMENT', '手机号需要 11 位数字', { stage: 'login' });
   }
-  if (await fill('手机号', phone) !== 'ok') throw new Error('手机号填不进去。');
+  if (await fill('手机号', phone) !== 'ok') throw new SdkError('BROWSER_PAGE_CHANGED', '手机号输入框不可用', { stage: 'login' });
   log('手机号已填入');
 
   // 勾选协议（不勾会卡在校验上）
@@ -129,13 +109,14 @@ export async function smsLogin(drv, frame, { log, sleep, LOGGED_IN, sms = {}, re
     b.click();
     return 'clicked';
   })()`);
-  log(sent === 'clicked' ? '已请求发送验证码（只请求一次，不会重复发）' : `发送验证码：${sent}`);
+  if (sent !== 'clicked') throw new SdkError('BROWSER_PAGE_CHANGED', '发送验证码按钮不可用', { stage: 'login' });
+  await progress('sms-sent');
 
   // 验证码的文件/终端等待在 CLI；不在 SDK 保存凭据中转文件。
   let code = sms.code ?? await requestCode?.();
   code = String(code).trim();
-  if (!/^\d{4,8}$/.test(code)) throw new Error('验证码格式不对，已中止。');
-  if (await fill('验证码', code) !== 'ok') throw new Error('验证码填不进去。');
+  if (!/^\d{4,8}$/.test(code)) throw new SdkError('INVALID_ARGUMENT', '验证码需要 4 到 8 位数字', { stage: 'login' });
+  if (await fill('验证码', code) !== 'ok') throw new SdkError('BROWSER_PAGE_CHANGED', '验证码输入框不可用', { stage: 'login' });
   log('验证码已填入');
 
   const submitted = await drv.evaluateInFrame(frame, `(() => {
@@ -145,51 +126,34 @@ export async function smsLogin(drv, frame, { log, sleep, LOGGED_IN, sms = {}, re
     b.click();
     return 'clicked';
   })()`);
-  log(`提交登录：${submitted}`);
+  if (submitted !== 'clicked') throw new SdkError('BROWSER_PAGE_CHANGED', '短信登录按钮不可用', { stage: 'login' });
+  await progress('sms-submitted');
 
-  const deadline = Date.now() + 60000;
-  while (Date.now() < deadline) {
+  const deadline = now() + 60000;
+  while (now() < deadline) {
     if (await drv.evaluate(LOGGED_IN) === 'logged-in') {
       log('登录成功 ✓');
-      // 短信路线没有二维码，但 sms-code.txt 里是明文验证码，同样不能留在盘上
-      purge({ when: '登录成功' });
+      await progress('confirmed');
       return;
     }
     await sleep(1500);
   }
-  throw new Error('短信登录后仍未检测到登录态。可能是验证码错误，或需要完成滑块验证。');
-}
-
-/**
- * 登录方式的默认值。
- *
- * 改前在 `scripts/collect.mjs` 里（一行 `return 'qr'`），拆 lib 时漏搬了 ——
- * 症状是浏览器路径一启动就 `ReferenceError: detectLoginMode is not defined`，
- * 而且只在**没传 --login** 时触发（传了就短路，不走到这里），最容易漏测。
- *
- * 保留成函数而不是内联常量：环境变量 `ZZZ_LOGIN_MODE` 存在时优先它，
- * 这里的返回值只是「两者都没有」时的兜底。
- */
-function detectLoginMode() {
-  return 'qr';
+  throw new SdkError('LOGIN_TIMEOUT', '短信提交后仍未检测到登录态', { stage: 'login' });
 }
 
 export async function loginFlow(drv, opts = {}) {
   const {
     // 登录方式：qr（默认）/ sms
-    mode: modeIn = null,
+    mode = 'qr',
     sms = {},
-    // 扫码阶段的回调与落点（原先是 collect.mjs 里的 saveQr / 图片服务 / OUTPUT_DIR）
+    // 二维码回调与抽象输入
     onQr = null,
-    saveQrFile,
-    qrUrlFor = () => null,
     input = {},
-    purge,
-    waitMode = 'a',
-    // 二维码不落盘时的提示（服务的调用方可能只想把 dataUrl 发出去）
-    persistQr = true,
     maxRefresh = 3,
     minGapMs = 5000,
+    pollMs = 3000,
+    maxWaitMs = 600000,
+    signal, now = Date.now, progress = async () => {},
     /*
      * 日志。改前 `loginFlow` 是 `scripts/collect.mjs` 里的内部函数，直接用外层闭包的
      * 全局 `log`；拆成 lib 模块后那个闭包没了，**必须**从 opts 传进来。
@@ -199,19 +163,18 @@ export async function loginFlow(drv, opts = {}) {
     log = () => {},
     sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
   } = opts;
-  const mode = String(modeIn || detectLoginMode()).toLowerCase();
+
   // 等到「已挂载 且 状态明确」：mounted 但既没 logged-out 也没 UID，说明还在加载
   const ready = await drv.waitFor(`(() => {
     const s = ${pageState};
     return s.mounted && (s.loggedOut === true || s.hasUid) ? s : null;
   })()`, 40000);
   if (!ready) {
-    const last = await drv.evaluate(pageState);
-    throw new Error(`页面没有进入确定状态：${JSON.stringify(last)}（标签页被节流或网络不可达）`);
+    throw new SdkError('BROWSER_PAGE_CHANGED', '页面没有进入确定登录状态', { stage: 'login' });
   }
 
   if (ready.hasUid) {
-    log('已登录（登录态来自浏览器 profile）');
+    await progress('confirmed');
     return;
   }
 
@@ -244,22 +207,21 @@ export async function loginFlow(drv, opts = {}) {
   // 2) 等跨域登录 frame
   const frame = await drv.loginFrame();
   if (!frame) {
-    /*
-     * 登录框没起来。
-     * 以前这里让人回车 —— 用户根本不在终端里，等于永久挂起。
-     * 现在改成：有 TTY 才等其他，否则直接抛错让 agent 处理
-     * （agent 可以说「请在浏览器窗口里手动点登录」再重跑）。
-     */
-    if (!input.ask) {
-      throw new Error(
-        '登录框（跨域 iframe）没出现。请在浏览器窗口里手动点「登录」，然后重跑一次脚本' +
-        '（登录态会留在 profile 里，第二次会直接跳过登录）。'
-      );
+    if (!input.requestManualAction) {
+      throw new SdkError('INPUT_REQUIRED', '登录 frame 不可用，需要人工操作回调', { stage: 'login' });
     }
-    log('⚠️  登录框（跨域 iframe）没出现。');
-    log('    请在浏览器里手动点「登录」并扫码，完成后回到这里按回车。');
-    await input.ask('按回车继续');
-    return;
+    await progress('manual-action-required');
+    await abortable(() => input.requestManualAction({ reason: 'login-frame-unavailable', signal }), signal);
+    const deadline = now() + maxWaitMs;
+    while (now() < deadline) {
+      throwIfAborted(signal);
+      if (await drv.evaluate(LOGGED_IN) === 'logged-in') {
+        await progress('confirmed');
+        return;
+      }
+      await sleep(pollMs);
+    }
+    throw new SdkError('LOGIN_TIMEOUT', '人工操作后仍未检测到登录态', { stage: 'login' });
   }
   log('已进入登录 frame');
 
@@ -268,7 +230,10 @@ export async function loginFlow(drv, opts = {}) {
    * 登录框默认就停在短信登录页（#/login/captcha），所以走短信不需要切 tab。
    */
   if (mode === 'sms') {
-    await smsLogin(drv, frame, { log, sleep, LOGGED_IN, sms, purge, ...input });
+    if ((!sms.phone && !input.requestPhone) || (!sms.code && !input.requestCode)) {
+      throw new SdkError('INPUT_REQUIRED', '短信登录需要手机号与验证码输入回调', { stage: 'login' });
+    }
+    await smsLogin(drv, frame, { log, sleep, LOGGED_IN, sms, signal, now, progress, ...input });
     return;
   }
 
@@ -306,10 +271,7 @@ export async function loginFlow(drv, opts = {}) {
      * 多等几轮再判定，最后一轮仍失败才报错 —— 否则偶发的慢渲染会被当成缺陷。
      */
     if (hit === 'no-target' && !mode?.hasQr && i >= 4) {
-      throw new Error(
-        `未能切到扫码模式（登录框停在 ${mode?.hash || '未知页面'}）。` +
-        '请在浏览器里手动点左上角的扫码图标后再重试。'
-      );
+      throw new SdkError('BROWSER_PAGE_CHANGED', '未能切到扫码模式', { stage: 'login' });
     }
   }
 
@@ -348,180 +310,38 @@ export async function loginFlow(drv, opts = {}) {
     return hit;
   };
 
-  /*
-   * 存二维码：**固定文件名** `output/login-qr.png`，覆盖写。
-   *
-   * 早先用「带时间戳的唯一文件名」来躲缓存——覆盖同名文件时，浏览器、图片组件、
-   * CDN 中间层都可能继续显示旧图，用户扫到的是一张已经作废的码（SKILL.md 记过这个坑）。
-   * 现在改成**盘上固定名、URL 带 `?t=<毫秒>`**：新时间戳 = 新 URL，缓存自然失效，
-   * 而清理时只需要认一个文件名，不用扫一堆历史截图。
-   *
-   * 返回值里的 `url` 每次都带新的 `?t=`，调用方必须用**最新那行**地址。
-   */
-  /*
-   * 二维码交出去。
-   *
-   * **改前这里直接写盘**（`output/login-qr.png` + 图片服务 URL）。现在落盘由调用方
-   * 通过 `saveQrFile` 注入：SDK 不写盘，服务里可能只想把 dataUrl 发回前端。
-   * 返回 `{ png, url }` 的形状保持不变 —— waitForLogin() 的日志在用。
-   */
-  const saveQr = (q) => {
-    if (!persistQr) {
-      const saved = { png: null, url: null };
-      onQr?.({ dataUrl: q.src, ...saved });
-      return saved;
-    }
-    const saved = saveQrFile(q.src);
-    const url = qrUrlFor();
-    onQr?.({ dataUrl: q.src, file: saved, url });
-    return { png: saved, url };
+  const QR_TTL_MS = 120_000; // 官方二维码约两分钟失效，属于协议估计
+  const clock = createQrClock({ ttlMs: QR_TTL_MS, now });
+  const emitQr = async q => {
+    await onQr?.({ dataUrl: q.src });
+    clock.reissue();
+    await progress('qr-issued', { ttlMs: QR_TTL_MS });
   };
+  const qr = await grabQr();
+  if (qr?.src) await emitQr(qr);
+  else await progress('qr-unavailable');
 
-  const QR_TTL_MS = 120_000;   // 官方二维码约 2 分钟失效
-  const qr = await grabQr();   // 首次那张，用于打印路径/URL；换图后的保存由 waitForLogin 内部做
-  /*
-   * 计时器抽成对象（见 qr-wait.mjs）：`reissue()` 负责「换新码重置起点」。
-   * 早先这里是裸的 `let issuedAt`，刷新后忘了重置 —— 新码一出来就被判过期。
-   */
-  const clock = createQrClock({ ttlMs: QR_TTL_MS });
-  let issuedAt = clock.issuedAt;
-
-  if (qr?.src) {
-    const { png: file, url } = saveQr(qr);
-    const expires = new Date(issuedAt + QR_TTL_MS);
-    log(`二维码已保存（${qr.w}×${qr.h}）：${file}`);
-    log(`截取时间 ${new Date(issuedAt).toLocaleTimeString('zh-CN', { hour12: false })}，` +
-        `约 ${expires.toLocaleTimeString('zh-CN', { hour12: false })} 失效（2 分钟）`);
-    // 给 agent 一行能直接塞进图片组件的地址；没有服务就给文件路径
-    if (url) log(`二维码图片地址：${url}`);
-    log('请用米游社 App 扫码，打开这张图扫即可。');
-  } else {
-    log('ℹ️  没读到二维码图片（可能画在 canvas 上）。请在浏览器窗口里直接扫码。');
-  }
-
-  /*
-   * 扫码期间的刷新。
-   *
-   * 两条硬约束，都是为了不给对方的登录接口添麻烦：
-   *   1) 只由用户主动要求时刷新（终端按 r 或 agent 写信号文件）；
-   *      循环里查的是**登录态**（本地 DOM 读取），
-   *      不是反复请求二维码——没有用户操作就绝不重取
-   *   2) 全局最多重取 MAX_QR_REFRESH 次，两次之间至少隔 5 秒
-   * 用户离开时循环只在读登录态，不会对着登录接口空转。
-   */
-  const MAX_QR_REFRESH = maxRefresh;
-  const REFRESH_MIN_GAP_MS = minGapMs;
-
-  // 次数上限与最短间隔由 waitForLogin() 执行，这里只负责把参数传下去
-
-  /*
-   * 扫码阶段必须「自动轮询登录态 + 非阻塞监听键盘」。
-   *
-   * 之前这里是 `await ask(...)` 先阻塞等人按回车，按完才去轮询登录——
-   * 用户扫完码什么都不发生，得自己回来敲回车，体验是坏的。
-   * 现在改成：主循环每 3 秒查一次登录态，命中立刻继续；
-   * 刷新由两条独立通道触发（按 r / 信号文件），同样受 3 次上限与 5 秒间隔约束。
-   */
-  /*
-   * 扫码等待策略，按「当前会话能不能挂着等」分两档：
-   *
-   *   A 档（默认）：宿主支持后台任务 —— 调用方可以把本进程挂起来等，
-   *                检测到登录就自己往下走，用户扫完什么都不用做。
-   *   B 档：宿主只能一次性执行 —— 本进程等不到用户扫码就会退出，
-   *                所以要明确告诉用户「扫完回我一句『已扫码』」，由调用方再跑一次续上。
-   *
-   * 判定顺序：
-   *   1. --wait=a|b 或 ZZZ_WAIT_MODE=a|b（调用方知道自己有没有后台能力，优先听它的）
-   *   2. 默认 a（交互终端下本来就是挂着等，非交互由调用方决定）
-   *
-   * B 档能续上的前提是 profile 持久化：扫码产生的 cookie 留在 profile 里，
-   * 第二次运行时直接就是登录态。
-   */
-  // waitMode 由调用方给（改前是 --wait / ZZZ_WAIT_MODE 解析出来的）
-
-  /*
-   * 有没有终端只影响**提示文案**，不影响刷新通道的判断。
-   *
-   * 早先它同时决定了「听不听按键」和「查不查信号文件」，于是两条通道变成二选一，
-   * agent 代跑时（进程有 TTY、但 agent 没法发按键）写信号文件完全没人读。
-   * 现在两条通道并行生效，判断逻辑在 waitForLogin() 里，且**不接受 stdinRaw**。
-   */
-  // stdinRaw 由调用方给（改前是 Boolean(stdin.isTTY)）
-
-  log(`正在等待扫码…（二维码过期最多换 ${MAX_QR_REFRESH} 次）`);
-  if (waitMode === 'b') {
-    log('');
-    log('扫码完成后，回到对话里回复一句「已扫码」—— 我会接着把数据取下来。');
-    log('（当前宿主只能一次性执行，没法在这里挂着等）');
-    log('');
-  } else {
-    log('扫码后会自动继续，不需要任何操作。');
-  }
-  if (input.refreshHint) log(input.refreshHint);
-
-  // 心跳里附带的页面快照：出问题时能直接看出「扫码前后页面到底有没有变化」
-  const snapshot = `(() => {
-    const t = document.body ? document.body.innerText : '';
-    return { len: t.length, head: t.replace(/\\s+/g, ' ').slice(0, 60) };
-  })()`;
-
-  /*
-   * 刷新通道由调用方订阅；CLI 的 stdin 与信号文件接线在 login-input.mjs。
-   * input.takeRefreshRequest 合并通道请求，waitForLogin() 负责刷新限流与计时重置。
-   * 等待结束时退订；真实循环与外壳适配器分别由回归用例覆盖。
-   */
   const unsubscribe = input.subscribeRefresh?.() ?? (() => {});
 
   let result;
   try {
     result = await waitForLogin({
       isLoggedIn: () => drv.evaluate(LOGGED_IN),
-      /*
-       * 心跳只是「我还活着」的信号，不能因为一次取快照失败就报警或中断。
-       * 两个坑都在这儿踩过：
-       *   1) drv.evaluate 出错返回的是 {__error}，它**是 truthy**，
-       *      直接读 snap.len 会得到 undefined，日志变成「页面 undefined 字」
-       *   2) 页面导航瞬间执行上下文会被销毁，属于瞬时错误，重试一次就好
-       */
-      probe: async () => {
-        let snap = await drv.evaluate(snapshot);
-        if (!snap || snap.__error) {
-          await sleep(600);
-          snap = await drv.evaluate(snapshot);
-        }
-        return !snap || snap.__error || typeof snap.len !== 'number'
-          ? `页面快照读不到（${snap?.__error ?? '空返回'}）`
-          : `页面 ${snap.len} 字：「${snap.head}」`;
-      },
       refreshQr,
       grabQr,
-      saveQr,
+      emitQr,
       clock,
-      log,
       takeRefreshRequest: input.takeRefreshRequest,
-      expiredHint: input.expiredHint,
-      maxRefresh: MAX_QR_REFRESH,
-      minGapMs: REFRESH_MIN_GAP_MS,
+      maxRefresh,
+      minGapMs,
+      pollMs, maxWaitMs, sleep, now, signal, progress,
     });
   } finally {
     unsubscribe();
   }
 
-  if (!result.ok) {
-    log('');
-    log('二维码已失效或等待超时。');
-    log('→ 直接重跑一次采集脚本即可生成新二维码（旧进程不会占用登录态）。');
-    throw new Error('等待登录超时');
-  }
-  log('登录成功 ✓');
-  /*
-   * 扫码成功那一刻就清，**不要等整个采集跑完**。
-   *
-   * 登录一旦成功，这些二维码就已经作废了；但它们**仍然能被扫**（扫了只会提示失效），
-   * 而后面还要跑 6 个频道的采集，没必要让废弃的登录码在盘上多躺几十秒。
-   * 失败路径由 main 的 finally 兜底，这里删过也无所谓（幂等）。
-   */
-  purge({ when: '登录成功' });
+  if (!result.ok) throw new SdkError('LOGIN_TIMEOUT', '等待登录超时', { stage: 'login' });
+  await progress('confirmed');
 }
 
 // ------------------------------------------------------------------ 取数
@@ -539,108 +359,15 @@ async function readUid(drv) {
 async function fetchJson(drv, api, region, uid, path, extra = '') {
   const url = `${api}${path}?uid=${encodeURIComponent(uid)}&region=${encodeURIComponent(region)}${extra ? '&' + extra : ''}`;
   const body = await drv.evaluate(`fetch(${JSON.stringify(url)}, { credentials: 'include' }).then(r => r.text())`);
-  if (typeof body !== 'string') throw new Error(`页内 fetch 失败：${JSON.stringify(body)}`);
-  const json = JSON.parse(body);
+  if (typeof body !== 'string') throw new SdkError('INVALID_RESPONSE', '页内 fetch 未返回文本', { stage: 'collect', endpoint: path });
+  let json;
+  try { json = JSON.parse(body); } catch (cause) { throw new SdkError('INVALID_RESPONSE', '页内 fetch 返回非 JSON', { stage: 'collect', endpoint: path, cause }); }
+  if (!json || typeof json.retcode !== 'number' || !json.data && json.retcode === 0) throw new SdkError('INVALID_RESPONSE', '页内响应缺少必要字段', { stage: 'collect', endpoint: path });
   if (json.retcode !== 0) {
-    const err = new Error(`${path}: retcode=${json.retcode} ${json.message ?? ''}`);
-    err.retcode = json.retcode;
-    throw err;
+    throw new SdkError(json.retcode === -100 ? 'AUTH_EXPIRED' : 'UPSTREAM_ERROR',
+      `${path}: 上游业务错误 ${json.retcode}`, { stage: 'collect', retcode: json.retcode, endpoint: path });
   }
   return json;
-}
-
-/**
- * 浏览器路径的完整采集：开浏览器 → 登录 → 读 UID/昵称 → 取数 → meta。
- *
- * 改前这段在 `scripts/collect.mjs` 的 `main()` 里，与「建目录、写文件、打收尾日志」
- * 混在一起。现在只做采集本身：**不建目录、不写文件**，返回 Map。
- *
- * @param {object} args
- * @param {object} [args.driver]    openDriver 的参数（cdpUrl / driver / port / profile / headless）
- * @param {string} args.pageUrl     官方页面地址
- * @param {string} args.api         act 接口基址
- * @param {string} args.region
- * @param {Array}  args.channels
- * @param {string} [args.loginMode] qr / sms
- * @param {(qr: object) => void} [args.onQr]
- * @param {Function} [args.saveQrFile]  (dataUrl) => 落盘路径
- * @param {() => string|null} [args.qrUrlFor]
- * @param {object} [args.input] 手机号、验证码、刷新请求与订阅生命周期回调（见 SDK API 文档）
- * @param {(o:{when:string}) => void} [args.purge] 由调用方清理凭据文件的回调
- */
-export async function collectWithBrowser({
-  driver = {},
-  pageUrl,
-  api,
-  region = 'prod_gf_cn',
-  channels,
-  loginMode = 'qr',
-  onQr = null,
-  saveQrFile = null,
-  qrUrlFor = () => null,
-  input = {},
-  purge = () => {},
-  sms = {},
-  onProgress = null,
-  log = () => {},
-  sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
-  fetchedAt = undefined,
-  isCn = undefined,
-} = {}) {
-  const drv = await openDriver({ ...driver, log });
-  log(`驱动：${drv.kind}（${drv.version ?? '未知版本'}）`);
-
-  try {
-    await drv.open(pageUrl);
-    await loginFlow(drv, {
-      mode: loginMode,
-      onQr,
-      saveQrFile,
-      qrUrlFor,
-      input,
-      purge,
-      waitMode: driver.waitMode ?? 'a',
-      persistQr: Boolean(saveQrFile),
-      sms,
-      log,
-      sleep,
-    });
-
-    const uid = await readUid(drv);
-    if (!uid) throw new Error('拿不到 UID。确认账号已绑定《绝区零》角色。');
-    log('UID', uid, 'region', region, '接口', api);
-
-    /*
-     * 取数部分与纯 Node 那条路**共用** `collectFiles()`：
-     * 两条路只是「怎么发请求」不同，「先 index 再逐频道 cur/hist」的顺序必须只有一份。
-     */
-    const transport = {
-      kind: 'browser',
-      fetchJson: (path, query = '') => fetchJson(drv, api, region, uid, path, query),
-    };
-    const { files, summary, index } = await collectFiles({ transport, channels, log, sleep });
-
-    // 昵称：接口不返回，只能从页面文本里找
-    const nickname = await drv.evaluate(`(() => {
-      const t = (document.body ? document.body.innerText : '').split('\\n').map(s => s.trim()).filter(Boolean);
-      const idx = t.findIndex(s => /^UID/.test(s) || /^\\d{6,}$/.test(s));
-      for (let i = 0; i < Math.min(t.length, 25); i += 1) {
-        if (i === idx) continue;
-        if (/^[\\u4e00-\\u9fa5A-Za-z0-9·_-]{1,16}$/.test(t[i]) && !/^(登录|绝区零|调频|UID|国服|全部|当前|历史)/.test(t[i])) return t[i];
-      }
-      return null;
-    })()`);
-    const safeNickname = typeof nickname === 'string' && nickname.length && !nickname.includes('\n') ? nickname : null;
-
-    files.set('meta.json', buildMeta({
-      index, uid, nickname: safeNickname, region, api, summary, fetchedAt,
-      isCn: isCn ?? /^prod_gf_cn$/i.test(region),
-    }));
-
-    return { uid, nickname: safeNickname, files, summary };
-  } finally {
-    await drv.close?.();
-  }
 }
 
 /**
@@ -664,45 +391,46 @@ export async function loginByQrBrowser({
   region = 'prod_gf_cn',
   loginMode = 'qr',
   onQr = null,
-  saveQrFile = null,
-  qrUrlFor = () => null,
   input = {},
-  purge = () => {},
   sms = {},
   log = () => {},
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+  pollMs, maxWaitMs, maxRefresh, minGapMs, signal, now = Date.now, progress = async () => {},
 } = {}) {
-  const drv = await openDriver({ ...driver, log });
+  const owned = typeof driver.open !== 'function';
+  let drv;
+  try { drv = owned ? await openDriver({ ...driver, driver: driver.kind, log, signal }) : driver; }
+  catch (cause) { if (cause instanceof SdkError) throw cause; throw new SdkError('BROWSER_UNAVAILABLE', '浏览器不可用', { stage: 'driver', cause }); }
   log(`驱动：${drv.kind}（${drv.version ?? '未知版本'}）`);
 
   try {
-    await drv.open(pageUrl);
-    await loginFlow(drv, {
+    const active = guardDriver(drv, signal, 'login');
+    await active.open(pageUrl);
+    await loginFlow(active, {
       mode: loginMode,
       onQr,
-      saveQrFile,
-      qrUrlFor,
-      input,
-      purge,
-      waitMode: driver.waitMode ?? 'a',
-      persistQr: Boolean(saveQrFile),
-      sms,
+        input,
+        sms,
       log,
       sleep,
+      pollMs, maxWaitMs, maxRefresh, minGapMs, signal, now, progress,
     });
 
-    const uid = await readUid(drv);
-    if (!uid) throw new Error('拿不到 UID。确认账号已绑定《绝区零》角色。');
+    const uid = await readUid(active);
+    if (!uid) throw new SdkError('ROLE_NOT_FOUND', '拿不到游戏 UID', { stage: 'login' });
     log('UID', uid, 'region', region);
 
-    const nickname = await readNickname(drv);
-    return { uid, nickname, drv };
+    const nickname = await readNickname(active);
+    throwIfAborted(signal);
+    // 登录 signal 不绑定到长期会话；后续 collect 使用自己的 signal。
+    if (owned) drv.signal = undefined;
+    return { uid, nickname, drv, owned };
   } catch (e) {
     /*
      * 失败时才关浏览器：成功时 `drv` 要交给 `collectViaBrowser()` 继续用
      * （登录态在那个上下文里，关了就白扫一次码）。
      */
-    await drv.close?.();
+    if (owned) await drv.close?.();
     throw e;
   }
 }
@@ -747,17 +475,18 @@ export async function collectViaBrowser({
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
   fetchedAt = undefined,
   isCn = undefined,
+  signal, progress = async () => {},
 } = {}) {
-  if (!drv) throw new Error('collectViaBrowser 需要 drv（由 loginByQrBrowser 返回）');
-  if (!uid) throw new Error('collectViaBrowser 需要 uid');
+  if (!drv) throw new SdkError('INVALID_ARGUMENT', 'collectViaBrowser 需要 drv');
+  if (!uid) throw new SdkError('INVALID_ARGUMENT', 'collectViaBrowser 需要 uid');
 
-  log('UID', uid, 'region', region, '接口', api);
+  drv = guardDriver(drv, signal, 'collect');
 
   const transport = {
     kind: 'browser',
     fetchJson: (path, query = '') => fetchJson(drv, api, region, uid, path, query),
   };
-  const { files, summary, index } = await collectFiles({ transport, channels, log, sleep });
+  const { files, summary, index } = await collectFiles({ transport, channels, log, sleep, signal, progress });
 
   const safeNickname = nickname ?? await readNickname(drv);
   files.set('meta.json', buildMeta({

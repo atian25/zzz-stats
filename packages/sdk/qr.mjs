@@ -1,5 +1,6 @@
 /** 二维码编码：SDK 正常依赖 qrcode，不依赖 skill 的 vendor 目录。 */
 import QRCode from 'qrcode';
+import { SdkError } from './errors.mjs';
 
 /**
  * 登录二维码内容 → PNG data URL。
@@ -8,10 +9,14 @@ import QRCode from 'qrcode';
  * @returns {Promise<string>}
  */
 export async function encodeQrDataUrl(text) {
-  if (typeof text !== 'string' || !text) throw new Error('二维码内容为空');
-  return QRCode.toDataURL(text, {
-    type: 'image/png', errorCorrectionLevel: 'M', scale: 8, margin: 4,
-  });
+  if (typeof text !== 'string' || !text) throw new SdkError('INVALID_ARGUMENT', '二维码内容为空', { stage: 'qr' });
+  try {
+    return await QRCode.toDataURL(text, {
+      type: 'image/png', errorCorrectionLevel: 'M', scale: 8, margin: 4,
+    });
+  } catch (cause) {
+    throw new SdkError('QR_ENCODING_FAILED', '二维码编码失败', { stage: 'qr', cause });
+  }
 }
 
 /** data URL → 原始字节；保存位置由外壳决定。 */
