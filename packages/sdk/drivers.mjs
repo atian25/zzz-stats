@@ -18,6 +18,7 @@
  *   evaluateInFrame(f, e) 在指定 frame 里执行 JS
  *   close()              收尾
  */
+import { abortable, throwIfAborted, SdkError } from './errors.mjs';
 import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
@@ -80,15 +81,23 @@ class CdpDriver {
   #id;
   #pending;
   #sessionId;
+  #targetId;
+  #creatingTarget;
+  #child;
+  #closePromise;
 
-  static async connect(port) {
-    const info = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
+  static async connect(host = '127.0.0.1', port = 9222, signal, child = null, protocol = 'http:') {
+    throwIfAborted(signal);
+    const authority = host.includes(':') ? `[${host}]` : host;
+    const info = await (await fetch(`${protocol}//${authority}:${port}/json/version`, { signal })).json();
     const d = new CdpDriver();
+    d.signal = signal;
+    d.#child = child;
     d.#ws = new WebSocket(info.webSocketDebuggerUrl);
-    await new Promise((res, rej) => {
+    await abortable(() => new Promise((res, rej) => {
       d.#ws.addEventListener('open', () => res(), { once: true });
       d.#ws.addEventListener('error', rej, { once: true });
-    });
+    }), signal).catch(e => { d.#ws.close(); throw e; });
     d.#ws.addEventListener('message', (ev) => {
       const msg = JSON.parse(typeof ev.data === 'string' ? ev.data : '');
       if (msg.id && d.#pending.has(msg.id)) {
@@ -101,18 +110,30 @@ class CdpDriver {
     return d;
   }
 
-  #send(method, params = {}, sessionId = this.#sessionId) {
-    return new Promise((res, rej) => {
-      const id = this.#id++;
+  #send(method, params = {}, sessionId = this.#sessionId, signal = this.signal) {
+    throwIfAborted(signal);
+    let id;
+    let timer;
+    return abortable(() => new Promise((res, rej) => {
+      id = this.#id++;
+      if (method === 'Target.createTarget' || method === 'Target.closeTarget') {
+        timer = setTimeout(() => rej(new Error(`CDP ${method} 请求超时`)), 5000);
+      }
       this.#pending.set(id, { res, rej });
       this.#ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
-    });
+    }), signal).finally(() => { clearTimeout(timer); this.#pending.delete(id); });
   }
 
   async open(url) {
-    const { targetInfos } = await this.#send('Target.getTargets');
-    const existing = targetInfos.find((t) => t.type === 'page' && t.url.startsWith('http'));
-    const targetId = existing?.targetId ?? (await this.#send('Target.createTarget', { url: 'about:blank' })).targetId;
+    if (this.#closePromise) throw new Error('CDP driver 已关闭');
+    if (!this.#targetId) {
+      throwIfAborted(this.signal);
+      // 保留原始创建结果：取消后若 target 迟到，close 仍能回收它。
+      this.#creatingTarget ??= this.#send('Target.createTarget', { url: 'about:blank' }, null, null)
+        .then(({ targetId }) => { this.#targetId = targetId; return targetId; });
+      await abortable(() => this.#creatingTarget, this.signal);
+    }
+    const targetId = this.#targetId;
     const { sessionId } = await this.#send('Target.attachToTarget', { targetId, flatten: true });
     this.#sessionId = sessionId;
     await this.#send('Page.enable');
@@ -140,7 +161,7 @@ class CdpDriver {
     while (Date.now() < deadline) {
       const v = await this.evaluate(expression);
       if (v && v !== false && !(v && v.__error)) return v;
-      await sleep(every);
+      await abortable(() => sleep(every), this.signal);
     }
     return null;
   }
@@ -174,7 +195,7 @@ class CdpDriver {
           // frame 刚建好又导航了，下一轮再试
         }
       }
-      await sleep(500);
+      await abortable(() => sleep(500), this.signal);
     }
     return null;
   }
@@ -183,17 +204,43 @@ class CdpDriver {
     return this.evaluate(expression, frame.__cdpContext);
   }
 
-  async close() {
-    try { this.#ws.close(); } catch {}
+  close() {
+    return this.#closePromise ??= (async () => {
+      try {
+        await this.#creatingTarget;
+        if (this.#targetId) await this.#send('Target.closeTarget', { targetId: this.#targetId }, null, null);
+      } catch { /* 连接已断开时无法关闭 target，仍须释放自有进程。 */ }
+      finally {
+        for (const { rej } of this.#pending.values()) rej(new Error('CDP driver 已关闭'));
+        this.#pending.clear();
+        try { this.#ws.close(); } catch {}
+        if (this.#child) await stopChrome(this.#child);
+      }
+    })();
   }
 }
 
-/** 起一个带 CDP 端口的本机 Chrome（已在跑就直接连）。 */
-async function launchCdp({ port, profile, bin, log }) {
-  try {
-    return await CdpDriver.connect(port);
-  } catch {}
+/** 只终止本次 spawn 的进程；等待 exit，SIGTERM 超时后 SIGKILL 兜底。 */
+async function stopChrome(child) {
+  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise((resolve, reject) => {
+    const done = () => { clearTimeout(timer); resolve(); };
+    child.once('exit', done);
+    const timer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch (cause) { child.removeListener('exit', done); reject(cause); }
+    }, 2000);
+    try { child.kill('SIGTERM'); }
+    catch (cause) { clearTimeout(timer); child.removeListener('exit', done); reject(cause); }
+  });
+}
 
+/** 起一个带 CDP 端口的本机 Chrome（已在跑就直接连，不取得进程所有权）。 */
+async function launchCdp({ port, profile, bin, log, signal }) {
+  try {
+    return await CdpDriver.connect('127.0.0.1', port, signal);
+  } catch (e) { throwIfAborted(signal); }
+
+  throwIfAborted(signal);
   log(`启动本机 Chrome：${bin}`);
   const child = spawn(bin, [
     `--remote-debugging-port=${port}`,
@@ -202,26 +249,36 @@ async function launchCdp({ port, profile, bin, log }) {
     '--no-default-browser-check',
     ...chromeArgs(),
     'about:blank',
-  ], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  ], { stdio: ['ignore', 'ignore', 'pipe'] });
 
   let stderr = '';
-  child.stderr?.on('data', (b) => { stderr += b.toString(); });
-  child.unref();
+  let spawnError;
+  child.on('error', cause => { spawnError = cause; });
+  child.stderr?.on('data', (b) => { stderr = (stderr + b.toString()).slice(-8192); });
 
-  for (let i = 0; i < 60; i += 1) {
-    await sleep(500);
-    try {
-      return await CdpDriver.connect(port);
-    } catch {}
+  try {
+    for (let i = 0; i < 60; i += 1) {
+      await abortable(() => sleep(500), signal);
+      if (spawnError) throw spawnError;
+      if (child.exitCode !== null || child.signalCode !== null) break;
+      try {
+        const d = await CdpDriver.connect('127.0.0.1', port, signal, child);
+        if (signal?.aborted) { await d.close(); throwIfAborted(signal); }
+        return d;
+      } catch (e) { throwIfAborted(signal); }
+    }
+    const hint = stderr.trim().split('\n').slice(-3).join('\n');
+    throw new Error(
+      `Chrome 没在端口 ${port} 起来。\n` +
+      `  1) profile 被另一个 Chrome 占用 → 换 --profile 或先关掉\n` +
+      `  2) 受限沙箱 → 设 ZZZ_CHROME_ARGS='--no-sandbox --headless=new'\n` +
+      `  3) 改用已开着的 Chrome：--cdp http://127.0.0.1:9222\n` +
+      (hint ? `Chrome 输出：\n${hint}` : ''),
+    );
+  } catch (cause) {
+    await stopChrome(child);
+    throw cause;
   }
-  const hint = stderr.trim().split('\n').slice(-3).join('\n');
-  throw new Error(
-    `Chrome 没在端口 ${port} 起来。\n` +
-    `  1) profile 被另一个 Chrome 占用 → 换 --profile 或先关掉\n` +
-    `  2) 受限沙箱 → 设 ZZZ_CHROME_ARGS='--no-sandbox --headless=new'\n` +
-    `  3) 改用已开着的 Chrome：--cdp http://127.0.0.1:9222\n` +
-    (hint ? `Chrome 输出：\n${hint}` : ''),
-  );
 }
 
 // ----------------------------------------------------------- Playwright 驱动
@@ -237,14 +294,16 @@ class PlaywrightDriver {
   }
 
   async open(url) {
+    throwIfAborted(this.signal);
     await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
   }
 
   async evaluate(expression) {
     // Playwright 接受字符串表达式；Promise 会自动 await
     try {
-      return await this.page.evaluate(expression);
+      return await abortable(() => this.page.evaluate(expression), this.signal);
     } catch (e) {
+      if (e instanceof SdkError) throw e;
       return { __error: e.message };
     }
   }
@@ -254,7 +313,7 @@ class PlaywrightDriver {
     while (Date.now() < deadline) {
       const v = await this.evaluate(expression);
       if (v && v !== false && !(v && v.__error)) return v;
-      await sleep(every);
+      await abortable(() => sleep(every), this.signal);
     }
     return null;
   }
@@ -263,15 +322,16 @@ class PlaywrightDriver {
     for (let i = 0; i < 40; i += 1) {
       const f = this.page.frames().find((x) => LOGIN_FRAME_RE.test(x.url()));
       if (f) return f;
-      await sleep(500);
+      await abortable(() => sleep(500), this.signal);
     }
     return null;
   }
 
   async evaluateInFrame(frame, expression) {
     try {
-      return await frame.evaluate(expression);
+      return await abortable(() => frame.evaluate(expression), this.signal);
     } catch (e) {
+      if (e instanceof SdkError) throw e;
       return { __error: e.message };
     }
   }
@@ -289,11 +349,12 @@ class PlaywrightDriver {
  * 用 channel:'chrome' 驱动本机 Chrome —— 这样不需要 Playwright 下载自带浏览器，
  * 用户装了 Chrome 就能用。找不到 Chrome 才退回 Playwright 自带的 chromium。
  */
-async function launchPlaywright({ headless, log, modulePath, profile, chromium: injectedChromium }) {
+async function launchPlaywright({ headless, log, modulePath, profile, chromium: injectedChromium, signal }) {
   const mod = injectedChromium ? null : await import(modulePath);
   const chromium = injectedChromium ?? mod.chromium ?? mod.default?.chromium;
   if (!chromium) throw new Error('Playwright 模块里没有 chromium');
 
+  throwIfAborted(signal);
   const args = chromeArgs();
   const base = { headless, args };
   /*
@@ -307,9 +368,13 @@ async function launchPlaywright({ headless, log, modulePath, profile, chromium: 
       viewport: { width: 1440, height: 900 },
       ...base,
     });
+    if (signal?.aborted) { await ctx.close(); throwIfAborted(signal); }
     log(`Playwright 就绪（持久化 profile：${profile}）`);
     // 持久化上下文自带页面；没有就新建一个
-    const page = ctx.pages()[0] ?? (await ctx.newPage());
+    let page;
+    try { page = ctx.pages()[0] ?? (await abortable(() => ctx.newPage(), signal)); }
+    catch (cause) { await ctx.close(); throw cause; }
+    if (signal?.aborted) { await ctx.close(); throwIfAborted(signal); }
     return new PlaywrightDriver(ctx.browser(), page, ctx);
   }
 
@@ -319,14 +384,20 @@ async function launchPlaywright({ headless, log, modulePath, profile, chromium: 
       browser = await chromium.launch({ channel: 'chrome', ...base });
       log('Playwright 就绪（驱动本机 Chrome）');
     } catch (e) {
+      throwIfAborted(signal);
       log(`Playwright 走 channel:chrome 失败，改用自带 chromium：${e.message.split('\n')[0]}`);
     }
   }
+  if (signal?.aborted) { await browser?.close(); throwIfAborted(signal); }
   if (!browser) {
     browser = await chromium.launch(base);
     log('Playwright 就绪（使用自带 chromium）');
   }
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  if (signal?.aborted) { await browser.close(); throwIfAborted(signal); }
+  let page;
+  try { page = await browser.newPage({ viewport: { width: 1440, height: 900 } }); }
+  catch (cause) { await browser.close(); throw cause; }
+  if (signal?.aborted) { await browser.close(); throwIfAborted(signal); }
   return new PlaywrightDriver(browser, page);
 }
 
@@ -350,26 +421,44 @@ async function resolvePlaywright(modulePath) {
  *
  * @returns {Promise<CdpDriver|PlaywrightDriver>}
  */
-export async function openDriver({ cdpUrl, driver, port, profile, chromium, playwrightModule, headless = true, log = console.log }) {
+export async function openDriver({ cdpUrl, driver, port, profile, chromium, playwrightModule, headless = true, log = console.log, signal }) {
+  throwIfAborted(signal);
+  // 取消后迟到的创建结果也收尾；已发出的启动动作无法撤销。
+  const acquire = async (operation, awaitCleanup = false) => {
+    const pending = Promise.resolve().then(() => { throwIfAborted(signal); return operation(); });
+    pending.then(d => { if (signal?.aborted) void d.close?.(); }, () => {});
+    let d;
+    try { d = await abortable(() => pending, signal); }
+    catch (cause) {
+      // CDP 启动/连接本身支持取消，等待其进程清理；外部 Playwright 可迟到。
+      if (awaitCleanup) await pending.then(d => d.close?.(), () => {});
+      throw cause;
+    }
+    if (signal?.aborted) { await d.close?.(); throwIfAborted(signal); }
+    d.signal = signal;
+    return d;
+  };
   const want = driver ?? (cdpUrl ? 'cdp' : (chromium || playwrightModule ? 'playwright' : null));
 
   if (want === 'cdp' || cdpUrl) {
     if (cdpUrl) {
-      const d = await CdpDriver.connect(new URL(cdpUrl).port || 9222);
+      const url = new URL(cdpUrl);
+      const d = await acquire(() => CdpDriver.connect(url.hostname.replace(/^\[|\]$/g, ''), url.port || 9222, signal, null, url.protocol));
       log(`已连接现有 Chrome（CDP ${cdpUrl}）`);
       return d;
     }
     const bin = findChrome();
     if (!bin) throw new Error('本机没找到 Chrome/Chromium。用 CHROME_PATH 指定路径。');
-    return launchCdp({ port, profile, bin, log });
+    return acquire(() => launchCdp({ port, profile, bin, log, signal }), true);
   }
 
   if (want === 'playwright' || want === null) {
     const pw = chromium ? null : await resolvePlaywright(playwrightModule);
     if (chromium || pw) {
       try {
-        return await launchPlaywright({ headless, log, modulePath: pw, profile, chromium });
+        return await acquire(() => launchPlaywright({ headless, log, modulePath: pw, profile, chromium, signal }));
       } catch (e) {
+        throwIfAborted(signal);
         if (want === 'playwright') throw e;
         log(`Playwright 启动失败，退回零依赖 CDP：${e.message.split('\n')[0]}`);
       }
@@ -380,5 +469,5 @@ export async function openDriver({ cdpUrl, driver, port, profile, chromium, play
 
   const bin = findChrome();
   if (!bin) throw new Error('本机没找到 Chrome/Chromium。用 CHROME_PATH 指定路径。');
-  return launchCdp({ port, profile, bin, log });
+  return acquire(() => launchCdp({ port, profile, bin, log, signal }), true);
 }
