@@ -175,7 +175,7 @@ ZZZ_CHROME_ARGS='--no-sandbox --headless=new' node skills/zzz-stats/scripts/coll
 ```
 
 > `--driver cdp` 这条路只用 Node 内置模块（`node:fs` / `node:child_process` / 全局 `WebSocket` / 全局 `fetch`）直讲 CDP，
-> **没有任何 npm 依赖**，所以别人装了这套 skill 也不会被要求再装 Playwright 之类的东西。
+> **CDP 驱动不依赖 Playwright**。采集 SDK 使用 npm 的 `qrcode` 编码二维码，它是生产依赖，由包安装自动解析；不能把整套 skill 说成零 npm 依赖。
 
 如果会话里已经有浏览器工具（任何能「在页面里执行 JS」的能力），
 连脚本都不用跑：把 [`fetch-in-page.js`](skills/zzz-stats/scripts/fetch-in-page.js) 的内容当表达式执行，
@@ -210,7 +210,7 @@ skills/zzz-stats/scripts/test-render-contract.mjs # 渲染层用例（13 项：M
 skills/zzz-stats/assets/report/            # 报表模板（template.html / charts.js / charts.css）
 skills/zzz-stats/assets/report/icons/      # 图标唯一一套 64px（avatars/ 圆形 + items/ 方形），构建时 base64 内嵌
 skills/zzz-stats/assets/vendor/echarts.min.js # ECharts 5.6.0（随仓库分发，不用 CDN）
-skills/zzz-stats/references/report-rules.md # 报表口径与呈现约定（规范层，维护者读）
+docs/report-rules.md # 报表口径与呈现约定（规范层，维护者读）
 fixtures/baseline/          # 开发期基线数据集（对外展示用这份，UID 与昵称均已脱敏）
 fixtures/multigold/         # 开发期测试数据集（双金 + 三金分档用，不对外截图）
 AGENTS.md                   # 开发期铁律：改哪类东西要同步什么、哪些口径不许动

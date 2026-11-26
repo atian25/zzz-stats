@@ -129,14 +129,14 @@
 ## 改动的分工
 
 - 改口径 / 阈值 / 称号 / 文案 / 配色 → 只改 `skills/zzz-stats/config/report.json`。
-- 改算法（口径）→ `skills/zzz-stats/assets/report/core.js`，并同步 `references/report-rules.md`。
+- 改算法（口径）→ `skills/zzz-stats/assets/report/core.js`，并同步 `docs/report-rules.md`。
   **纯 JS，Node 与产物里的浏览器跑同一份源码**（产物里是它的构建期转换版，见
   `lib/core-inline.mjs`），不许出现 `node:` / `process` / `fs` / `require` / `import.meta`
   （`test-core-pure.mjs` 会 grep）。**只**有 `scripts/build-report.mjs` 这一个外壳（build 内核在 `lib/build.mjs`），
   口径**不许写在外壳里** —— 写进去就只在构建期生效，产物里现算的那份没有。
   改完除了 `test-core-pure.mjs`，还要跑 `test-report-browser.mjs`：转换环节坏了 Node 端毫无反应。
 - 改视觉 → `skills/zzz-stats/assets/report/charts.{js,css}` / `assets/report/template.html`，
-  并同步 `references/report-rules.md` §2–§6 **和 `SKILL.md` 的「产物里有哪些交互」表**
+  并同步 `docs/report-rules.md` §2–§6 **和 `SKILL.md` 的「产物里有哪些交互」表**
   （那是宿主 agent 读的唯一入口，漏了等于用户看不到新行为）。
 - 改了 `config/report.json` 或 `assets/report/icons/` → **不用再跑任何清单脚本**（那两份静态副本
   已随粘贴面板一起删除，见下），重跑构建即可：配色与文案在构建期注入，图标在构建期编码内嵌。
@@ -154,8 +154,8 @@
     搬到 packages 只是把耦合换个地方，还得再加一套资源注入参数。
   - **两个出口别混**：`packages/sdk/index.mjs` **没有** `buildReport`；
     要出报表从 `skills/zzz-stats/lib/index.mjs` 引。
-  - **配置与资源的给法也不同**：`collectData({ cfg })` 的 `cfg` **必传**
-    （采集层跟 skill 目录已分离，`resolve(HERE,'..')` 在 `packages/` 下猜不到）；
+  - **配置与资源的给法也不同**：`collectData()` **不接收 cfg**，SDK 内置采集协议表；
+    外壳的报表配置只用于展示与完整性校验，不能传回 SDK；
     `buildReport({ files, cfg })` 的 `cfg` 可选，不传就自己读 `config/report.json`
     —— 它就在 skill 里，`SKILL_DIR = resolve(HERE, '..')` 天然正确。
   `scripts/collect.mjs` / `scripts/build-report.mjs` 只解析参数、调 SDK、落盘、打日志、定退出码。
@@ -163,8 +163,8 @@
   - **SDK 不保存采集产物和凭据中转文件**（只返回 `files: Map`），文件读写与 stdin 在 CLI 输入适配器；浏览器 profile 由调用方决定位置及生命周期；
   - **SDK 不读 `process.argv`、不调 `process.exit`**；`buildReport()` 的 `fatal` 是返回数组；
   - **口径不许写在外壳里**，写进去就只在构建期生效，产物里现算的那份没有；
-  - **SDK 不做降级**。登录/取数各有 node 与 browser 两个并列函数，各管各的、只抛错，
-    **不 catch、不重试、不判断该不该换一条路**。「node 失败就切 browser」这种策略只在
+  - **SDK 不做通道降级**。公共面只有 collectData/login/collect/encodeQrDataUrl/SdkError；
+    channel 选择 node/browser，login.method 选择 qr/sms，不自动换通道、不替消费者决定重试。「node 失败就切 browser」这种策略只在
     `scripts/collect.mjs` 里（判据是「用户有没有显式传 `--transport`」）。服务端将来可能
     策略完全不同，写进 SDK 就等于替所有调用方做了决定。`packages/sdk/test/test-sdk-transport.mjs` 会拦。
 - 改 `packages/sdk/login-node.mjs` / `packages/sdk/transport-node.mjs` → 那是**私有接口的逆向结论**
@@ -239,7 +239,7 @@
 | 文件 | 管什么 |
 |---|---|
 | `SKILL.md` | **运行期**说明书：宿主 agent 拿到这份 skill 后，怎么向用户描述产物、怎么做采集 |
-| `references/report-rules.md` | **规范与理由**：口径、验收数字、踩过的坑，维护者读 |
+| `docs/report-rules.md` | **规范与理由**：口径、验收数字、踩过的坑，维护者读 |
 | `AGENTS.md` | **开发期铁律**：改哪类东西要同步什么、哪些口径不许动 |
 | `assets/report/template.html` + `charts.{js,css}` | **模板本身**：DOM 结构、内联脚本、样式 |
 
