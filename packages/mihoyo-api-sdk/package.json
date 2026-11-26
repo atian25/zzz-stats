@@ -1,0 +1,12 @@
+{
+  "name": "@atian25/mihoyo-api-sdk",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "米哈游游戏登录与抽卡记录采集 SDK，不做统计与渲染",
+  "engines": { "node": ">=22" },
+  "exports": { ".": "./index.mjs" },
+  "files": ["index.mjs", "common/", "auth/", "games/", "README.md"],
+  "scripts": { "test": "node --test test/*.test.mjs" },
+  "dependencies": { "qrcode": "1.5.4" }
+}
