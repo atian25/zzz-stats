@@ -18,7 +18,8 @@
   ],
   "packages": {
     "packages/sdk": {
-      "package-name": "@atian25/zzz-stats-sdk"
+      "package-name": "@atian25/zzz-stats-sdk",
+      "exclude-paths": ["packages/sdk/docs"]
     }
   }
 }
