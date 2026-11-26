@@ -2256,7 +2256,7 @@ skill 的调用方式、CLI 参数、日志、退出码全都没变，变的只�
 
 ### 采集与服务的开发记录
 
-采集拆分与旧接口记录已迁到 [SDK 历史](../packages/sdk/docs/history.md)，现行契约见 [SDK API](../packages/sdk/docs/api.md)。服务迭代与验收记录已迁到 [server 历史](../packages/server/docs/history.md)，现行规则见 [server AGENTS](../packages/server/AGENTS.md)。报表渲染规范只保留本层行为。
+采集拆分与旧接口记录已迁到 [SDK 历史](../packages/sdk/docs/history.md)，现行契约见 [SDK API](../packages/sdk/docs/api.md)。服务迭代与验收记录已迁到 [server 历史](../packages/server/docs/history.md)，现行规则见 [仓库 AGENTS 的 server 一节](../AGENTS.md)。报表渲染规范只保留本层行为。
 
 ### 结构
 

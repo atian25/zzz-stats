@@ -28,4 +28,4 @@ node packages/server/serve.mjs --host 127.0.0.1
 - **笔记本首屏溢出**：图高按视口减非图预算计算；padding 改动、媒体查询定义顺序和跨断点单调性都需要一起验收。
 - **多人隔离**：用两个独立浏览器上下文实际启动，检查各自事件、昵称和报表，不只断言 RUNS 是 Map。
 
-开发约定见 [AGENTS.md](AGENTS.md)，旧版本的实测记录见 [docs/history.md](docs/history.md)。历史中的旧路径、transport 参数、单用户取消策略、落盘与内联前端约束不代表现状。
+开发约定见 [仓库 AGENTS.md 的 server 一节](../../AGENTS.md)，旧版本的实测记录见 [docs/history.md](docs/history.md)。历史中的旧路径、transport 参数、单用户取消策略、落盘与内联前端约束不代表现状。

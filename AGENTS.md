@@ -230,6 +230,41 @@
     验收要有**实测数字**（`scrollHeight`、按钮与 `.fineprint` 的底边），见 `report-rules.md` 第七轮。
 - 任何改动后跑 §8 回归基线与 §9.3 验收，确认控制台数字与截图。
 
+### `packages/sdk/`：采集 SDK 的公共契约
+
+本目录只负责登录、采集和二维码编码，不依赖 skill 的配置、模板或图标。公共契约读 `packages/sdk/docs/api.md`，协议排查经验读 `packages/sdk/docs/implementation-notes.md`。
+
+- 根入口只导出 `collectData`、`login`、`collect`、`encodeQrDataUrl`、`SdkError`，package exports 只留 `.`。测试可以直引内部模块，不因此增加公共出口。
+- 参数按 `channel: node|browser` 与 `login.method: qr|sms` 两个维度组织；无效组合在 I/O 前拒绝。SDK 不接报表 cfg。
+- `onQr` 只传 `{ dataUrl }`，两通道 await；TTL 与状态通过 progress 表达，不添加宿主 UI 参数。
+- 公共结果统一为 13 个响应键的 files 与单独 meta；session 的 channel/gameUid/region 只读。不能用米游社账号 ID 冒充游戏 UID。
+- 自动驱动回退与采集通道降级是两回事；SDK 不在 Node 失败后改走 browser。
+- CDP 永远新建自己的 target，close 只关闭自己的 target；不能征用已有页面。只终止自己 spawn 的 Chrome，借入连接不能杀进程。close 幂等，SIGTERM 后 SIGKILL 兜底，等退出后返回。
+- CDP URL 透传 host/port/协议，不静默改连本机。远端断连、创建无响应和已发副作用的限制按 api 文档说明，不作绝对保证。
+- 取消检查覆盖网络、响应体、输入回调和驱动等待；取消不阻碍必要的资源清理。
+- 已知错误按 SdkError 分类。cur 请求仍保留宽泛容错，不把空列表当成错误证据；变更此策略需要单独讨论。
+- 日志、事件和报错不得带 Cookie、token、ticket 或验证码。
+- 验证从仓库根运行（数字以实际输出为准）：`test-sdk-transport.mjs`、`test-qr.mjs`、`test-package-exports.mjs`、`test-driver-injection.mjs`、`test-cdp-resources.mjs`、`packages/server/test-sdk-integration.mjs`。
+- 真实 Chrome 验证使用 `test/test-cdp-chrome.mjs` 的独立端口/profile，**不连接用户日常 9222**。退出后确认自己启动的 PID 不存在、端口释放，只清理本次创建的 profile。不要把假网络通过写成真实账号扫码/短信已验收。
+
+### `packages/server/`：本地 Web 服务
+
+服务是 SDK 与报表渲染器的消费者，只调公共接口，不把服务策略写回 SDK。使用说明与排查经验见 `packages/server/README.md`。
+
+- 前端 serve 与 index.html/app.js/style.css 同目录；前端不内联进后端，也不混入 skill 的报表资源。
+- 每次 start 创建独立 run，QR、事件、进度与 HTML 按 runId 隔离；不能用全局 currentRun，不能启动新任务时取消其他用户。
+- 按 run 读取的接口必须带 runId；缺失返回 400，不猜最新账号。并发上限满时返回 503，不踢掉旧 run。
+- 只用 `channel: 'node'`，服务里不降级；SMS、浏览器策略与落盘归档是 CLI 的事。
+- 采集与 HTML 只保存在 run 内存中，结束后按 TTL 释放，不写 output。files 的 13 个键外要补 result.meta 为 meta.json 再交给 buildReport。
+- ticket、Cookie、set-cookie、token、验证码不进日志/SSE；不能把已登录 session 序列化交给前端。
+- 静态路由用固定白名单，不从 URL 拼本地路径。预览图缺失时按现有 204 降级，不暴露源码或目录。
+- 默认 host 为 0.0.0.0，局域网可访问；本机使用应显式传 127.0.0.1。runId 是定位符，不是成熟的访问鉴权，不把本地开发服务当公网安全产品。
+- 首页不自动申请二维码，也不接最近一次运行；点开始才创建本次 run。二维码生成与倒计时使用 SDK progress 的 TTL，不自行补硬编码兜底。
+- 扫码后的阶段给 QR 盖遮罩，藏掉换码按钮与倒计时；失败后停止转圈。判断按实际阶段白名单，不靠计时器猜。
+- 保留 `[hidden] { display: none !important; }`；验收测 computed display 与真实尺寸，不只测 hidden 属性。
+- 首页图高按视口减非图预算计算，保留可读下限与上限。改 padding 时重新量预算，检查媒体查询顺序和跨断点单调性；极矮窗口可以滚动，不为塞首屏裁掉说明。
+- 先跑 `node packages/server/test-sdk-integration.mjs`；涉及交互/样式再独立浏览器验收两人隔离、QR 遮罩与笔记本/窄屏布局。验证另用独立端口，不重启用户当前服务。
+
 ## 改完必须回填文档与模板
 
 **产物不入库，只改产物等于没改。** `output/` 整个在 `.gitignore` 里（账号目录、`report.html`、
