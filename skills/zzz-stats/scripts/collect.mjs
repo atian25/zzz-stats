@@ -57,7 +57,6 @@ if (wantsHelp()) {
       { flag: '--code <n>', desc: '短信验证码（也可用 ZZZ_SMS_CODE）' },
       { flag: '--code-file <f>', desc: '从文件读验证码，读完即删' },
       { flag: '--keep-verify', desc: '排障用：保留 output/ 下的二维码与验证码文件' },
-      { flag: '--wait <mode>', desc: '等待方式 a / b，默认 a（也可用 ZZZ_WAIT_MODE）' },
       { flag: '--region <r>', desc: '区服，默认 prod_gf_cn；国际服走 prod_gf_jp/us/eu/sg 等' },
       { flag: '--api <url>', desc: '硬覆盖接口基址（官方换域名时用）' },
       { flag: '--page <url>', desc: '硬覆盖页面地址' },
@@ -75,7 +74,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SKILL_DIR = resolve(HERE, '..');
 /* 报表配置仅供外壳做展示与完整性校验；SDK 自己管理采集协议表和二维码依赖。 */
 const CFG_PATH = join(SKILL_DIR, 'config/report.json');
-/** 配置读一次就够：下面 `cfg` 与「完整性校验」用的是同一份。 */
+/** 配置只用于落盘后的完整性校验，不传给 SDK。 */
 const CFG = JSON.parse(readFileSync(CFG_PATH, 'utf8'));
 const args = process.argv.slice(2);
 const has = (f) => args.includes(`--${f}`);
@@ -135,54 +134,65 @@ function saveQrFile(dataUrl) {
  * 所以这里把共同参数备好，交给 SDK，拿回 Map。
  */
 async function runTransport(kind) {
+  // 输入适配器还带两条宿主提示；SDK 只接收函数白名单，不能直接传整个对象。
+  const input = kind === 'browser' ? createLoginInput({
+    workDir: WORK_DIR, outputDir: OUTPUT_DIR, stdinStream: stdin, log, sleep, sms: {
+      phone: argOf('phone', null), phoneFile: argOf('phone-file', null),
+      code: argOf('code', null), codeFile: argOf('code-file', null),
+    },
+  }) : null;
   return await collectData({
-    transport: kind,
+    channel: kind,
     region: REGION,
-    api: API,
-    cfg: CFG,
+    endpoints: { api: API, page: PAGE },
     log,
-    sleep,
-    onQr: async (qr) => {
-      /*
-       * 纯 Node 那条路给的是 dataUrl（我们自己编的）；浏览器路径给的是页面里那张图的 dataUrl。
-       * 两者都落同一个固定文件名，日志里都给同一个地址格式 —— 调用方（agent/用户）
-       * 不需要知道这次走的是哪条路才能扫到码。
-       */
-      if (kind === 'node') {
-        const file = saveQrFile(qr.dataUrl);
+    dependencies: { sleep },
+    onProgress: ({ stage, status, ttlMs }) => {
+      if (stage === 'login' && status === 'qr-issued') {
+        const expires = new Date(Date.now() + ttlMs);
+        log(`约 ${expires.toLocaleTimeString('zh-CN', { hour12: false })} 失效（${Math.round(ttlMs / 1000)} 秒）`);
+        log('等待扫码，扫码后自动继续。');
+        if (input) log(input.refreshHint);
+      }
+      if (stage === 'login' && status === 'expired' && input) log(input.expiredHint);
+      if (stage === 'login' && status === 'refresh-denied') log('本次换码未成功或已达到刷新限制，请继续等待或重新启动任务。');
+      if (stage === 'login' && status === 'confirmed') purge({ when: '登录成功' });
+    },
+    login: {
+      method: kind === 'node' ? 'qr' : argOf('login', process.env.ZZZ_LOGIN_MODE || 'qr'),
+      onQr: async ({ dataUrl }) => {
+        // 两条通道都只给 dataUrl；落盘、图片地址与展示全部由外壳负责。
+        const file = saveQrFile(dataUrl);
         const url = qrUrl(IMAGE_SERVER_FILE);
-        const expires = new Date(Date.now() + 120_000);
         log(`二维码已保存：${file}`);
-        log(`截取时间 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}，` +
-            `约 ${expires.toLocaleTimeString('zh-CN', { hour12: false })} 失效（2 分钟）`);
         if (url) log(`二维码图片地址：${url}`);
         log('请用米游社 App 扫码，打开这张图扫即可。');
-      }
-    },
-    browser: {
-      pageUrl: PAGE,
-      api: API,
-      driver: {
-        cdpUrl: argOf('cdp', null),
-        driver: argOf('driver', null),
-        port: Number(argOf('port', '9222')),
-        profile: resolve(WORK_DIR, argOf('profile', '.chrome-profile')),
-        headless: !has('headed'),
-        waitMode: (argOf('wait', '') || process.env.ZZZ_WAIT_MODE || 'a').toLowerCase() === 'b' ? 'b' : 'a',
       },
-      loginMode: argOf('login', process.env.ZZZ_LOGIN_MODE || 'qr'),
-      saveQrFile,
-      qrUrlFor: () => qrUrl(IMAGE_SERVER_FILE),
-      input: createLoginInput({ workDir: WORK_DIR, outputDir: OUTPUT_DIR, stdinStream: stdin, log, sleep, sms: {
-        phone: argOf('phone', null), phoneFile: argOf('phone-file', null),
-        code: argOf('code', null), codeFile: argOf('code-file', null),
-      } }),
-      purge,
+      ...(input ? { input: {
+        requestPhone: input.requestPhone,
+        requestCode: input.requestCode,
+        requestManualAction: input.requestManualAction,
+        takeRefreshRequest: input.takeRefreshRequest,
+        subscribeRefresh: input.subscribeRefresh,
+      } } : {}),
     },
+    ...(kind === 'browser' ? { browser: { driver: {
+      cdpUrl: argOf('cdp', null),
+      // SDK 浏览器登录包装器从 kind 取驱动选择，再转给 openDriver 的 driver。
+      kind: argOf('driver', null),
+      port: Number(argOf('port', '9222')),
+      profile: resolve(WORK_DIR, argOf('profile', '.chrome-profile')),
+      headless: !has('headed'),
+    } } } : {}),
   });
 }
 
 async function main() {
+  // 在启动图片服务或登录前拒绝旧配置，不能静默忽略后继续采集。
+  if (has('wait') || args.some(a => a.startsWith('--wait=')) ||
+      Object.hasOwn(process.env, 'ZZZ_WAIT_MODE')) {
+    throw new Error('--wait / ZZZ_WAIT_MODE 已移除：等待方式现在由 SDK 内部策略决定，无需配置。');
+  }
   /*
    * 起图片服务，让二维码能以 URL 形式给出去（约 10 tokens），
    * 而不是把 7k 字符的 SVG 塞进回答。失败不影响主流程 —— 日志退回给文件路径。
@@ -237,12 +247,12 @@ async function main() {
       result = await runTransport(requested);
     }
 
-    const { uid, nickname, files, meta } = result;
+    const { gameUid, nickname, files, meta } = result;
 
     let dataDir = EXPLICIT_DATA_DIR;
     let accountName = null;
     if (!dataDir) {
-      const resolved = resolveAccountName(nickname, uid);
+      const resolved = resolveAccountName(nickname, gameUid);
       accountName = resolved.name;
       dataDir = accountDataDir(WORK_DIR, accountName);
       if (resolved.source !== 'nickname') {
@@ -281,7 +291,7 @@ async function main() {
     const totPulls = Object.values(summary).reduce((s, v) => s + (v.pulls ?? 0), 0);
     log('');
     log('──────────────── 完成 ────────────────');
-    log(`UID ${uid} · 6 个频道 · 合计 ${totPulls} 抽（不含邦布）`);
+    log(`UID ${gameUid} · 6 个频道 · 合计 ${totPulls} 抽（不含邦布）`);
     log(`数据已落盘：${dataDir}`);
     if (accountName) {
       log(`账号目录：${relative(WORK_DIR, dirname(dataDir))}/（拿走这一个目录即可部署：data/ + report.html）`);
