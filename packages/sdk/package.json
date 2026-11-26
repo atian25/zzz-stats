@@ -1,13 +1,28 @@
 {
   "name": "@atian25/zzz-stats-sdk",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
+  "description": "《绝区零》调频记录采集 SDK：登录（扫码/短信）、六频道取数与二维码编码，Node.js 独立可用。",
+  "keywords": ["zzz", "zenless-zone-zero", "绝区零", "gacha", "sdk"],
+  "license": "MIT",
+  "author": "atian25 <atian25@qq.com>",
+  "homepage": "https://github.com/atian25/zzz-stats#readme",
+  "bugs": { "url": "https://github.com/atian25/zzz-stats/issues" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/atian25/zzz-stats.git",
+    "directory": "packages/sdk"
+  },
   "engines": { "node": ">=22" },
+  "main": "./index.mjs",
   "exports": {
     ".": "./index.mjs"
   },
   "files": ["*.mjs", "docs"],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
   "peerDependencies": { "playwright-core": ">=1.50.0 <2" },
   "peerDependenciesMeta": { "playwright-core": { "optional": true } },
   "dependencies": { "qrcode": "1.5.4" },

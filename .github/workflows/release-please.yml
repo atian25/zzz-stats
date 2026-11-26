@@ -1,0 +1,69 @@
+name: release
+
+# 由 conventional commits 自动开 Release PR：合并后打 tag、写 CHANGELOG、升版本，
+# 并在同一 workflow 内发布该版本到 npm。
+#
+# 为什么发布要放在这里：用 GITHUB_TOKEN 创建的 release/tag 不会再触发其他
+# workflow（防递归），所以不能另起 publish.yml 靠 tag 或 release 事件来触发。
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write # npm Trusted Publishing（OIDC）必需
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release.outputs['packages/sdk--release_created'] }}
+      tag: ${{ steps.release.outputs['packages/sdk--tag_name'] }}
+      version: ${{ steps.release.outputs['packages/sdk--version'] }}
+    steps:
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish-sdk:
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.tag }}
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: SDK 契约回归
+        run: |
+          node packages/sdk/test/test-package-exports.mjs
+          node packages/sdk/test/test-qr.mjs
+          node packages/sdk/test/test-sdk-transport.mjs
+
+      - name: 确认版本与 tag 一致
+        run: |
+          TAG_VERSION="${{ needs.release-please.outputs.version }}"
+          PKG_VERSION="$(node -p "require('./packages/sdk/package.json').version")"
+          echo "tag=$TAG_VERSION pkg=$PKG_VERSION"
+          test "$TAG_VERSION" = "$PKG_VERSION"
+
+      # 不传 NODE_AUTH_TOKEN：npm CLI 自动用 OIDC 换取短时 token。
+      # publishConfig 已指定 registry=npmjs.org 与 access=public。
+      - name: 发布到 npm
+        working-directory: packages/sdk
+        run: npm publish --provenance --access public
