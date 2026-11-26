@@ -25,16 +25,16 @@ import {
   takeRefreshRequest,
   refreshChannelHint,
   expiredRefreshHint,
-  createQrClock,
   createRefreshInput,
   REFRESH_SIGNAL_FILE,
 } from './qr-wait.mjs';
-import { waitForLogin as waitForLoginSdk } from '../../../packages/sdk/qr-wait.mjs';
+import { createQrClock, waitForLogin as waitForLoginSdk } from '../../../packages/sdk/qr-wait.mjs';
 // 接外壳文件通道，但每条用例仍执行 SDK 的真实循环。
 const waitForLogin = (opts) => waitForLoginSdk({
   ...opts,
   takeRefreshRequest: () => takeRefreshRequest({ keyPressed: opts.input.take(), signalFile: opts.signalFile }),
-  expiredHint: expiredRefreshHint(opts),
+  emitQr: opts.emitQr,
+  progress: opts.progress,
 });
 
 const ROOT = join(tmpdir(), `zzz-qr-wait-test-${process.pid}`);
@@ -251,10 +251,10 @@ rmSync(ROOT, { recursive: true, force: true });
     probe: async () => '页面 100 字：「登录」',
     refreshQr: async () => 'clicked',
     grabQr: async () => ({ src: 'data:image/png;base64,AAAA', w: 200, h: 200 }),
-    saveQr: (qr) => { saved.push(qr); return { png: '/tmp/login-qr.png', url: 'http://127.0.0.1:1/login-qr.png?t=1-1' }; },
+    emitQr: (qr) => { saved.push(qr); },
+    progress: (st) => logs.push(st),
     input,
     clock,
-    log: (m) => logs.push(m),
     signalFile,
     stdinRaw: true,
     maxWaitMs: 60_000,
@@ -266,8 +266,8 @@ rmSync(ROOT, { recursive: true, force: true });
   check('循环正常结束（登录成功）', r.ok === true);
   check('刷新发生了一次', r.refreshes === 1, String(r.refreshes));
   check('信号文件被消费', !existsSync(signalFile));
-  check('调用了 saveQr', saved.length === 1, String(saved.length));
-  check('日志里出现「已换新二维码」', logs.some((l) => /已换新二维码/.test(l)), logs.join(' | '));
+  check('调用了 emitQr', saved.length === 1, String(saved.length));
+  check('刷新后重新拿到新码并 emitQr', saved[0]?.src === 'data:image/png;base64,AAAA');
   rmSync(dir, { recursive: true, force: true });
 }
 
@@ -285,7 +285,7 @@ rmSync(ROOT, { recursive: true, force: true });
     probe: async () => '页面 1 字',
     refreshQr: async () => 'clicked',
     grabQr: async () => ({ src: 'data:image/png;base64,AAAA', w: 200, h: 200 }),
-    saveQr: () => ({ png: '/tmp/x.png', url: 'u' }),
+    emitQr: () => {},
     input,
     clock,
     log: (m) => logs.push(m),
@@ -318,7 +318,7 @@ rmSync(ROOT, { recursive: true, force: true });
     probe: async () => '页面 1 字',
     refreshQr: async () => 'clicked',
     grabQr: async () => ({ src: 'data:image/png;base64,AAAA', w: 200, h: 200 }),
-    saveQr: () => ({ png: '/tmp/x.png', url: 'u' }),
+    emitQr: () => {},
     input,
     clock,
     log: (m) => logs.push(m),
@@ -339,10 +339,10 @@ rmSync(ROOT, { recursive: true, force: true });
     probe: async () => '页面 1 字',
     refreshQr: async () => 'clicked',
     grabQr: async () => ({ src: 'data:image/png;base64,AAAA', w: 200, h: 200 }),
-    saveQr: () => ({ png: '/tmp/x.png', url: 'u' }),
+    emitQr: () => {},
     input: input2,
     clock: createQrClock({ ttlMs: 120_000, now: () => fakeNow }),
-    log: (m) => logs2.push(m),
+    progress: (st) => logs2.push(st),
     signalFile: join(dir, 'never'),
     stdinRaw: false,
     pollMs: 1,
@@ -355,7 +355,7 @@ rmSync(ROOT, { recursive: true, force: true });
     },
   });
   check('最多只刷 3 次', r2.refreshCount === 3, String(r2.refreshCount));
-  check('达到上限后明确提示', logs2.some((l) => /达到上限/.test(l)), String(logs2.length));
+  check('达到上限后上报 refresh-denied', logs2.filter((x) => x === 'refresh-denied').length >= 1, logs2.join(' | '));
   rmSync(dir, { recursive: true, force: true });
 }
 
@@ -378,10 +378,10 @@ rmSync(ROOT, { recursive: true, force: true });
     probe: async () => '页面 1 字',
     refreshQr: async () => 'clicked',
     grabQr: async () => ({ src: 'data:image/png;base64,AAAA', w: 200, h: 200 }),
-    saveQr: () => ({ png: '/tmp/x.png', url: 'u' }),
+    emitQr: () => {},
     input,
     clock,
-    log: (m) => logs.push(m),
+    progress: (st) => logs.push(st),
     signalFile,
     stdinRaw: false,
     pollMs: 1,
@@ -392,7 +392,7 @@ rmSync(ROOT, { recursive: true, force: true });
     },
   });
 
-  check('出现过过期提示', logs.some((l) => /二维码已过期/.test(l)), String(logs.length));
+  check('出现过期事件', logs.includes('expired'), logs.join(' | '));
   check('发生了刷新', r.refreshes === 1, String(r.refreshes));
   check('issuedAt 被前移', clock.issuedAt > issuedAt, `${issuedAt} → ${clock.issuedAt}`);
   check('刷新后 ageMs 从 0 起算', clock.ageMs() < 1000, String(clock.ageMs()));
@@ -410,7 +410,7 @@ rmSync(ROOT, { recursive: true, force: true });
     probe: async () => '页面 1 字',
     refreshQr: async () => 'clicked',
     grabQr: async () => null,
-    saveQr: () => ({ png: '/tmp/x.png', url: null }),
+    emitQr: () => {},
     input: createRefreshInput(),
     clock: createQrClock({ ttlMs: 1000, now: () => t }),
     log: () => {},

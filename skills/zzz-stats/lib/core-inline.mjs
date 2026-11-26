@@ -14,7 +14,7 @@
  * `charts.js` 会在 `__REPORT__` 还没赋值时先跑起来——它的第一行 `if (!R) return`
  * 静默退出，页面一片空白、console 干净。`screenshot.mjs` 只等
  * `DOMContentLoaded + setTimeout(0)`，4 套用例也都在这个时机读页面，
- * 异步化会让它们间歇性扑空，且极难定位（真实踩过一次，见 report-rules.md §6.8）。
+ * 异步化会让它们间歇性扑空，且极难定位（真实踩过一次，见仓库 docs/report-rules.md §6.8）。
  *
  * ## 为什么不在 core.js 里写 UMD / CJS
  *

@@ -244,7 +244,7 @@ const PREVIEW_HEIGHT = (() => {
 })();
 
 /**
- * 两档尺寸来自 references/report-rules.md §9.3：
+ * 两档尺寸来自仓库 docs/report-rules.md §9.3：
  * 1440×900 与 1280×800 都必须「首屏无滚动、图例单行」。
  */
 const TARGETS = PREVIEW

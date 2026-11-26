@@ -1,6 +1,25 @@
 /** CLI 刷新文件适配；纯等待逻辑仍由 SDK 提供。 */
 import { rmSync, statSync } from 'node:fs';
-export * from '../../../packages/sdk/qr-wait.mjs';
+// 终端键位、信号文件和提示归 CLI；SDK 只保留等待机制。
+export const REFRESH_SIGNAL_FILE = 'qr-refresh';
+export function isRefreshKey(buf) { return buf != null && buf.toString().toLowerCase() === 'r'; }
+export function createRefreshInput() {
+  let pressed = false;
+  return {
+    press(buf) { if (!isRefreshKey(buf)) return false; pressed = true; return true; },
+    take() { const value = pressed; pressed = false; return value; },
+  };
+}
+export function refreshChannelHint({ signalFile, stdinRaw }) {
+  return stdinRaw
+    ? `（换一张二维码：在运行脚本的终端里按 r，或由 agent 写入 ${signalFile} —— 两条通道都有效、互不影响）`
+    : `（换一张二维码：由 agent 写入 ${signalFile} —— 本进程没有终端，按 r 这条通道在这里用不了）`;
+}
+export function expiredRefreshHint({ signalFile, stdinRaw }) {
+  return stdinRaw
+    ? `    需要换一张才能继续：终端里按 r，或由 agent 写入 ${signalFile}（两条通道都有效、互不影响）。`
+    : `    需要换一张才能继续：由 agent 写入 ${signalFile}（本进程没有终端，按 r 用不了）。`;
+}
 /**
  * 检查一次刷新请求，并**顺手消费**信号文件。
  *

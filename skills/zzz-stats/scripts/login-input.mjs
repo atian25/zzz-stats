@@ -3,7 +3,7 @@ import { existsSync, readFileSync, rmSync, mkdirSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdout } from 'node:process';
-import { createRefreshInput, refreshChannelHint, expiredRefreshHint, REFRESH_SIGNAL_FILE } from '../../../packages/sdk/qr-wait.mjs';
+import { createRefreshInput, refreshChannelHint, expiredRefreshHint, REFRESH_SIGNAL_FILE } from './qr-wait.mjs';
 import { takeRefreshRequest } from './qr-wait.mjs';
 
 export async function readInputFile(file, { label, timeoutMs, validate, log, sleep }) {
@@ -37,7 +37,10 @@ export function createLoginInput({ workDir, outputDir, stdinStream, sms = {}, lo
     try { return await rl.question(`${question} … `); } finally { rl.close(); }
   };
   return {
-    ask: stdinRaw ? ask : null,
+    requestManualAction: async ({ reason }) => {
+      log(`需要在浏览器手动完成登录（${reason}）。完成后 SDK 会再次检查登录态。`);
+      if (stdinRaw) await ask('完成后按回车继续');
+    },
     requestPhone: async () => {
       const phone = sms.phone ?? process.env.ZZZ_PHONE;
       if (phone) return phone;
@@ -49,7 +52,8 @@ export function createLoginInput({ workDir, outputDir, stdinStream, sms = {}, lo
     requestCode: async () => {
       const code = sms.code ?? process.env.ZZZ_SMS_CODE;
       if (code) return code;
-      if (stdinRaw && !sms.codeFile) return ask('请输入收到的验证码（通常 60 秒内有效）');
+      // 显式文件输入优先于 TTY；有终端也不能抢走 --code-file 的输入。
+      if (!sms.codeFile && stdinRaw) return ask('请输入收到的验证码（通常 60 秒内有效）');
       const file = resolve(workDir, sms.codeFile ?? join(outputDir, 'sms-code.txt'));
       mkdirSync(dirname(file), { recursive: true });
       log(`等待验证码…（短信约 60 秒失效，收到请尽快写入 ${file}）`);

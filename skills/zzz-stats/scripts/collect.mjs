@@ -37,7 +37,7 @@ import { purgeAndLog } from './verify-cleanup.mjs';
 import { startImageServer, stopImageServer, qrUrl, IMAGE_SERVER_FILE } from './image-server.mjs';
 import { outputRoot, resolveAccountName, accountDataDir } from './datasets.mjs';
 import { createLoginInput } from './login-input.mjs';
-import { collectData } from '../../../packages/sdk/index.mjs';
+import { collectData } from '@atian25/zzz-stats-sdk';
 
 if (wantsHelp()) {
   printHelp('collect', {
@@ -73,7 +73,7 @@ if (wantsHelp()) {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SKILL_DIR = resolve(HERE, '..');
-/* 配置由外壳读取并传给 SDK；二维码编码依赖由 SDK 自己管理。 */
+/* 报表配置仅供外壳做展示与完整性校验；SDK 自己管理采集协议表和二维码依赖。 */
 const CFG_PATH = join(SKILL_DIR, 'config/report.json');
 /** 配置读一次就够：下面 `cfg` 与「完整性校验」用的是同一份。 */
 const CFG = JSON.parse(readFileSync(CFG_PATH, 'utf8'));
@@ -116,7 +116,7 @@ const KEEP_VERIFY = has('keep-verify') || /^--keep-verify=(true|1|yes)?$/i.test(
 const log = (...a) => console.log('[zzz]', ...a);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** 凭据清理：先收几条参数，SDK 只负责「什么时候清」，清什么由这里定。 */
+/** 凭据清理时机与范围都归外壳；采集开始即清，finally 与信号退出兜底。 */
 const purge = ({ when }) => purgeAndLog({ dir: OUTPUT_DIR, keep: KEEP_VERIFY, log, when });
 
 /** 二维码落盘（固定名 `output/login-qr.png`，覆盖写；靠 URL 的 `?t=` 破缓存）。 */

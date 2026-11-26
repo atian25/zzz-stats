@@ -168,7 +168,7 @@ export function computeReport({ files, cfg, icons, generatedAt } = {}) {
   /**
    * 把一个频道的金序列折成「UP 轮」。
    *
-   * 规则来自 references/report-rules.md §1：
+   * 规则来自仓库 docs/report-rules.md §1：
    *  - 一轮从上一个 UP 结束后开始，`off` 累计期间所有非 UP 金的抽数；
    *  - UP 金自己的 count 是距上一金的抽数，记作 `up`；
    *  - 十连里排在 UP 之后的非 UP 金（副金）并回这一轮，总抽 +它的 count，仍算直出。
@@ -247,7 +247,7 @@ export function computeReport({ files, cfg, icons, generatedAt } = {}) {
     return rounds;
   }
 
-  /** 逐轮胜负：直出且不是保底获得才算胜场。口径见 references/report-rules.md §1。 */
+  /** 逐轮胜负：直出且不是保底获得才算胜场。口径见仓库 docs/report-rules.md §1。 */
   function winBits(rounds) {
     return rounds.map((r) => (r.direct && !r.guar ? 1 : 0));
   }

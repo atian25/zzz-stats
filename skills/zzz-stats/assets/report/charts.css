@@ -834,7 +834,7 @@ html, body {
  *
  * **分母不是固定值**：由构建期按「该频道当前视图的最大抽数，不足则用该频道 pityCap」
  * 现算，写进产物的 `details[].divisor`（改前是写死的 /100，超过 100 抽全部封顶满宽）。
- * 详见 references/report-rules.md §6.4。
+ * 详见仓库 docs/report-rules.md §6.4。
  *
  * 34 = 歪章 26 + 间距 6 + 2 余量，保证 100% 的条右端不会把歪章挤出轨道。
  * `min-width: 0` 不能省：grid 子项默认 `min-width: auto`，宽条会把左栏顶出列宽。
