@@ -38,8 +38,7 @@
  *   node skills/zzz-stats/scripts/test-report-browser.mjs --base http://127.0.0.1:8899
  */
 import { spawn } from 'node:child_process';
-import { readFileSync, mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, mkdtempSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
 import { join, resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findChrome, chromeArgs } from '../../../packages/sdk/drivers.mjs';
@@ -171,7 +170,9 @@ if (!chromePath) {
   process.exit(2);
 }
 
-const profile = mkdtempSync(join(tmpdir(), 'zzz-report-test-'));
+const profileRoot = join(REPO_DIR, 'output');
+mkdirSync(profileRoot, { recursive: true });
+const profile = mkdtempSync(join(profileRoot, '.report-test-'));
 const port = 30900 + Math.floor(Math.random() * 90);
 const chrome = spawn(chromePath, [
   '--headless=new', '--disable-gpu', '--no-sandbox', '--hide-scrollbars',
@@ -179,6 +180,8 @@ const chrome = spawn(chromePath, [
   '--window-size=1600,1000', ...chromeArgs(), 'about:blank',
 ], { stdio: 'ignore' });
 
+let ws;
+try {
 let wsUrl;
 for (let i = 0; i < 240; i += 1) {
   try {
@@ -189,11 +192,10 @@ for (let i = 0; i < 240; i += 1) {
 }
 if (!wsUrl) {
   console.error('chrome 没起来，验收中止（不是用例失败，是环境没起来）');
-  chrome.kill();
-  process.exit(2);
+  throw new Error('Chrome 启动超时');
 }
 
-const ws = new WebSocket(wsUrl);
+ws = new WebSocket(wsUrl);
 await new Promise((r) => ws.addEventListener('open', r));
 let SID = null;
 let nid = 10;
@@ -400,6 +402,21 @@ ok('0 个 error', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' |
 
 console.log('');
 console.log(fail === 0 ? `结果：通过 ${pass} / 失败 0` : `结果：通过 ${pass} / 失败 ${fail}`);
-ws.close();
-chrome.kill();
-process.exit(fail === 0 ? 0 : 1);
+process.exitCode = fail === 0 ? 0 : 1;
+} finally {
+  ws?.close();
+  if (chrome.exitCode === null && chrome.signalCode === null) {
+    await new Promise(res => {
+      chrome.once('exit', res);
+      chrome.kill('SIGTERM');
+      const timer = setTimeout(() => chrome.kill('SIGKILL'), 2000);
+      timer.unref();
+      chrome.once('exit', () => clearTimeout(timer));
+    });
+  }
+  if (dirname(profile) !== profileRoot || !profile.startsWith(join(profileRoot, '.report-test-')) || realpathSync(profile) !== profile) {
+    throw new Error(`拒绝清理非本次 profile：${profile}`);
+  }
+  console.log(`清理已核对的 profile：${profile}`);
+  rmSync(profile, { recursive: true });
+}

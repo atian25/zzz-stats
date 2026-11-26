@@ -10,8 +10,5 @@ autoInstallPeers: false
 linkWorkspacePackages: true
 
 # 仓库内始终用本地 packages/sdk，避免 skill 测试跑到 registry 上的旧版本。
-minimumReleaseAgeExclude:
-  - '@atian25/zzz-stats-sdk@0.1.2'
-
 overrides:
-  '@atian25/zzz-stats-sdk': 'link:packages/sdk'
+  '@atian25/zzz-stats-sdk': 'workspace:*'

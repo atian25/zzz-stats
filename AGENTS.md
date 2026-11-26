@@ -244,10 +244,10 @@
 - 取消检查覆盖网络、响应体、输入回调和驱动等待；取消不阻碍必要的资源清理。
 - 已知错误按 SdkError 分类。cur 请求仍保留宽泛容错，不把空列表当成错误证据；变更此策略需要单独讨论。
 - 日志、事件和报错不得带 Cookie、token、ticket 或验证码。
-- 验证从仓库根运行（数字以实际输出为准）：`test-sdk-transport.mjs`、`test-qr.mjs`、`test-package-exports.mjs`、`test-driver-injection.mjs`、`test-cdp-resources.mjs`、`packages/server/test-sdk-integration.mjs`。
+- 验证从仓库根运行（数字以实际输出为准）：`test-sdk-transport.mjs`、`test-qr.mjs`、`test-package-exports.mjs`、`test-driver-injection.mjs`、`test-cdp-resources.mjs`、`test-cdp-chrome.mjs`（需 Chrome）、`packages/server/test/test-sdk-integration.mjs`。
 - **skill 对 SDK 的依赖必须写成可发布的版本号（如 `"^0.1.2"`），不能写 `workspace:*`。**
   `npx skills add` 只复制 skill 目录本身、不复制仓库的 `packages/sdk`，workspace 协议装到别处必然 `ERR_MODULE_NOT_FOUND`。
-  仓库内仍用本地源码：靠根 `pnpm-workspace.yaml` 的 `overrides: { '@atian25/zzz-stats-sdk': 'link:packages/sdk' }` 链接回去，
+  仓库内仍用本地源码：靠根 `pnpm-workspace.yaml` 的 `overrides: { '@atian25/zzz-stats-sdk': 'workspace:*' }` 链接回去，
   **改 SDK 版本号后要同步升 skill 的依赖范围**，否则仓库内链接的版本对不上声明。
 - **skill 的脚本不许 import `packages/sdk/` 的内部模块。** 用户装完只有 skill 目录，
   任何 `../../../packages/sdk/xxx.mjs` 都会在真实安装环境里直接崩。需要的小工具就在脚本内自带一份。
@@ -269,7 +269,7 @@
 - 扫码后的阶段给 QR 盖遮罩，藏掉换码按钮与倒计时；失败后停止转圈。判断按实际阶段白名单，不靠计时器猜。
 - 保留 `[hidden] { display: none !important; }`；验收测 computed display 与真实尺寸，不只测 hidden 属性。
 - 首页图高按视口减非图预算计算，保留可读下限与上限。改 padding 时重新量预算，检查媒体查询顺序和跨断点单调性；极矮窗口可以滚动，不为塞首屏裁掉说明。
-- 先跑 `node packages/server/test-sdk-integration.mjs`；涉及交互/样式再独立浏览器验收两人隔离、QR 遮罩与笔记本/窄屏布局。验证另用独立端口，不重启用户当前服务。
+- 先跑 `node packages/server/test/test-sdk-integration.mjs`；涉及交互/样式再独立浏览器验收两人隔离、QR 遮罩与笔记本/窄屏布局。验证另用独立端口，不重启用户当前服务。
 
 ## 改完必须回填文档与模板
 

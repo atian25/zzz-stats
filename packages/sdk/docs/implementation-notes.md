@@ -40,4 +40,4 @@ create/close target 可设有界超时，不要把同一个短超时强加给所
 
 ## 迁移记录
 
-2026-11 的采集/渲染拆分曾使用平铺 transport/cfg 参数与更多根导出；这些是旧接口。现在采集进本目录，渲染器仍在 skill 的 lib，因为它读取模板、配置和图标。迁移 CLI 时必须同步依赖声明与 workspace 链接，裸包名能在仓库其他 package 导入不代表 skill 包也能导入。
+2026-11 的采集/渲染拆分曾使用平铺 transport/cfg 参数与更多根导出；这些是旧接口。现在采集进本目录，渲染器仍在 skill 的 scripts，因为它读取模板、配置和图标。迁移 CLI 时必须同步依赖声明与 workspace 链接，裸包名能在仓库其他 package 导入不代表 skill 包也能导入。

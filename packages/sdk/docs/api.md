@@ -446,9 +446,9 @@ const dataUrl = await encodeQrDataUrl('login-content');
 
 ## 10. 版本、评审与后续验收
 
-当前 private=true 不发布，本轮不改版本或 manifest。下一次不兼容接口收敛建议 0.2.0：根入口只留五名、exports 只留点、transport 参数改 channel、方式统一 login.method、会话统一 close、结果统一 meta/gameUid，内部工具不再公开。
+SDK 已公开发布到 npm，当前版本为 0.1.2（以 package.json 为准）。五个根导出、单一 package export、channel/login.method、session.close 与独立 meta/gameUid 已落地；不再把这些已完成的契约列为下一版计划。
 
-公开发布前必须验证独立 tarball、五个根 API、子路径拒绝、qrcode 随包正常安装、类型/示例、登录与纯采集、错误/取消/所有权、许可证。Playwright 为可选环境能力，不自动下载浏览器。0.x 不兼容变更升 minor，兼容修复升 patch；1.0 后公共契约破坏升 major。
+每次公开发布前必须验证独立 tarball、五个根 API、子路径拒绝、qrcode 随包正常安装、类型/示例、登录与纯采集、错误/取消/所有权、许可证。Playwright 为可选环境能力，不自动下载浏览器。0.x 不兼容变更升 minor，兼容修复升 patch；1.0 后公共契约破坏升 major。
 
 自评保留风险：
 
@@ -459,7 +459,7 @@ const dataUrl = await encodeQrDataUrl('login-content');
 - cur 容错仍可能隐藏缺失，先记录与验证，不把“严格采集”列成本轮已批准修改。
 - Node 刷新有意不支持；CDP host/协议、专用 target 与自启进程关闭已实现；取消不能撤销已发操作，远端 target 在断连时无法保证清理，不因一个 login 入口就假定所有资源均可撤销。
 
-代码对齐/测试阶段应证明（本轮未跑）：
+回归与后续验收应持续覆盖（自动化通过不代表真实扫码、短信和国际服均已验收）：
 
 1. 根导出精确五个名字，exports 一条，全部子路径拒绝；纯 SDK 测试不依赖 skill/server。
 2. login 的 node+qr/browser+qr/browser+sms 路径；node+sms 联网前 INVALID_ARGUMENT；命名不混方式与通道。

@@ -15,7 +15,13 @@ permissions:
   id-token: write # npm Trusted Publishing（OIDC）必需
 
 jobs:
+  regression:
+    uses: ./.github/workflows/test.yml
+    permissions:
+      contents: read
+
   release-please:
+    needs: regression
     runs-on: ubuntu-latest
     outputs:
       released: ${{ steps.release.outputs['packages/sdk--release_created'] }}
@@ -39,7 +45,7 @@ jobs:
 
       - uses: pnpm/action-setup@v6
         with:
-          version: 12
+          version: 12.3.4
 
       - uses: actions/setup-node@v7
         with:

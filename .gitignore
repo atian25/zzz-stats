@@ -22,7 +22,7 @@ fixtures/*/report.html
 
 # ---------------------------------------------------------------- 随仓库分发的静态资产
 # 补齐后应提交，不要加入忽略：
-#   skills/zzz-stats/assets/vendor/echarts.min.js       ECharts 5.6.0（见 references/report-rules.md §7）
+#   skills/zzz-stats/assets/vendor/echarts.min.js       ECharts 5.6.0（见 docs/report-rules.md §7）
 #   skills/zzz-stats/assets/report/icons/avatars/       角色圆头像缓存（64px，圆形蒙版）
 #   skills/zzz-stats/assets/report/icons/items/         角色/音擎/邦布图标缓存（64px，方形）
 # 图标只有 64px 一套：96px 那套是中间产物，已删，不要再造一份回来。

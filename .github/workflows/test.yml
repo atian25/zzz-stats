@@ -1,0 +1,29 @@
+name: test
+
+on:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.3.4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: browser-actions/setup-chrome@v2
+        id: chrome
+      - run: pnpm install --frozen-lockfile
+      - name: 全部串行回归
+        run: pnpm test:all
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}

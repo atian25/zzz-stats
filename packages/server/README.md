@@ -1,8 +1,9 @@
 # 本地扫码报表服务
 
-从仓库根运行：
+需要 Node.js ≥22 和 pnpm 12。首次克隆后从仓库根安装整个 workspace，再运行：
 
 ```bash
+pnpm install --frozen-lockfile
 node packages/server/serve.mjs --host 127.0.0.1
 # 可选：--port 8080 --max-runs 4 --ttl 30
 ```

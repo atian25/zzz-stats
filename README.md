@@ -59,13 +59,28 @@ DeepSeek Harness、Codex、Trae、豆包工作，以及任意支持 Agent Skill 
 
 登录态存在浏览器 profile 里，之后再跑通常不用重新扫码。
 
-## 手动跑一遍
+## 克隆仓库开发或运行服务
+
+需要 Node.js ≥22 和 pnpm 12。在仓库根安装整个 workspace，再运行服务或测试：
 
 ```bash
-# 0) 装依赖：采集层来自 npm 包，装完 skill 目录后要在该目录跑一次
-cd skills/zzz-stats && npm install && cd -
+pnpm install --frozen-lockfile
+node packages/server/serve.mjs --host 127.0.0.1
+# 不需要浏览器的 13 个测试文件
+pnpm test
+# 全部 15 个测试文件；另外需要 Chrome，可通过 CHROME_PATH 指定
+pnpm test:all
+```
 
-# 1) 采集：自动挑驱动（有 Playwright 用 Playwright，没有用零依赖 CDP），打印二维码路径
+仓库使用 pnpm workspace 和本地 SDK 链接，不支持在仓库根用 `npm install` 代替；它不会安装各子包依赖。
+测试入口串行运行，浏览器验收自动用 fixtures 构建临时报表，不依赖现有 output，也不访问日常 Chrome 的 9222。
+
+## 手动跑一遍
+
+若使用完整仓库，先执行上面的根目录安装。通过 `npx skills add` 单独安装的 skill，则只在该 skill 目录执行 `pnpm install`（也支持 `npm install`），不需要克隆仓库。
+
+```bash
+# 1) 国服默认纯 Node 扫码；浏览器通道才需要 Chrome 或 Playwright
 node skills/zzz-stats/scripts/collect.mjs
 
 # 2) 出图
@@ -73,8 +88,8 @@ node skills/zzz-stats/scripts/build-report.mjs --data output/<账号名>/data   
 ```
 
 > 采集层是独立的 npm 包 [@atian25/zzz-stats-sdk](https://www.npmjs.com/package/@atian25/zzz-stats-sdk)，
-> 所以除了 Node.js ≥22 没有别的系统依赖；但它是真依赖，**不能只复制 skill 目录就跑**。
-> 报 `ERR_MODULE_NOT_FOUND` 就是漏了第 0 步。
+> 国服纯 Node 扫码需要 Node.js ≥22 和已安装的包依赖；浏览器通道另需 Chrome，缺图同步另需 Pillow。
+> 报 `ERR_MODULE_NOT_FOUND` 时先按安装方式补依赖，不要开始登录。
 
 **一个账号一个目录，数据与报表在同一个目录里。** 采集完成后产物长这样：
 
@@ -213,7 +228,7 @@ skills/zzz-stats/scripts/build-report.mjs  # 出图外壳：output/<账号名>/d
 skills/zzz-stats/scripts/datasets.mjs      # 账号目录名与 output/ 结构的共用实现（五个脚本共用一份）
 skills/zzz-stats/scripts/image-server.mjs  # 二维码只读图片服务（白名单只服务 login-qr.png）
 skills/zzz-stats/scripts/verify-cleanup.mjs # 凭据临时文件清理（登录成功即删）
-skills/zzz-stats/test/                     # skill 的用例（8 个，随 skill 分发，可在装好的 skill 里跑）
+skills/zzz-stats/test/                     # skill 的用例（7 个，随 skill 分发，可在装好的 skill 里跑）
 scripts/screenshot.mjs     # 开发期验收与 README 预览图：1440x900 / 1280x800 两档（复用本机 Chrome）
 scripts/preview-privacy.mjs # 截图用的隐私判定纯函数（与 screenshot.mjs 同层，不随 skill 分发）
 skills/zzz-stats/assets/report/            # 报表模板（template.html / charts.js / charts.css）

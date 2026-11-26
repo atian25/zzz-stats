@@ -60,7 +60,7 @@ import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { join, dirname, resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { networkInterfaces } from 'node:os';
-/* 采集层在 packages/sdk；报表渲染器留在 skill 的 lib —— 两个出口，别混 */
+/* 采集层在 packages/sdk；报表渲染器留在 skill 的 scripts —— 两个出口，别混 */
 import { collectData } from '@atian25/zzz-stats-sdk';
 import { buildReport } from '@atian25/zzz-stats-skill/report';
 

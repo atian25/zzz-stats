@@ -17,7 +17,7 @@
  *
  * 不需要浏览器、不联网。
  *
- * 跑法：node skills/zzz-stats/scripts/test-render-contract.mjs
+ * 跑法：node skills/zzz-stats/test/test-render-contract.mjs
  */
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -27,7 +27,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SKILL_DIR = resolve(HERE, '..');
 /*
- * 边界那一段要同时看 SDK 与 skill/lib，所以需要仓库根。
+ * 边界那一段要同时看 SDK 与 skill/scripts，所以需要仓库根。
  * SDK 在仓库根的 `packages/sdk/`，**不在 skill 里** —— 别从 skill 内部反推它的位置。
  */
 const REPO_DIR = resolve(SKILL_DIR, '..', '..');
@@ -54,7 +54,7 @@ console.log('1. buildReport 收 Map 与收普通对象，产出必须相同');
    * 是 `serve.mjs` 的浏览器验收（真 chrome 打开 /report）抓到的。
    * 只测了对象那条，就等于只测了承诺的一半 —— 所以这里两条都跑。
    */
-  /* 报表渲染器在 skill 的 lib（不在 packages/sdk），它自己定位资源，不用注入 */
+  /* 报表渲染器在 skill 的 scripts（不在 packages/sdk），它自己定位资源，不用注入 */
   const build = await import('../scripts/build.mjs');
   const FIX = join(REPO_DIR, 'fixtures/baseline');
   const CFG = JSON.parse(readFileSync(join(SKILL_DIR, 'config/report.json'), 'utf8'));
@@ -106,7 +106,7 @@ console.log('1. buildReport 收 Map 与收普通对象，产出必须相同');
  * 所以钉成断言。
  */
 console.log('');
-console.log('2. 目录边界：packages/sdk 只放采集，报表渲染器留 skill/lib');
+console.log('2. 目录边界：packages/sdk 只放采集，报表渲染器留 skill/scripts');
 
 const sdkIndex = await import('../../../packages/sdk/index.mjs');
 ok('packages/sdk 导出采集主入口 collectData', typeof sdkIndex.collectData === 'function');
@@ -129,7 +129,7 @@ ok('packages/sdk/ 下没有 build.mjs / core-inline.mjs / template-tokens.mjs',
     .every((f) => !existsSync(join(SDK_DIR, f))));
 
 const skillLib = await import('../scripts/index.mjs');
-ok('skill/lib 导出 buildReport', typeof skillLib.buildReport === 'function');
+ok('skill/scripts 导出 buildReport', typeof skillLib.buildReport === 'function');
 ok('两个出口是不同模块', typeof sdkIndex.buildReport === 'undefined' && typeof skillLib.buildReport === 'function');
 
 /* 采集层不许碰 skill 资源：扫源码里的 assets/ 与 config/ 读取 */
