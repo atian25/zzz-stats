@@ -15,10 +15,10 @@
     把「采集期找浏览器」和「开发期截本地图」混成了一个入口。
   - **验证完怎么交接**：验证会话把结论带回来（exit code、实际渲染结果、像素/对比度实测值），
     改的会话据此决定是否提交；**两边不要各留一半改动**。
-- 截图走 `node skills/zzz-stats/scripts/screenshot.mjs`（默认出 1440×900 与 1280×800 到 `docs/shots/`）。
+- 截图走 `node scripts/screenshot.mjs`（默认出 1440×900 与 1280×800 到 `docs/shots/`）。
   **不要**按 SKILL.md §0 的浏览器优先级去现拼 Chrome 命令行——那是采集期「找能扫码登录的浏览器」的语义，
   跟「截一张本地 HTML 的图」是两件事。`--user-data-dir` 脚本里已焊死，别再踩。
-- **README 预览图走 `node skills/zzz-stats/scripts/screenshot.mjs --preview`，不要手截。**
+- **README 预览图走 `node scripts/screenshot.mjs --preview`，不要手截。**
   出的是 `docs/preview.png`：1440 逻辑宽、DPR 2、**固定高度**（当前实测 `2880×2382`，逻辑高 1191）。
   **固定高度截图，不是过滤内容**——用户原话「抽卡详情和代理人汇总都是按固定高度截图即可，
   不是让你过滤抽卡详情」。内容全在，截到高度就停，两栏受同一约束。
@@ -131,8 +131,8 @@
 - 改口径 / 阈值 / 称号 / 文案 / 配色 → 只改 `skills/zzz-stats/config/report.json`。
 - 改算法（口径）→ `skills/zzz-stats/assets/report/core.js`，并同步 `docs/report-rules.md`。
   **纯 JS，Node 与产物里的浏览器跑同一份源码**（产物里是它的构建期转换版，见
-  `lib/core-inline.mjs`），不许出现 `node:` / `process` / `fs` / `require` / `import.meta`
-  （`test-core-pure.mjs` 会 grep）。**只**有 `scripts/build-report.mjs` 这一个外壳（build 内核在 `lib/build.mjs`），
+  `scripts/core-inline.mjs`），不许出现 `node:` / `process` / `fs` / `require` / `import.meta`
+  （`test-core-pure.mjs` 会 grep）。**只**有 `scripts/build-report.mjs` 这一个外壳（build 内核在 `scripts/build.mjs`），
   口径**不许写在外壳里** —— 写进去就只在构建期生效，产物里现算的那份没有。
   改完除了 `test-core-pure.mjs`，还要跑 `test-report-browser.mjs`：转换环节坏了 Node 端毫无反应。
 - 改视觉 → `skills/zzz-stats/assets/report/charts.{js,css}` / `assets/report/template.html`，
@@ -141,19 +141,19 @@
 - 改了 `config/report.json` 或 `assets/report/icons/` → **不用再跑任何清单脚本**（那两份静态副本
   已随粘贴面板一起删除，见下），重跑构建即可：配色与文案在构建期注入，图标在构建期编码内嵌。
 - **「改配置就生效」是硬约定**：不要在 CSS / JS 里另写一份硬编码色值。
-- **算法分层：采集进 `packages/sdk/`，报表留 `skills/zzz-stats/lib/`。**
+- **算法分层：采集进 `packages/sdk/`，报表留 `skills/zzz-stats/scripts/`。**
   判据是「**它依赖 skill 资源吗**」，不是「名字里有没有 lib」：
   - **`packages/sdk/`（只放采集）**：`collect.mjs`（采集编排）、`login-node.mjs`、
     `login-browser.mjs`、`transport-node.mjs`、`qr.mjs`、`drivers.mjs`、`qr-wait.mjs`
     —— 全是登录/取数/二维码编码，**不读任何 `assets/`**。
     `drivers.mjs` / `qr-wait.mjs` 跟着走是因为 `login-browser.mjs` 静态依赖它们
     （不是为了「都在 packages 下」凑数），且它们自身不读 skill 资源。
-  - **`skills/zzz-stats/lib/`（报表渲染器）**：`build.mjs`、`core-inline.mjs`、`template-tokens.mjs`
+  - **`skills/zzz-stats/scripts/`（报表渲染器）**：`build.mjs`、`core-inline.mjs`、`template-tokens.mjs`
     —— `build.mjs` 有 **9 处**读 `assets/report/template.html`、`charts.{js,css}`、`core.js`、
     `icons/`、`assets/vendor/echarts.min.js`。它是**这份报表的渲染器**，不是通用 SDK；
     搬到 packages 只是把耦合换个地方，还得再加一套资源注入参数。
   - **两个出口别混**：`packages/sdk/index.mjs` **没有** `buildReport`；
-    要出报表从 `skills/zzz-stats/lib/index.mjs` 引。
+    要出报表从 `skills/zzz-stats/scripts/index.mjs` 引。
   - **配置与资源的给法也不同**：`collectData()` **不接收 cfg**，SDK 内置采集协议表；
     外壳的报表配置只用于展示与完整性校验，不能传回 SDK；
     `buildReport({ files, cfg })` 的 `cfg` 可选，不传就自己读 `config/report.json`
@@ -178,7 +178,7 @@
     `index.html` / `app.js` / `style.css` 三个文件与 `serve.mjs` 并排放在 `packages/server/` 下。
     （这条一度被定成「全内联单文件」，用户明确撤销了：仓库惯例是拆出去。
     前端只提供三个白名单资源，路径用**固定表**而不是拼接 —— 拼接会让
-    `/assets/../../skills/zzz-stats/lib/build.mjs` 把源码吐出去。
+    `/assets/../../skills/zzz-stats/scripts/build.mjs` 把源码吐出去。
     这三个文件不随 skill 分发，所以不放进 `assets/`。）
   - **「零 npm 依赖」只对 skill 本体成立，不对服务成立。** 这条也被用户撤销了：
     本服务是本机开发服务，不需要守；能用内置模块解决就用内置，但不必为此自我设限。
@@ -197,7 +197,7 @@
     CLI 是写盘时手动补的，服务这里同样，**这条已经漏过一次**。
   - **走纯 Node 路（`transport: 'node'`）且服务里不降级**，失败把真实错误显示在页面上；
     降级策略仍然只在 `scripts/collect.mjs`。**凭据不进日志、不进 SSE**（ticket / Cookie / set-cookie）。
-  - **`lib/build.mjs` 内嵌的原始 JSON 必须用 `fileMap`，不能用入参 `files`。**
+  - **`scripts/build.mjs` 内嵌的原始 JSON 必须用 `fileMap`，不能用入参 `files`。**
     入参可能是 Map，而 `JSON.stringify(map)` 是 `{}` —— 构建全绿、Node 口径也对，
     只有打开产物才崩（`Cannot read properties of null (reading 'type_stats')`）。
     CLI 一直传对象，所以这个 bug 只在服务/用例传 Map 时显形，是 `serve.mjs` 的浏览器验收抓到的。
@@ -245,6 +245,12 @@
 - 已知错误按 SdkError 分类。cur 请求仍保留宽泛容错，不把空列表当成错误证据；变更此策略需要单独讨论。
 - 日志、事件和报错不得带 Cookie、token、ticket 或验证码。
 - 验证从仓库根运行（数字以实际输出为准）：`test-sdk-transport.mjs`、`test-qr.mjs`、`test-package-exports.mjs`、`test-driver-injection.mjs`、`test-cdp-resources.mjs`、`packages/server/test-sdk-integration.mjs`。
+- **skill 对 SDK 的依赖必须写成可发布的版本号（如 `"^0.1.2"`），不能写 `workspace:*`。**
+  `npx skills add` 只复制 skill 目录本身、不复制仓库的 `packages/sdk`，workspace 协议装到别处必然 `ERR_MODULE_NOT_FOUND`。
+  仓库内仍用本地源码：靠根 `pnpm-workspace.yaml` 的 `overrides: { '@atian25/zzz-stats-sdk': 'link:packages/sdk' }` 链接回去，
+  **改 SDK 版本号后要同步升 skill 的依赖范围**，否则仓库内链接的版本对不上声明。
+- **skill 的脚本不许 import `packages/sdk/` 的内部模块。** 用户装完只有 skill 目录，
+  任何 `../../../packages/sdk/xxx.mjs` 都会在真实安装环境里直接崩。需要的小工具就在脚本内自带一份。
 - 真实 Chrome 验证使用 `test/test-cdp-chrome.mjs` 的独立端口/profile，**不连接用户日常 9222**。退出后确认自己启动的 PID 不存在、端口释放，只清理本次创建的 profile。不要把假网络通过写成真实账号扫码/短信已验收。
 
 ### `packages/server/`：本地 Web 服务
@@ -333,7 +339,7 @@ if (!stdinRaw && existsSync(REFRESH_SIGNAL)) {...}    // ← 有 TTY 就永远�
 所以 TTY 与否**只允许影响提示文案**，不能参与判断；判断逻辑现在集中在
 `scripts/qr-wait.mjs` 的 `takeRefreshRequest()`，它的签名里根本没有 `stdinRaw`（这是刻意的：
 这个参数一旦回去，两条通道就会重新退化成二选一）。回归用例：
-`node skills/zzz-stats/scripts/test-qr-wait.mjs`（75 项，含「TTY 场景下信号文件必须生效」，
+`node skills/zzz-stats/test/test-qr-wait.mjs`（75 项，含「TTY 场景下信号文件必须生效」，
 并**真实执行** `waitForLogin()` 循环本体——零件测与真跑缺一不可）。
 
 TTY 下 `setRawMode(true)` 会关掉终端行编辑，**每个**按键都会进 `data` 事件。所以 `isRefreshKey()`
@@ -353,14 +359,15 @@ ReferenceError，语法合法），而我当时手写的仿真 harness 又只模
 改这两段逻辑时先跑用例再改：
 
 ```bash
-node skills/zzz-stats/scripts/test-verify-cleanup.mjs   # 27 项，不需要浏览器、不联网
-node skills/zzz-stats/scripts/test-image-server.mjs      # 25 项，只起一个 127.0.0.1 临时端口
-node skills/zzz-stats/scripts/test-qr-wait.mjs           # 75 项，刷新通道 + 真实等待循环
-node skills/zzz-stats/scripts/test-preview-privacy.mjs   # 53 项（output/ 在场时 55 项），--preview 的隐私分流（见下）
-node packages/sdk/test/test-sdk-transport.mjs            # 15 项，采集层：四个并列入口 + 「降级只在 CLI」纪律 + 国际服抛错。**不需要 skill 目录**
-node skills/zzz-stats/scripts/test-render-contract.mjs   # 13 项，渲染层：Map/对象入参产物一致 + 采集/渲染两层目录边界
-node skills/zzz-stats/scripts/test-core-pure.mjs         # 47 项，core.js 纯度 + 转换规则 + 面板已删 + 图标资产
-node skills/zzz-stats/scripts/test-report-browser.mjs    # 30 项，需要 chrome；产物现算的 __REPORT__ 与 Node 口径逐字段相同
+node skills/zzz-stats/test/test-verify-cleanup.mjs   # 27 项，不需要浏览器、不联网
+node skills/zzz-stats/test/test-image-server.mjs      # 25 项，只起一个 127.0.0.1 临时端口
+node skills/zzz-stats/test/test-qr-wait.mjs           # 75 项，刷新通道 + 真实等待循环
+node skills/zzz-stats/test/test-login-input.mjs       # 8 项，短信输入的 TTY/文件两条来源
+node scripts/test-preview-privacy.mjs   # 53 项（output/ 在场时 55 项），--preview 的隐私分流（见下）
+node packages/sdk/test/test-sdk-transport.mjs            # 49 项，采集层：四个并列入口 + 「降级只在 CLI」纪律 + 国际服抛错。**不需要 skill 目录**
+node skills/zzz-stats/test/test-render-contract.mjs   # 13 项，渲染层：Map/对象入参产物一致 + 采集/渲染两层目录边界
+node skills/zzz-stats/test/test-core-pure.mjs         # 47 项，core.js 纯度 + 转换规则 + 面板已删 + 图标资产
+node skills/zzz-stats/test/test-report-browser.mjs    # 30 项，需要 chrome；产物现算的 __REPORT__ 与 Node 口径逐字段相同
 ```
 
 `test-report-browser.mjs` 默认用 `file://` 打开产物，**不需要起静态服务**；

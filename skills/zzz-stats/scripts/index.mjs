@@ -1,5 +1,5 @@
 /**
- * `skills/zzz-stats/lib/` —— **出报表这一层**的统一出口。
+ * `skills/zzz-stats/scripts/` —— **出报表这一层**的统一出口。
  *
  * 与 `packages/sdk/index.mjs`（只放采集）是一对：那边采集，这边渲染。
  *
@@ -19,7 +19,7 @@
  * ## 用法
  *
  * ```js
- * import { buildReport } from '../lib/index.mjs';   // 相对路径按调用方算
+ * import { buildReport } from './index.mjs';   // 相对路径按调用方算
  *
  * const { html, fatal } = buildReport({ files, cfg });
  * ```

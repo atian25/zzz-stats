@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
  * 渲染层契约：`buildReport()` 收 Map 与收普通对象必须等价，
- * 以及「采集进 `packages/sdk/`、渲染留 `skills/zzz-stats/lib/`」这条目录边界。
+ * 以及「采集进 `packages/sdk/`、渲染留 `skills/zzz-stats/scripts/`」这条目录边界。
  *
  * ## 为什么这套留在 skill 里，而不是跟采集测试一起进 `packages/sdk/test/`
  *
- * 它**同时要看两个目录**：`packages/sdk/`（采集）+ `skills/zzz-stats/lib/`（渲染），
+ * 它**同时要看两个目录**：`packages/sdk/`（采集）+ `skills/zzz-stats/scripts/`（渲染），
  * 还要读 `config/report.json` 与 `fixtures/`。从仓库层级看最合理。
  * 采集层那份（`packages/sdk/test/test-sdk-transport.mjs`）刻意不读 skill 目录，
  * 所以它能跟着 `packages/sdk/` 单独走。
@@ -28,7 +28,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SKILL_DIR = resolve(HERE, '..');
 /*
  * 边界那一段要同时看 SDK 与 skill/lib，所以需要仓库根。
- * SDK 在仓库根的 `packages/sdk/`，**不在 skill 里** —— 别拿 `join(SKILL_DIR, 'lib')`。
+ * SDK 在仓库根的 `packages/sdk/`，**不在 skill 里** —— 别从 skill 内部反推它的位置。
  */
 const REPO_DIR = resolve(SKILL_DIR, '..', '..');
 const SDK_DIR = join(REPO_DIR, 'packages/sdk');
@@ -55,7 +55,7 @@ console.log('1. buildReport 收 Map 与收普通对象，产出必须相同');
    * 只测了对象那条，就等于只测了承诺的一半 —— 所以这里两条都跑。
    */
   /* 报表渲染器在 skill 的 lib（不在 packages/sdk），它自己定位资源，不用注入 */
-  const build = await import('../lib/build.mjs');
+  const build = await import('../scripts/build.mjs');
   const FIX = join(REPO_DIR, 'fixtures/baseline');
   const CFG = JSON.parse(readFileSync(join(SKILL_DIR, 'config/report.json'), 'utf8'));
 
@@ -97,7 +97,7 @@ console.log('1. buildReport 收 Map 与收普通对象，产出必须相同');
 // ------------------------------------------------ 2. 目录边界：采集与报表分属两边
 
 /*
- * 用户拍板的结构：`packages/sdk/` **只放采集**，出报表的留在 `skills/zzz-stats/lib/`。
+ * 用户拍板的结构：`packages/sdk/` **只放采集**，出报表的留在 `skills/zzz-stats/scripts/`。
  * 判据是「它依赖 skill 资源吗」—— `build.mjs` 有 9 处读 `assets/report/**` 与
  * `assets/vendor/**`，它是**这份报表的渲染器**，不是通用 SDK。
  *
@@ -128,7 +128,7 @@ ok('packages/sdk/ 下没有 build.mjs / core-inline.mjs / template-tokens.mjs',
   ['build.mjs', 'core-inline.mjs', 'template-tokens.mjs']
     .every((f) => !existsSync(join(SDK_DIR, f))));
 
-const skillLib = await import('../lib/index.mjs');
+const skillLib = await import('../scripts/index.mjs');
 ok('skill/lib 导出 buildReport', typeof skillLib.buildReport === 'function');
 ok('两个出口是不同模块', typeof sdkIndex.buildReport === 'undefined' && typeof skillLib.buildReport === 'function');
 
@@ -146,7 +146,7 @@ ok('采集层没有任何一处自己读 assets/ 或 config/report.json',
   sdkReadsSkill.length === 0, sdkReadsSkill.join(', '));
 
 /* 渲染器相反：它就该自己读，靠 SKILL_DIR */
-const buildSrc = readFileSync(join(SKILL_DIR, 'lib/build.mjs'), 'utf8');
+const buildSrc = readFileSync(join(SKILL_DIR, 'scripts/build.mjs'), 'utf8');
 ok('报表渲染器用 SKILL_DIR 自己定位资源', /const SKILL_DIR = resolve\(HERE, '\.\.'\)/.test(buildSrc));
 const assetReads = (buildSrc.match(/join\(SKILL_DIR/g) || []).length;
 ok('报表渲染器确实在读 skill 资源（≥ 5 处）', assetReads >= 5, `${assetReads} 处`);

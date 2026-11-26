@@ -5,7 +5,7 @@
  * 其中「读参数 / 读磁盘 / 写产物 / process.exit」是外壳语义，口径与装配不是）。
  * 现在的分工：
  *
- *   lib/build.mjs        ← 本文件：files + cfg → { html, report, metrics, tags, warnings, fatal }
+ *   scripts/build.mjs    ← 本文件：files + cfg → { html, report, metrics, tags, warnings, fatal }
  *   scripts/build-report.mjs  薄壳：解析参数、把磁盘目录读成 files、调本文件、写文件、打摘要、退出码
  *
  * ## 为什么 SDK 不写盘
@@ -35,8 +35,7 @@ import { PAYLOAD_ID, escapeJsonForScript, buildCorePlusBoot, checkInlinedScript 
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /**
- * `lib/` 在 `skills/zzz-stats/` 下一层，所以 skill 根目录是 `..`。
- * （改前这段在 `scripts/` 里，同样是 `..`；搬进 `lib/` 后层级不变。）
+ * 本文件在 `skills/zzz-stats/scripts/` 下一层，所以 skill 根目录是 `..`。
  */
 const SKILL_DIR = resolve(HERE, '..');
 
@@ -169,7 +168,7 @@ export function buildReport({ files, cfg, logWarn = (m) => console.warn(m) } = {
   report.icons = icons.map;
 
   /*
-   * CSS 变量与文案替换来自 lib/template-tokens.mjs。
+   * CSS 变量与文案替换来自同目录的 template-tokens.mjs。
    *
    * 它们**只有构建期一个调用方**：产物是拼好的静态 HTML，浏览器既不写 <style>
    * 也不做文案替换。历史（见该文件头）把它们放在 core 里，副作用是 token 字面量

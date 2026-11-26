@@ -3,13 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
-    "@atian25/zzz-stats-sdk": "workspace:*"
+    "@atian25/zzz-stats-sdk": "^0.1.2"
   },
   "exports": {
-    "./report": "./lib/index.mjs",
+    "./report": "./scripts/index.mjs",
     "./config": "./config/report.json"
   },
-  "files": ["SKILL.md", "scripts", "lib", "config", "assets", "references", "runtime"]
+  "files": [
+    "SKILL.md",
+    "scripts",
+    "test",
+    "config",
+    "assets",
+    "references"
+  ]
 }

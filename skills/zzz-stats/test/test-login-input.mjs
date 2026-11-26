@@ -3,7 +3,7 @@ import { PassThrough } from 'node:stream';
 import { mkdtempSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createLoginInput } from './login-input.mjs';
+import { createLoginInput } from '../scripts/login-input.mjs';
 const root = mkdtempSync(join(tmpdir(), 'zzz-login-input-'));
 let passed = 0;
 const stream = new PassThrough(); stream.isTTY = true;

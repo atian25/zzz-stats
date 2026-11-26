@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: false
   excludeLinksFromLockfile: false
 
+overrides:
+  '@atian25/zzz-stats-sdk': link:packages/sdk
+
 importers:
 
   .: {}
@@ -24,7 +27,7 @@ importers:
   packages/server:
     dependencies:
       '@atian25/zzz-stats-sdk':
-        specifier: workspace:*
+        specifier: link:../sdk
         version: link:../sdk
       '@atian25/zzz-stats-skill':
         specifier: workspace:*
@@ -33,7 +36,7 @@ importers:
   skills/zzz-stats:
     dependencies:
       '@atian25/zzz-stats-sdk':
-        specifier: workspace:*
+        specifier: link:../../packages/sdk
         version: link:../../packages/sdk
 
 packages:

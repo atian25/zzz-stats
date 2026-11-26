@@ -43,11 +43,11 @@ import { tmpdir } from 'node:os';
 import { join, resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findChrome, chromeArgs } from '../../../packages/sdk/drivers.mjs';
-import { wantsHelp, printHelp } from './cli-help.mjs';
+import { wantsHelp, printHelp } from '../scripts/cli-help.mjs';
 import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { computeReport } from '../assets/report/core.js';
-import { PAYLOAD_ID } from '../lib/core-inline.mjs';
+import { PAYLOAD_ID } from '../scripts/core-inline.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SKILL_DIR = resolve(HERE, '..');

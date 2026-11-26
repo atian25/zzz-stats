@@ -30,7 +30,7 @@ import { createHash } from 'node:crypto';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { computeReport } from '../assets/report/core.js';
-import { cssVarBlock, textSubs } from '../lib/template-tokens.mjs';
+import { cssVarBlock, textSubs } from '../scripts/template-tokens.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SKILL_DIR = resolve(HERE, '..');
@@ -204,7 +204,7 @@ ok('core.js 不引用 charts.js', !code.includes('charts.js'));
 ok('core.js 不碰 document', !/\bdocument\s*\./.test(code));
 ok('core.js 不碰 window.', !/\bwindow\s*\./.test(code));
 
-// ------------------------------------------ 7. 产物内嵌用的转换（lib/core-inline.mjs）
+// ------------------------------------------ 7. 产物内嵌用的转换（core-inline.mjs）
 
 console.log('7. core-inline：ESM → 经典同步脚本的转换');
 /*
@@ -214,7 +214,7 @@ console.log('7. core-inline：ESM → 经典同步脚本的转换');
  */
 const {
   PAYLOAD_ID, escapeJsonForScript, stripExports, buildCorePlusBoot, checkInlinedScript,
-} = await import('../lib/core-inline.mjs');
+} = await import('../scripts/core-inline.mjs');
 
 ok('PAYLOAD_ID 是个合法 id', /^[a-z][a-z0-9-]*$/.test(PAYLOAD_ID), PAYLOAD_ID);
 

@@ -3,7 +3,7 @@
 这个文件是**报表口径与呈现的规范**，回答两个问题：**为什么这样算**、**为什么这样画**。
 这是仓库开发文档，不随 skill 分发。当前规则与历史测量需要区分；修改行为时同步规则，不把已撤销的方案当成现状。
 
-路径约定：命令从仓库根执行；正文中的 `assets/`、`config/`、`lib/`、`scripts/` 简写均相对 `skills/zzz-stats/`，不是相对本文件或仓库根。`packages/`、`docs/`、`fixtures/`、`output/` 相对仓库根。
+路径约定：命令从仓库根执行；正文中的 `assets/`、`config/`、`scripts/` 简写均相对 `skills/zzz-stats/`，不是相对本文件或仓库根。`packages/`、`docs/`、`fixtures/`、`output/` 相对仓库根。
 
 ## 谁该读这个文件
 
@@ -131,7 +131,7 @@ sum(cur_records[].count) + type_stats[].next_s_cur_times == type_stats[].total_c
 
 实现分两处：判定逻辑在 `scripts/preview-privacy.mjs`（纯函数，`extractReport()` /
 `previewPrivacyPolicy()` / `checkPreviewGuard()`），接线在 `scripts/screenshot.mjs`。
-回归用例：`node skills/zzz-stats/scripts/test-preview-privacy.mjs`（不需要浏览器）。
+回归用例：`node scripts/test-preview-privacy.mjs`（不需要浏览器）。
 基线是 **53 项**；本机因为 `output/` 下同时有 `绳匠A` 与 `绳匠B` 两个数据集目录，
 第 5 节对每个目录各跑一条，实际是 **55 项**——数字随 `output/` 里的账号目录数变化，
 不是回归。
@@ -2263,7 +2263,7 @@ skill 的调用方式、CLI 参数、日志、退出码全都没变，变的只�
 ```
 assets/report/core.js                 computeReport({files, cfg, icons, generatedAt})
       ↑ import                                 │
-lib/build.mjs                                 │ lib/core-inline.mjs 构建期转换
+scripts/build.mjs                             │ scripts/core-inline.mjs 构建期转换
 构建内核：内嵌图标 → 拼模板 → 跑校验（不写盘）
                                                ↓
                                     产物里的第 ② 段脚本（经典同步）
@@ -2276,7 +2276,7 @@ scripts/build-report.mjs   外壳：解析参数 → 读盘成 files → 调内�
 产物里现算的那份没有。）
 
 删掉的东西（**不要加回来**）：`assets/report/app.html`、`app.js`、`config.json`、
-`icons/manifest.json`、`scripts/build-icons-manifest.mjs`、`scripts/test-app-browser.mjs`。
+`icons/manifest.json`、`scripts/build-icons-manifest.mjs`、`test/test-app-browser.mjs`。
 `test-core-pure.mjs` 现在把「这些文件不存在」钉成断言。
 
 ### 产物的三段同步脚本
@@ -2293,7 +2293,7 @@ scripts/build-report.mjs   外壳：解析参数 → 读盘成 files → 调内�
 **页面一片空白、console 干净**。而 `screenshot.mjs` 只等 `DOMContentLoaded + setTimeout(0)`，
 四套用例也都在这个时机读页面，异步化会让它们间歇性扑空，且极难定位。
 
-`lib/core-inline.mjs` 的转换规则（写死在一处，不要在别处再写一份）：
+`scripts/core-inline.mjs` 的转换规则（写死在一处，不要在别处再写一份）：
 
 1. 顶层 `export function foo(` → `function foo(`。core.js 只有这一种 export 形式，
    多一种就当场抛错，不静默留下半份 ESM。
@@ -2335,21 +2335,21 @@ scripts/build-report.mjs   外壳：解析参数 → 读盘成 files → 调内�
 `core.js` 里**不许出现** `node:` import、`process`、`Buffer`、`require(`、`__dirname`、`__filename`、
 `import.meta`，以及裸的 `readFileSync` / `writeFileSync` / `existsSync` / `readdirSync` / `createHash`。
 
-`scripts/test-core-pure.mjs`（47 项）先**剥掉注释再 grep** 这些词：
+`test/test-core-pure.mjs`（47 项）先**剥掉注释再 grep** 这些词：
 不剥注释的话，文件头那句「不许出现 `node:` import」会把自己的断言判红（实测过一次）。
 
-`cssVarBlock` / `textSubs` / `escapeHtml` 已从 core **搬回构建期**（`lib/template-tokens.mjs`）。
+`cssVarBlock` / `textSubs` / `escapeHtml` 已从 core **搬回构建期**（`scripts/template-tokens.mjs`）。
 理由：它们唯一的调用方是 Node 外壳（产物是拼好的静态 HTML，浏览器既不写 `<style>` 也不做文案替换）。
 留在 core 里的副作用是 token 字面量（`'/*__COPY_CHART_TITLE__*/'`）会随 core 源码内嵌进产物，
 让「产物里不许残留 `/*__` 占位符」那条断言永远命中自己。
 
 ### 等价性验收（实测）
 
-`scripts/test-report-browser.mjs`（30 项，需要 chrome；默认 `file://` 打开产物，不需要起服务）：
+`test/test-report-browser.mjs`（30 项，需要 chrome；默认 `file://` 打开产物，不需要起服务）：
 
 ```bash
-node skills/zzz-stats/scripts/test-report-browser.mjs
-node skills/zzz-stats/scripts/test-report-browser.mjs --data fixtures/multigold --report output/绳匠B/report.html
+node skills/zzz-stats/test/test-report-browser.mjs
+node skills/zzz-stats/test/test-report-browser.mjs --data fixtures/multigold --report output/绳匠B/report.html
 ```
 
 | 项 | `fixtures/baseline` | `fixtures/multigold` |
@@ -2610,13 +2610,13 @@ const barSortOf = (sort) => all.findIndex(
 
 ```bash
 node skills/zzz-stats/scripts/build-report.mjs --data fixtures/baseline   # 先出报表
-node skills/zzz-stats/scripts/screenshot.mjs                        # 两档尺寸一次出齐 → docs/shots/
-node skills/zzz-stats/scripts/screenshot.mjs --privacy 2            # 对外用的图：先点全打码
-node skills/zzz-stats/scripts/screenshot.mjs --chart 音擎            # 截频段 tab 切过去之后的状态
-node skills/zzz-stats/scripts/screenshot.mjs --filter 2             # 截版本过滤生效后的状态（多个写 --filter 1,2）
-node skills/zzz-stats/scripts/screenshot.mjs --html p.html --out-dir /tmp/x   # 指定产物与输出位置
-node skills/zzz-stats/scripts/screenshot.mjs --preview --html output/<账号名>/report.html   # README 预览图 → docs/preview.png（固定高度 2x）
-node skills/zzz-stats/scripts/screenshot.mjs --preview --preview-height 1400 --html output/<账号名>/report.html   # 覆盖固定高度
+node scripts/screenshot.mjs                        # 两档尺寸一次出齐 → docs/shots/
+node scripts/screenshot.mjs --privacy 2            # 对外用的图：先点全打码
+node scripts/screenshot.mjs --chart 音擎            # 截频段 tab 切过去之后的状态
+node scripts/screenshot.mjs --filter 2             # 截版本过滤生效后的状态（多个写 --filter 1,2）
+node scripts/screenshot.mjs --html p.html --out-dir /tmp/x   # 指定产物与输出位置
+node scripts/screenshot.mjs --preview --html output/<账号名>/report.html   # README 预览图 → docs/preview.png（固定高度 2x）
+node scripts/screenshot.mjs --preview --preview-height 1400 --html output/<账号名>/report.html   # 覆盖固定高度
 ```
 
 **`--preview` 和两档验收图是两个用途，不要混用。** 两档图（`1440x900` / `1280x800`，1x）

@@ -19,7 +19,7 @@ import { join, dirname, resolve, relative, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { wantsHelp, printHelp, WORK_DIR_NOTE } from './cli-help.mjs';
 import { outputRoot, listOutputDatasets, sanitizeSegment } from './datasets.mjs';
-import { buildReport } from '../lib/index.mjs';
+import { buildReport } from './index.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /*
@@ -55,7 +55,7 @@ if (wantsHelp()) {
 
 const SKILL_DIR = resolve(HERE, '..');
 /*
- * 报表渲染器就在 skill 里（`lib/build.mjs`），它自己按
+ * 报表渲染器就在 skill 里（`scripts/build.mjs`），它自己按
  * `SKILL_DIR = resolve(HERE, '..')` 定位模板 / charts / icons / vendor，
  * 所以这里**不需要**再算一整套资源路径。
  *
@@ -197,10 +197,10 @@ if (!files['index.json']) {
 }
 
 /*
- * 构建内核在 `lib/build.mjs`（口径 + 模板装配 + 校验），本文件只是薄壳：
+ * 构建内核在 `scripts/build.mjs`（口径 + 模板装配 + 校验），本文件只是薄壳：
  * 解析参数 → 把磁盘目录读成虚拟文件系统 → 调内核 → 写文件 → 打摘要 → 退出码。
  *
- * 内核**不写盘也不退出**（见 lib/build.mjs 文件头）：写不写、往哪写、失败怎么退，
+ * 内核**不写盘也不退出**（见 scripts/build.mjs 文件头）：写不写、往哪写、失败怎么退，
  * 都是外壳的决定。这里保持改前的行为一字不变：fatal 时打印 ✖ 并 exit 1、不写产物。
  */
 const built = buildReport({

@@ -15,7 +15,7 @@
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { startImageServer, stopImageServer, qrUrl, IMAGE_SERVER_FILE } from './image-server.mjs';
+import { startImageServer, stopImageServer, qrUrl, IMAGE_SERVER_FILE } from '../scripts/image-server.mjs';
 
 const ROOT = join(tmpdir(), `zzz-image-server-test-${process.pid}`);
 let pass = 0;

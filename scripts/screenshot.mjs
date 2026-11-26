@@ -9,19 +9,19 @@
  *   并且一定会踩 --user-data-dir 的坑（不带就起不来），白绕几分钟。
  *
  * 用法：
- *   node skills/zzz-stats/scripts/screenshot.mjs                       # 两档尺寸，输出到 docs/shots/
- *   node skills/zzz-stats/scripts/screenshot.mjs --width 1440 --height 900
- *   node skills/zzz-stats/scripts/screenshot.mjs --out-dir /tmp/shots --html output/<账号名>/report.html
- *   node skills/zzz-stats/scripts/screenshot.mjs --privacy 2           # 截图前先点全打码（对外用）
- *   node skills/zzz-stats/scripts/screenshot.mjs --preview             # README 预览图 → docs/preview.png（固定高度 2x）
+ *   node scripts/screenshot.mjs                       # 两档尺寸，输出到 docs/shots/
+ *   node scripts/screenshot.mjs --width 1440 --height 900
+ *   node scripts/screenshot.mjs --out-dir /tmp/shots --html output/<账号名>/report.html
+ *   node scripts/screenshot.mjs --privacy 2           # 截图前先点全打码（对外用）
+ *   node scripts/screenshot.mjs --preview             # README 预览图 → docs/preview.png（固定高度 2x）
  *                                                                      # 真实数据强制打码；meta.synthetic === true 的数据集不打码
- *   node skills/zzz-stats/scripts/screenshot.mjs --chart 音擎 --filter 2
- *   node skills/zzz-stats/scripts/screenshot.mjs --detail 独家重映     # 切底部详情面板的频段
- *   node skills/zzz-stats/scripts/screenshot.mjs --preview --preview-height 1200
+ *   node scripts/screenshot.mjs --chart 音擎 --filter 2
+ *   node scripts/screenshot.mjs --detail 独家重映     # 切底部详情面板的频段
+ *   node scripts/screenshot.mjs --preview --preview-height 1200
  *                                                                      # 覆盖预览图的固定高度（不传就是 1200）
  *
  * 只依赖本机 Chrome，不需要 Playwright，不联网。
- * 浏览器查找复用 drivers.mjs 的 findChrome()，与采集期同一份候选列表。
+ * 浏览器查找与启动参数在本文件内自带一份，不依赖 SDK 内部模块（见下方说明）。
  */
 import { existsSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -30,15 +30,41 @@ import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { findChrome, chromeArgs } from '../../../packages/sdk/drivers.mjs';
-import { wantsHelp, printHelp, WORK_DIR_NOTE } from './cli-help.mjs';
-import { listOutputReports } from './datasets.mjs';
+/*
+ * Chrome 查找与启动参数自带一份，不 import SDK 内部模块。
+ * 这是开发期验收脚本，用户装完 skill 就应能跑；碰 SDK 的内部路径会让它
+ * 在「只装了 skill 目录」的环境里直接 ERR_MODULE_NOT_FOUND。
+ * 候选列表与采集期的 drivers.mjs 保持一致，改那边时记得同步这里。
+ */
+const CHROME_CANDIDATES = [
+  process.env.CHROME_PATH,
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+  '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
+  '/usr/bin/chromium',
+  '/usr/bin/chromium-browser',
+  '/snap/bin/chromium',
+  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+].filter(Boolean);
+
+const findChrome = () => CHROME_CANDIDATES.find(p => {
+  try { return existsSync(p); } catch { return false; }
+}) ?? null;
+
+/** 额外启动参数：受限沙箱里 Chrome 自带 sandbox 常起不来。 */
+const chromeArgs = () =>
+  (process.env.ZZZ_CHROME_ARGS ? process.env.ZZZ_CHROME_ARGS.split(' ').filter(Boolean) : []);
+import { wantsHelp, printHelp, WORK_DIR_NOTE } from '../skills/zzz-stats/scripts/cli-help.mjs';
+import { listOutputReports } from '../skills/zzz-stats/scripts/datasets.mjs';
 import { extractReport, previewPrivacyPolicy, checkPreviewGuard } from './preview-privacy.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /*
- * 两个根目录，跟 build-report.mjs 一致：
- *   SKILL_DIR：skill 本体，只读（这个脚本只用它定位自身，不读资产）
+ * 本脚本是**仓库的开发期工具**，不随 skill 分发（README 预览图与验收截图都由它出）。
+ *   REPO_DIR：仓库根，用来定位 fixtures / output / docs/preview.png
  *   WORK_DIR：用户工作目录，`--cwd` 优先，否则 `process.cwd()`
  * 报表产物和截图都相对 WORK_DIR 算——截图截的是用户项目里的那份 HTML。
  */
@@ -64,7 +90,7 @@ if (wantsHelp()) {
   });
 }
 
-const SKILL_DIR = resolve(HERE, '..');
+const REPO_DIR = resolve(HERE, '..');
 
 const args = process.argv.slice(2);
 const argOf = (name, def) => {
@@ -104,7 +130,7 @@ function pickHtml() {
   if (candidates.length === 1) return candidates[0];
   if (candidates.length > 1) {
     console.error(`${relative(WORK_DIR, HTML_SEARCH_DIR)}/ 下有 ${candidates.length} 份报表，用 --html 指定要截哪一份：`);
-    for (const p of candidates) console.error(`  node skills/zzz-stats/scripts/screenshot.mjs --html ${relative(WORK_DIR, p)}`);
+    for (const p of candidates) console.error(`  node scripts/screenshot.mjs --html ${relative(WORK_DIR, p)}`);
     process.exit(1);
   }
   // 一份都没有：报一句「先构建」，不要猜一个不存在的路径

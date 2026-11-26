@@ -25,9 +25,17 @@ node "$SKILL_DIR/scripts/collect.mjs" --help
 node "$SKILL_DIR/scripts/build-report.mjs" --help
 ```
 
-数据和浏览器 profile 都写入 `WORK_DIR`，不要把工作目录设成 skill 安装目录。Node.js 版本至少为 22；SDK 使用 npm qrcode，CDP 不需要 Playwright不等于整个 skill 无依赖。
+数据和浏览器 profile 都写入 `WORK_DIR`，不要把工作目录设成 skill 安装目录。Node.js 版本至少为 22；SDK 使用 npm qrcode，CDP 不需要 Playwright 不等于整个 skill 无依赖。
 
-如果 `--help` 报 SDK 包无法解析，说明安装不完整，不是登录失败。不要开始扫码，也不要临时改 import 或复制 SDK 源码绕过安装。仓库源码使用者应在仓库根安装 workspace 依赖；单独安装的 skill 需要安装来源提供可解析的 SDK，不能假定复制 skill 目录就能运行。
+**首次使用先装依赖。** skill 的采集层来自 npm 包 `@atian25/zzz-stats-sdk`，装完 skill 目录后要在该目录执行一次：
+
+```bash
+cd "$SKILL_DIR" && pnpm install
+# 没有 pnpm 时退回 npm
+cd "$SKILL_DIR" && npm install
+```
+
+如果 `--help` 报 `ERR_MODULE_NOT_FOUND: Cannot find package '@atian25/zzz-stats-sdk'`，就是这一步没做，不是登录失败。不要开始扫码，也不要临时改 import 或复制 SDK 源码绕过安装；不要假定复制 skill 目录就能直接运行。
 
 ## 2. 选择采集通道
 
@@ -164,7 +172,7 @@ node "$SKILL_DIR/scripts/build-report.mjs" --cwd "$WORK_DIR" \
 
 | 现象 | 处理 |
 |---|---|
-| SDK 无法导入 | 安装不完整，停止登录流程，核对安装来源与依赖 |
+| SDK 无法导入 | 先在 skill 目录跑 `npm install`；装完仍失败才核对 SDK 版本与 Node 版本，停止登录流程 |
 | 纯 Node 失败 | 查看真实报错；默认 CLI 会说明后降级，显式指定的通道不会换路 |
 | 二维码过期或扫不到 | 确认最新图、白底和足够尺寸；按通道处理用户发起的换码 |
 | 浏览器要求人工操作 | 让用户在官方页面完成，再等待脚本复验登录态 |

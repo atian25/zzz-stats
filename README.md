@@ -62,12 +62,19 @@ DeepSeek Harness、Codex、Trae、豆包工作，以及任意支持 Agent Skill 
 ## 手动跑一遍
 
 ```bash
+# 0) 装依赖：采集层来自 npm 包，装完 skill 目录后要在该目录跑一次
+cd skills/zzz-stats && npm install && cd -
+
 # 1) 采集：自动挑驱动（有 Playwright 用 Playwright，没有用零依赖 CDP），打印二维码路径
 node skills/zzz-stats/scripts/collect.mjs
 
 # 2) 出图
 node skills/zzz-stats/scripts/build-report.mjs --data output/<账号名>/data   # → output/<账号名>/report.html
 ```
+
+> 采集层是独立的 npm 包 [@atian25/zzz-stats-sdk](https://www.npmjs.com/package/@atian25/zzz-stats-sdk)，
+> 所以除了 Node.js ≥22 没有别的系统依赖；但它是真依赖，**不能只复制 skill 目录就跑**。
+> 报 `ERR_MODULE_NOT_FOUND` 就是漏了第 0 步。
 
 **一个账号一个目录，数据与报表在同一个目录里。** 采集完成后产物长这样：
 
@@ -93,13 +100,13 @@ output/<账号名>/
 改完代码要验收时，两档尺寸的截图一条命令出齐（复用本机 Chrome，不需要 Playwright）：
 
 ```bash
-node skills/zzz-stats/scripts/screenshot.mjs                                   # → docs/shots/ 1440x900 + 1280x800
-node skills/zzz-stats/scripts/screenshot.mjs --privacy 2                       # 对外发的图先点全打码
-node skills/zzz-stats/scripts/screenshot.mjs --chart 音擎                       # 截频段 tab 切过去之后
-node skills/zzz-stats/scripts/screenshot.mjs --filter 2                        # 截版本过滤生效之后
-node skills/zzz-stats/scripts/screenshot.mjs --html p.html --out-dir /tmp/x     # 指定产物与输出位置
-node skills/zzz-stats/scripts/screenshot.mjs --preview --html output/<账号名>/report.html   # → docs/preview.png（固定高度 2x）
-node skills/zzz-stats/scripts/screenshot.mjs --preview --preview-height 1400 --html output/<账号名>/report.html   # 覆盖固定高度
+node scripts/screenshot.mjs                                   # → docs/shots/ 1440x900 + 1280x800
+node scripts/screenshot.mjs --privacy 2                       # 对外发的图先点全打码
+node scripts/screenshot.mjs --chart 音擎                       # 截频段 tab 切过去之后
+node scripts/screenshot.mjs --filter 2                        # 截版本过滤生效之后
+node scripts/screenshot.mjs --html p.html --out-dir /tmp/x     # 指定产物与输出位置
+node scripts/screenshot.mjs --preview --html output/<账号名>/report.html   # → docs/preview.png（固定高度 2x）
+node scripts/screenshot.mjs --preview --preview-height 1400 --html output/<账号名>/report.html   # 覆盖固定高度
 ```
 
 `--html` 不传时会在 `output/*/report.html` 里找唯一的那个；有多份会报错退出，不猜（截错账号的图比失败更糟）。
@@ -186,6 +193,7 @@ ZZZ_CHROME_ARGS='--no-sandbox --headless=new' node skills/zzz-stats/scripts/coll
 ```
 skills/zzz-stats/SKILL.md          # 入口：浏览器能力契约、采集流程、失败处理
 skills/zzz-stats/config/report.json # 口径与文案的唯一来源：称号、标签、配色、KPI、频道、保底抽数
+# 采集层是独立 npm 包 @atian25/zzz-stats-sdk，源码在 packages/sdk/，下面几行是它的内部分层
 packages/sdk/collect.mjs           # 采集编排：登录 → 定 uid/昵称 → 按频道取数 → 返回 Map（不写盘）
 packages/sdk/login-node.mjs        # 纯 Node 扫码登录（passport + Cookie）
 packages/sdk/login-browser.mjs     # 浏览器登录：页面 iframe 扫码 / 短信
@@ -194,9 +202,9 @@ packages/sdk/qr.mjs                # 二维码编码 → data URL
 packages/sdk/drivers.mjs           # 浏览器驱动适配层：playwright / cdp 两套实现，接口一致
 packages/sdk/qr-wait.mjs           # 换码通道 + 二维码计时
 packages/sdk/docs/api.md           # 接口与字段说明（含十连多金判定、完整性等式）
-packages/sdk/test/test-sdk-transport.mjs  # 采集层用例（15 项，不需要 skill 目录）
+packages/sdk/test/test-sdk-transport.mjs  # 采集层用例（49 项，不需要 skill 目录）
 packages/server/serve.mjs          # 本地 Web 服务：浏览器里扫码 → 取数 → 出报表
-skills/zzz-stats/lib/build.mjs     # 报表渲染器：files + cfg → 单文件 HTML
+skills/zzz-stats/scripts/build.mjs # 报表渲染器：files + cfg → 单文件 HTML
 skills/zzz-stats/scripts/collect.mjs       # 采集外壳：参数 → 调 SDK → output/<账号名>/data/*.json
 skills/zzz-stats/scripts/sync-icons.mjs    # 按接口里的 icon URL 自动补齐缺失图标，下载即裁 64px（需 Pillow）
 skills/zzz-stats/scripts/fetch-in-page.js  # 只借「页内执行 JS」一个能力的取数脚本（无 Node 环境也能用）
@@ -205,8 +213,9 @@ skills/zzz-stats/scripts/build-report.mjs  # 出图外壳：output/<账号名>/d
 skills/zzz-stats/scripts/datasets.mjs      # 账号目录名与 output/ 结构的共用实现（五个脚本共用一份）
 skills/zzz-stats/scripts/image-server.mjs  # 二维码只读图片服务（白名单只服务 login-qr.png）
 skills/zzz-stats/scripts/verify-cleanup.mjs # 凭据临时文件清理（登录成功即删）
-skills/zzz-stats/scripts/screenshot.mjs    # 开发期验收：出 1440x900 / 1280x800 两档截图（复用本机 Chrome，无依赖）
-skills/zzz-stats/scripts/test-render-contract.mjs # 渲染层用例（13 项：Map/对象契约 + 两层目录边界）
+skills/zzz-stats/test/                     # skill 的用例（8 个，随 skill 分发，可在装好的 skill 里跑）
+scripts/screenshot.mjs     # 开发期验收与 README 预览图：1440x900 / 1280x800 两档（复用本机 Chrome）
+scripts/preview-privacy.mjs # 截图用的隐私判定纯函数（与 screenshot.mjs 同层，不随 skill 分发）
 skills/zzz-stats/assets/report/            # 报表模板（template.html / charts.js / charts.css）
 skills/zzz-stats/assets/report/icons/      # 图标唯一一套 64px（avatars/ 圆形 + items/ 方形），构建时 base64 内嵌
 skills/zzz-stats/assets/vendor/echarts.min.js # ECharts 5.6.0（随仓库分发，不用 CDN）

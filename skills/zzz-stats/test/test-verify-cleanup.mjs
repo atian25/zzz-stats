@@ -19,7 +19,7 @@
 import { mkdirSync, writeFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { purgeVerifyArtifacts, purgeAndLog, CREDENTIAL_FILES } from './verify-cleanup.mjs';
+import { purgeVerifyArtifacts, purgeAndLog, CREDENTIAL_FILES } from '../scripts/verify-cleanup.mjs';
 
 const ROOT = join(tmpdir(), `zzz-verify-cleanup-test-${process.pid}`);
 let seq = 0;

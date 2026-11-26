@@ -4,3 +4,14 @@ packages:
 
 # Playwright 是可选 peer，由调用方安装，不在 workspace 安装时自动补齐。
 autoInstallPeers: false
+
+# 依赖声明用版本号（对外可安装），仓库内仍链接本地 packages/sdk。
+# pnpm 12 的选项名必须是 camelCase，写成 kebab-case 会被静默忽略。
+linkWorkspacePackages: true
+
+# 仓库内始终用本地 packages/sdk，避免 skill 测试跑到 registry 上的旧版本。
+minimumReleaseAgeExclude:
+  - '@atian25/zzz-stats-sdk@0.1.2'
+
+overrides:
+  '@atian25/zzz-stats-sdk': 'link:packages/sdk'

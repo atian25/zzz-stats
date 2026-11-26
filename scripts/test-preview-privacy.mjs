@@ -13,7 +13,7 @@
  *   3. 截图前那道断言在两条分支上必须是**相反**的期待。
  *
  * 跑法（不需要浏览器、不联网、不碰真实数据）：
- *   node skills/zzz-stats/scripts/test-preview-privacy.mjs
+ *   node scripts/test-preview-privacy.mjs
  *
  * 输出「通过 N / 失败 0」并 exit 0 即算过。
  */
@@ -160,7 +160,7 @@ console.log('preview-privacy 回归用例\n');
   console.log('# 4. 仓库自带的 fixtures 都已标记为 synthetic');
   for (const name of ['baseline', 'multigold']) {
     let m = null;
-    try { m = JSON.parse(readFileSync(join(HERE, '..', '..', '..', 'fixtures', name, 'meta.json'), 'utf8')); } catch { /* ignore */ }
+    try { m = JSON.parse(readFileSync(join(HERE, '..', 'fixtures', name, 'meta.json'), 'utf8')); } catch { /* ignore */ }
     check(`${name}/meta.json 可读`, m !== null);
     check(`${name}/meta.json 的 synthetic === true`, m?.synthetic === true);
     /*

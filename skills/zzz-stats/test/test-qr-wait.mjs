@@ -27,7 +27,7 @@ import {
   expiredRefreshHint,
   createRefreshInput,
   REFRESH_SIGNAL_FILE,
-} from './qr-wait.mjs';
+} from '../scripts/qr-wait.mjs';
 import { createQrClock, waitForLogin as waitForLoginSdk } from '../../../packages/sdk/qr-wait.mjs';
 // 接外壳文件通道，但每条用例仍执行 SDK 的真实循环。
 const waitForLogin = (opts) => waitForLoginSdk({
