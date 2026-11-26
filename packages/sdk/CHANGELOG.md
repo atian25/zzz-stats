@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.2](https://github.com/atian25/zzz-stats/compare/zzz-stats-sdk-v0.1.1...zzz-stats-sdk-v0.1.2) (2026-11-26)
+
+
+### 文档
+
+* **sdk:** 补 README，覆盖安装、五个导出与调用示例 ([69c6f9e](https://github.com/atian25/zzz-stats/commit/69c6f9e735889bc11fe09669113d1292546778e9))
+* 合并包级 AGENTS 到仓库根目录 ([249135a](https://github.com/atian25/zzz-stats/commit/249135a9f0cf56ee733325b5bb0639a80bc2a54d))
+
 ## [0.1.1](https://github.com/atian25/zzz-stats/compare/zzz-stats-sdk-v0.1.0...zzz-stats-sdk-v0.1.1) (2026-11-26)
 
 
